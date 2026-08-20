@@ -1,0 +1,17 @@
+{
+  "cores": {
+    "cpu0": {
+      "elf_file": "./build/cpu0_vela.elf",
+      "addr2line": "arm-none-eabi-addr2line",
+      "architecture": "arm",
+      "tasks": ["mediad", "media_trigger", "player_task"]
+    },
+    "cpu1": {
+      "elf_file": "./build/cpu1_vela.elf",
+      "addr2line": "xtensa-esp32-elf-addr2line",
+      "architecture": "xtensa",
+      "address_prefix": "0x20000000",
+      "tasks": ["audio_dsp", "codec_task"]
+    }
+  }
+}

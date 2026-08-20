@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.codex/hooks/snapshot.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

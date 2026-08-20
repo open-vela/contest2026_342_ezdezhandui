@@ -1,0 +1,54 @@
+diff --git a/components/mbedtls/mbedtls b/components/mbedtls/mbedtls
+--- a/components/mbedtls/mbedtls
++++ b/components/mbedtls/mbedtls
+@@ -1 +1 @@
+-Subproject commit 582ff482038db6e4010dbf6f943d97b05ad06ea5
++Subproject commit 582ff482038db6e4010dbf6f943d97b05ad06ea5-dirty
+diff --git a/nuttx/include/platform/os.h b/nuttx/include/platform/os.h
+index 118b35570f4..629225093ff 100644
+--- a/nuttx/include/platform/os.h
++++ b/nuttx/include/platform/os.h
+@@ -354,7 +354,7 @@ static inline void esp_os_task_delay_adapter(uint32_t ticks)
+   if (OSINIT_OS_READY())
+     {
+       useconds_t us = TICK2USEC(ticks);
+-      nxsched_usleep(us);
++      nxsig_usleep(us);
+     }
+ }
+ 
+diff --git a/nuttx/src/platform/os.c b/nuttx/src/platform/os.c
+index 99470d7e7c0..93af56524a1 100644
+--- a/nuttx/src/platform/os.c
++++ b/nuttx/src/platform/os.c
+@@ -13,6 +13,7 @@
+ 
+ #include <debug.h>
+ #include <errno.h>
++#include <fcntl.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+@@ -1333,11 +1334,17 @@ int esp_os_create_task_pinned_to_core(esp_os_task_function_t task_func,
+       return -1;
+     }
+ 
+-  tcb->flags = TCB_FLAG_TTYPE_KERNEL | TCB_FLAG_FREE_TCB;
+-
+-  ret = nxtask_init(tcb, name, priority,
+-                    NULL, stack_size,
+-                    task_wrapper_entry, argv, NULL, NULL);
++  atomic_set(&tcb->flags, TCB_FLAG_TTYPE_KERNEL | TCB_FLAG_FREE_TCB);
++
++  /* openvela fork compatibility: nxtask_init(tcb, name, entry, actions, attr, argv, envp) */
++  {
++    posix_spawnattr_t attr;
++    posix_spawnattr_init(&attr);
++    posix_spawnattr_setstacksize(&attr, (size_t)stack_size);
++    posix_spawnattr_setpriority(&attr, priority);
++    ret = nxtask_init(tcb, name, task_wrapper_entry, NULL, &attr, argv, NULL);
++    posix_spawnattr_destroy(&attr);
++  }
+   if (ret < 0)
+     {
+       kmm_free(wrapper_args);

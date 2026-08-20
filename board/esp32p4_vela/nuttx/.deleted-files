@@ -1,0 +1,8 @@
+arch/risc-v/src/common/espressif/esp_dma.c
+arch/risc-v/src/common/espressif/esp_dma.h
+arch/risc-v/src/common/espressif/esp_hr_timer.c
+arch/risc-v/src/common/espressif/esp_timer.c
+arch/risc-v/src/common/espressif/esp_timer.h
+arch/risc-v/src/common/espressif/esp_wifi_init.c
+arch/risc-v/src/common/espressif/esp_wlan.c
+arch/risc-v/src/common/espressif/esp_wlan.h

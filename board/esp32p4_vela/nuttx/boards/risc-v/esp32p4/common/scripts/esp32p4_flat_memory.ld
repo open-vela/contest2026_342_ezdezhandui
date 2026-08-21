@@ -141,19 +141,24 @@ REGION_ALIAS("rtc_slow_seg", rtc_iram_seg );
 REGION_ALIAS("rtc_data_location", rtc_iram_seg );
 REGION_ALIAS("rtc_reserved_seg", lp_reserved_seg );
 
-#if CONFIG_APP_BUILD_USE_FLASH_SECTIONS
+#if CONFIG_ESPRESSIF_SIMPLE_BOOT
+  /* SIMPLE_BOOT (ram-only image): place all code/data in SRAM,
+   * since no flash content is available at runtime.
+   * Note: sram_seg is the only SRAM region on rev3+ chips
+   * (sram_low/sram_high exist only for rev < 3).
+   */
+  REGION_ALIAS("text_seg_low", sram_seg);
+  REGION_ALIAS("text_seg_high", sram_seg);
+#else
   REGION_ALIAS("text_seg_low", irom_seg);
-#else
-  REGION_ALIAS("text_seg_low", sram_low);
-  REGION_ALIAS("text_seg_high", sram_high);
-#endif // CONFIG_APP_BUILD_USE_FLASH_SECTIONS
+#endif // CONFIG_ESPRESSIF_SIMPLE_BOOT
 
-#if CONFIG_APP_BUILD_USE_FLASH_SECTIONS
-  REGION_ALIAS("rodata_seg_low", drom_seg);
+#if CONFIG_ESPRESSIF_SIMPLE_BOOT
+  REGION_ALIAS("rodata_seg_low", sram_seg);
+  REGION_ALIAS("rodata_seg_high", sram_seg);
 #else
-  REGION_ALIAS("rodata_seg_low", sram_low);
-  REGION_ALIAS("rodata_seg_high", sram_high);
-#endif // CONFIG_APP_BUILD_USE_FLASH_SECTIONS
+  REGION_ALIAS("rodata_seg_low", drom_seg);
+#endif // CONFIG_ESPRESSIF_SIMPLE_BOOT
 
 #if CONFIG_SPIRAM_XIP_FROM_PSRAM
   REGION_ALIAS("ext_ram_seg", drom_seg);
@@ -165,7 +170,7 @@ REGION_ALIAS("rtc_reserved_seg", lp_reserved_seg );
  *  If rodata default segment is placed in `drom_seg`, then flash's first rodata section must
  *  also be first in the segment.
  */
-#if CONFIG_APP_BUILD_USE_FLASH_SECTIONS
+#if !CONFIG_ESPRESSIF_SIMPLE_BOOT
   ASSERT(_flash_rodata_dummy_start == ORIGIN(rodata_seg_low),
          ".flash_rodata_dummy section must be placed at the beginning of the rodata segment.")
 #endif

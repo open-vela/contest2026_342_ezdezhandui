@@ -54,7 +54,7 @@ PATH=/usr/bin:$PATH ./build.sh vendor/openvela/boards/vela/configs/goldfish-arm6
 
 ## 坑 7：cwd 漂移
 
-- Bash 会话 cwd 会重置；`./emulator.sh`、build.sh 依赖 openvela 根 cwd → 用 `cd /home/ez/share/rk3576-openvela/openvela && ...` 或绝对路径
+- Bash 会话 cwd 会重置；`./emulator.sh`、build.sh 依赖 openvela 根 cwd → 用 `cd /home/ez/share/openvela/openvela && ...` 或绝对路径
 
 ## 已验证的事实（T1 生死线，2026-08-12）
 

@@ -7,7 +7,7 @@
 ## 〇、工作区布局（2026-08-20 已重做）
 
 ```
-/home/ez/share/rk3576-openvela/
+/home/ez/share/openvela/
 ├── nuttx/ apps/ vendor/ packages/ prebuilts/ ...   ← openvela 树（repo sync -c，官方 manifest）
 ├── build.sh  emulator.sh                           ← 构建入口（在顶层，不是 openvela/ 子目录！）
 ├── contest2026_342_ezdezhandui/                    ← 大赛专属仓（git 仓，作品代码）
@@ -20,7 +20,7 @@
 └── .repo/                                          ← repo 元数据（顶层）
 ```
 
-- **构建命令已变**：`cd /home/ez/share/rk3576-openvela && ./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8`
+- **构建命令已变**：`cd /home/ez/share/openvela && ./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8`
 - 产物：`cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin`（**mkimage 已自动生成 ram-only 格式**——新树官方脚本支持 `CONFIG_ESPRESSIF_SIMPLE_BOOT=y` 时加 `--ram-only-header`，构建输出 `Image has only RAM segments visible` 即正确；STATUS 旧版"需手动 elf2image"问题已消失）
 
 ## 一、已完成（全部验证）
@@ -38,18 +38,19 @@
 
 | 问题 | 状态 |
 |---|---|
-| esptool **stub 崩溃**（rev3.2 不兼容） | ❌ 5.3.1/4.10 都崩——stub 不可用 |
+| esptool **stub 崩溃**（rev3.2 不兼容） | ⏳ **已有解法**：rev3.2/ECO7 支持仅存在于 esptool **≥ v4.12.0**（2026-07-13 发布），待实测 |
 | ROM 模式（--no-stub）USB 擦写 | ❌ 断流/超时 |
 | UART0 下载模式 | ❌ ROM 无响应 |
-| **JTAG 烧录（OpenOCD）** | ⏳ openocd-esp32 在 /tmp/openocd-esp32（v0.12.0-esp32-20260703），esp32p4 flash 支持待实测 |
-| **0x25 crash 分析** | ⏳ **优先做**：反汇编 nuttx ELF 定位 load access fault @0x25（不依赖板子，可能比 JTAG 更快） |
+| **JTAG 烧录（OpenOCD）** | ⏳ openocd-esp32 v0.12.0-esp32-20260703 已重建在 /tmp/openocd-esp32（8/21 系统清理后重下），esp32p4-builtin.cfg + esp_usb_jtag.cfg（303a:1001）齐备；烧录脚本 /tmp/ramload.sh（RAM 加载）+ /tmp/flash_jtag.sh |
+| **0x25 crash 根因** | ✅ **已定位 + 已修复**（8/21）：SIMPLE_BOOT（ram-only）构建时，HAL sdkconfig.h 的 `CONFIG_APP_BUILD_USE_FLASH_SECTIONS=1` 劫持链接脚本 → 代码链接到 0x40000000（**flash XIP 映射区**，非 RAM）→ ram-only 镜像加载后执行空 flash → 早期崩溃。修复：`esp32p4_flat_memory.ld` 条件改为 `CONFIG_ESPRESSIF_SIMPLE_BOOT` + rev3 的 `sram_seg`（上游 else 分支引用 sram_low 是 rev<3 专属，rev3+SIMPLE_BOOT 组合上游从未跑通）。手动链接验证通过：全 RAM 段（0x4ff40000 437KB），ram-only 镜像 225KB。**待真机烧录验证** |
 
 ## 三、下一步
 
-1. **签 CLA → PR 合入**（用户操作，5 分钟）
-2. **分析 0x25 crash**：`riscv-none-elf-objdump -d cmake_out/esp32p4-function-ev-board_nsh/nuttx` 找 PC=0x25 附近代码
-3. JTAG 烧录：板子按 Reset（运行模式）→ OpenOCD（esp_usb_jtag.cfg + esp32p4.cfg）→ telnet 4444 flash write → 停 OpenOCD → 读 ttyACM0 看 nsh>
-4. 若 JTAG 不行：查 espressif/esptool issue "esp32p4 rev3.2 stub crash" 或 ESP-IDF 新版 esptool
+1. **签 CLA → PR 合入**（用户操作，5 分钟，已完成签署待组委会合入）
+2. **插上板子 USB-Serial/JTAG 线（303a:1001）**（当前只有 UART0 转接 ttyUSB0 在线）→ `./ramload.sh`（JTAG RAM 加载修复后镜像）→ 读 ttyACM0 看 nsh> 或完整 crash dump
+3. 若 RAM 加载 OK → 下一步 flash 方案（flash_jtag.sh 烧 0x0）+ bootloader 流程（T2）
+4. 若 JTAG 不通 → `/tmp/esptool412` 方案：`pip install --user esptool==4.12.0` 后 `esptool --chip esp32p4 load_ram`（rev3.2 支持）
+5. **全量重建**（8/21 进行中）：工作区改名后 cmake_out 全路径重建（CMakeCache 缺失），顺带完成 HAL 重拉可复现性验证（ghfast 代理 + kconfiglib 已装 + ninja/工具链 PATH 已确认）
 
 ## 四、环境/权限（已解决）
 

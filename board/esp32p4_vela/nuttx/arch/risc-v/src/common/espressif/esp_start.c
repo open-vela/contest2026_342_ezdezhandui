@@ -500,6 +500,22 @@ void __esp_start(void)
   bootloader_clear_bss_section();
 
 #ifdef CONFIG_ESPRESSIF_SIMPLE_BOOT
+  /* SIMPLE_BOOT boots straight into NuttX with no second-stage loader; the
+   * ROM may leave CLIC interrupt sources enabled which fire before NuttX
+   * installs its IRQ handlers, causing an early interrupt storm.  Disable
+   * every CLIC interrupt control byte here; NuttX re-enables what it needs
+   * during normal bring-up.
+   */
+
+  {
+    volatile uint8_t *clic_ctl = (volatile uint8_t *)(0x20801003);
+
+    for (int i = 0; i < 128; i++)
+      {
+        clic_ctl[i * 4] = 0;
+      }
+  }
+
   if (bootloader_init() != 0)
     {
       ets_printf("Hardware init failed, aborting\n");
@@ -513,8 +529,11 @@ void __esp_start(void)
   riscv_percpu_add_hart(0);
 #endif
 
-#if defined(CONFIG_ESPRESSIF_BOOTLOADER_MCUBOOT) || \
-    defined(CONFIG_ESPRESSIF_SIMPLE_BOOT)
+#if defined(CONFIG_ESPRESSIF_BOOTLOADER_MCUBOOT)
+  /* SIMPLE_BOOT (ram-only image) links all code/data into SRAM, so there is
+   * no flash-backed segment to map; mapping the SRAM address as a flash
+   * physical address would poison the whole SRAM region via the MMU.
+   */
   size_t partition_offset = PRIMARY_SLOT_OFFSET;
   uint32_t app_irom_start = partition_offset + (uint32_t)_image_irom_lma;
   uint32_t app_irom_size  = (uint32_t)_image_irom_size;

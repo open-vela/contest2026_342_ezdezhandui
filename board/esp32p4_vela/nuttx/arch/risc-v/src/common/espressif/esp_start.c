@@ -46,6 +46,7 @@
 #include "esp_private/esp_mmu_map_private.h"
 #include "esp_private/brownout.h"
 #include "hal/wdt_hal.h"
+#include "hal/efuse_hal.h"
 #include "hal/mmu_hal.h"
 #include "hal/mmu_types.h"
 #include "hal/cache_types.h"
@@ -483,6 +484,7 @@ void __esp_start(void)
 {
   esp_err_t ret;
 
+
   esp_cpu_intr_set_ivt_addr(&_vector_table);
 
 #if SOC_INT_CLIC_SUPPORTED
@@ -614,9 +616,10 @@ void __esp_start(void)
 #endif
 
 #ifdef CONFIG_ESPRESSIF_REGION_PROTECTION
-  /* Configure region protection */
-
-  esp_cpu_configure_region_protection();
+  /* Region protection is configured after PSRAM init (see below), because
+   * the PSRAM PMP entry needs esp_psram_get_heap_size_to_protect() which is
+   * only valid once the PSRAM chip is initialised.
+   */
 #endif
 
   /* Configure the power related stuff. */
@@ -632,6 +635,9 @@ void __esp_start(void)
   esp_mmu_map_init();
 
 #ifdef CONFIG_ESPRESSIF_SPIRAM
+  cache_ll_l1_enable_dcache(CACHE_LL_ID_ALL, true);
+  cache_ll_l1_enable_icache(CACHE_LL_ID_ALL, true);
+  cache_ll_l2_enable_cache(CACHE_LL_ID_ALL, true);
   ret = esp_psram_chip_init();
   if (ret != ESP_OK)
     {
@@ -652,6 +658,18 @@ void __esp_start(void)
         }
     }
 #  endif
+#endif
+#ifdef CONFIG_ESPRESSIF_REGION_PROTECTION
+  /* Configure region protection. NOTE: this must run AFTER PSRAM init,
+   * because the PSRAM PMP entry uses esp_psram_get_heap_size_to_protect()
+   * which returns 0 before the PSRAM chip is initialised, leaving PSRAM
+   * write-protected (PMP store access fault on CPU write to PSRAM).
+   * Also bootloader_init_mem() must NOT configure PMP before PSRAM init
+   * (see bootloader_mem.c openvela patch), otherwise the PSRAM PMP entry
+   * is locked with an empty TOR range and can never be widened.
+   */
+
+  esp_cpu_configure_region_protection();
 #endif
 
   /* Configures the CPU clock, RTC slow and fast clocks, and performs

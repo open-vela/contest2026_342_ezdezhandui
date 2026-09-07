@@ -47,6 +47,9 @@ deploy_tree "nuttx" "nuttx" "$WS/nuttx"
 if [ -d "$SRC/apps" ]; then
   deploy_tree "apps" "apps" "$WS/apps"
 fi
+if [ -d "$SRC/ai_agent" ]; then
+  deploy_tree "ai_agent" "ai_agent" "$WS/packages/ai_agent"
+fi
 
 echo ""
 echo "✅ 全部部署完成。请确认 HAL 锁定版本 ≥ 8d0a898（无 esp32p4 组件时："

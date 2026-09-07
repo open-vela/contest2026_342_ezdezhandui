@@ -17,7 +17,7 @@ AI 硬件产品创新 + 新硬件平台适配（双赛道）。
 ## 三、目录结构
 
 ```text
-board/esp32p4_vela/        # ESP32-P4 平台移植（文件树 nuttx+apps + 构建/烧录说明）
+board/esp32p4_vela/        # ESP32-P4 平台移植（文件树 nuttx+apps+ai_agent + 构建/烧录说明）
 docs/                      # 开发规划 V5.1 + 踩坑笔记 #01/#04/#05 + 状态交接
 .claude/skills/            # openvela 官方 AI 开发技能集（17 个，AI Coding 资产）
 logs/                      # AI Coding 日志（提交前持续导出）
@@ -26,22 +26,25 @@ logs/                      # AI Coding 日志（提交前持续导出）
 ## 四、运行方式
 
 移植采用**文件树 + repo manifest copyfile 自动映射**：作品仓 `board/esp32p4_vela/` 保存所有
-改动文件（nuttx 281 + apps 3），`contest2026_342_ezdezhandui.xml` 通过 284 条 `<copyfile>`
-在 `repo sync` 时把改动自动覆盖到工作区 nuttx/apps 对应路径（评审零手工拷贝）。
+改动文件（nuttx 281 + 8 删除、apps 3、ai_agent 9），`contest2026_342_ezdezhandui.xml` 通过
+**293 条 `<copyfile>`**（nuttx 281 + apps 3 + ai_agent 9）在 `repo sync` 时把改动自动覆盖到
+工作区 nuttx/apps/packages/ai_agent 对应路径（评审零手工拷贝）。
 了解实验内那 8 个被删除的上游文件见 `board/esp32p4_vela/nuttx/.deleted-files`。
 
 ```bash
 # 1. 环境（repo；esptool 软链见 board/esp32p4_vela/README.md）
+#    注意：本仓的 PR 需先合入（或评审从含 PR 的 fork 分支拉取），否则 gitee 官方分支是旧 manifest。
 repo init -u https://gitee.com/open-vela/contest2026_342_ezdezhandui.git \
   -b dev-ai-contest-2026 -m contest2026_342_ezdezhandui.xml
 repo sync -c -j8     # copyfile 自动应用全部改动 + 生成软链工具
 
-# 2. 处理被删除的上游文件（deploy 脚本自动删除）
+# 2. 处理被删除的上游文件（deploy 脚本按 .deleted-files 删除）
 cd contest2026_342_ezdezhandui/board/esp32p4_vela
-./deploy.sh ../../nuttx   # 幂等 rsync + 按 .deleted-files 删除
+./deploy.sh <openvela 工作区根>   # 幂等 rsync + 按 .deleted-files 删除；不带参数默认 ./(pwd) 为其根
+#   示例：若工作区根是 /path/to/openvela，则 ./deploy.sh /path/to/openvela
 
 # 3. 构建
-cd ../../..
+cd <openvela 工作区根>
 ./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8
 
 # 4. 启动：console 在 USB Serial/JTAG 口（ttyACM0, 115200），出现 nsh> 提示符
@@ -64,5 +67,6 @@ cd ../../..
 
 ## 七、状态
 
-- ✅ esp32p4 移植编译通过，ram-only 镜像生成（nuttx.bin 269KB）
-- ⏳ 真机 JTAG 烧录验证（详见 docs/STATUS.md）
+- ✅ esp32p4 移植编译通过，镜像生成（nuttx.bin 432KB，ram-only）
+- ✅ 真机烧录验证通过（console 启动 + ai_agent P0~P5 全链路，详见 docs/STATUS.md）
+- ✅ 全流程按 README 四步（init → sync → deploy → build）复现通过（293 copyfile 自动落位）

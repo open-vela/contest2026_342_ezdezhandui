@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
-# export.sh —— 把 openvela 工作区 nuttx/ 与 apps/ 的 esp32p4 改动
-#              同步回作品仓文件树（board/esp32p4_vela/{nuttx,apps}）
+# export.sh —— 把 openvela 工作区 nuttx/、apps/、packages/ai_agent 的
+#              esp32p4 改动同步回作品仓文件树（board/esp32p4_vela/{nuttx,apps,ai_agent}）
 #
 # 开发流程：在工作区改代码 → 编译验证 → ./export.sh 同步回文件树 → commit 作品仓
 #
@@ -10,8 +10,10 @@
 #       默认工作区 = $(pwd)（脚本位于 <工作区>/contest2026_342_ezdezhandui/board/esp32p4_vela/ 时）
 #       也可显式传工作区根，如 ./export.sh /home/ez/share/openvela
 #
-# 同步范围：nuttx/apps 各自 上游 dev-ai-contest-2026..HEAD 的全部改动
-#           （新增/修改复制；删除记入各自 .deleted-files）
+# 同步范围：
+#   - nuttx/apps：各自 上游 dev-ai-contest-2026..HEAD 的全部提交改动
+#   - ai_agent ：工作区未提交 diff（git diff HEAD；含新增/修改/删除）
+#     （新增/修改复制；删除记入各自 .deleted-files）
 # ============================================================
 set -e
 
@@ -26,9 +28,9 @@ else
 fi
 echo "📍 工作区: $WS"
 
-# ---- 同步一个仓的函数 ----
-# sync_repo <repo名:nuttx|apps> <工作区路径> <目标文件树>
-sync_repo() {
+# ---- 同步"提交式"仓（git diff BASE..HEAD）----
+# sync_committed <repo名> <工作区路径> <目标文件树>
+sync_committed() {
   local NAME="$1" REPO="$2" DST="$3"
   local BASE="refs/remotes/openvela/dev-ai-contest-2026"
   echo ""
@@ -42,15 +44,45 @@ sync_repo() {
     echo "❌ 基线不存在: $BASE（先 git fetch openvela dev-ai-contest-2026）"
     return
   fi
+  sync_diff "$NAME" "$REPO" "$DST" < <(git diff --no-renames --name-status "$BASE"..HEAD)
+}
+
+# ---- 同步"工作区 diff"仓（git diff HEAD，未提交）----
+# sync_worktree <repo名> <工作区路径> <目标文件树>
+sync_worktree() {
+  local NAME="$1" REPO="$2" DST="$3"
+  echo ""
+  echo "━━━ 同步 $NAME (工作区 diff vs HEAD) → $DST ━━━"
+  if [ ! -d "$REPO/.git" ]; then
+    echo "⚠️ 跳过：$REPO 不是 git 仓"
+    return
+  fi
+  cd "$REPO"
+  # 含 untracked? 不加 --no-renames 输出会含状态; 用 --no-renames 统一
+  sync_diff "$NAME" "$REPO" "$DST" < <(git status --porcelain 2>/dev/null | sed 's/^\(..\) /\1\t/')
+}
+
+# ---- 通用 diff 应用 ----
+# 输入行: <状态>\t<path>  (porcelain 两字母: XY; name-status 单字母)
+# porcelain 中 X=index 状态 Y=worktree 状态, 空格表示未变; 取非空格字母
+sync_diff() {
+  local NAME="$1" REPO="$2" DST="$3"
+  mkdir -p "$DST"
   DELETED="$DST/.deleted-files"
   : > "$DELETED"
-  local count=0
-  local del_count=0
+  local count=0 del_count=0
   while IFS=$'\t' read -r st path; do
     [ -z "$path" ] && continue
-    # 跳过仓级文件（非源码改动）
+    # 忽略 untracked(??) 与 ignored(!!)
+    case "$st" in
+      "??"|"!!") continue ;;
+    esac
+    # 取非空格状态字母（porcelain XY; 空格=该侧未变）
+    st="${st// /}"
+    st="${st:0:1}"
+    # 跳过仓级/构建产物文件
     case "$path" in
-      .gitignore|.gitmodules) continue ;;
+      .gitignore|.gitmodules|.built|.depend) continue ;;
     esac
     case "$st" in
       D)
@@ -59,14 +91,14 @@ sync_repo() {
         echo "  ✂ 删除 $path"
         del_count=$((del_count+1))
         ;;
-      A|M|R*|C*)
+      A|M|R|C)
         mkdir -p "$(dirname "$DST/$path")"
         cp "$REPO/$path" "$DST/$path"
         echo "  + $path"
         count=$((count+1))
         ;;
     esac
-  done < <(git diff --no-renames --name-status "$BASE"..HEAD)
+  done
   # 无删除文件时不保留空清单
   if [ "$del_count" -eq 0 ]; then
     rm -f "$DELETED"
@@ -74,8 +106,9 @@ sync_repo() {
   echo "  ✅ $NAME 同步 $count 文件"
 }
 
-sync_repo "nuttx" "$WS/nuttx" "$SCRIPT_DIR/nuttx"
-sync_repo "apps"  "$WS/apps"  "$SCRIPT_DIR/apps"
+sync_committed "nuttx" "$WS/nuttx" "$SCRIPT_DIR/nuttx"
+sync_committed "apps"  "$WS/apps"  "$SCRIPT_DIR/apps"
+sync_worktree "ai_agent" "$WS/packages/ai_agent" "$SCRIPT_DIR/ai_agent"
 
 echo ""
 echo "✅ 全部同步完成"

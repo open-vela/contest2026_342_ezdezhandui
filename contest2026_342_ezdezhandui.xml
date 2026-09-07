@@ -296,5 +296,14 @@
     <copyfile src="board/esp32p4_vela/nuttx/tools/espressif/espressif_esptool_common.cmake" dest="nuttx/tools/espressif/espressif_esptool_common.cmake"/>
     <copyfile src="board/esp32p4_vela/nuttx/tools/espressif/espressif_flash.cmake" dest="nuttx/tools/espressif/espressif_flash.cmake"/>
     <copyfile src="board/esp32p4_vela/nuttx/tools/espressif/espressif_mkimage.cmake" dest="nuttx/tools/espressif/espressif_mkimage.cmake"/>
+<copyfile src="board/esp32p4_vela/ai_agent/CMakeLists.txt" dest="packages/ai_agent/CMakeLists.txt"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/Makefile" dest="packages/ai_agent/Makefile"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/include/agent_config.h" dest="packages/ai_agent/include/agent_config.h"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/agent_main.c" dest="packages/ai_agent/src/agent_main.c"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/core/agent_loop.c" dest="packages/ai_agent/src/core/agent_loop.c"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/infra/config_store.c" dest="packages/ai_agent/src/infra/config_store.c"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/infra/vela_tls.c" dest="packages/ai_agent/src/infra/vela_tls.c"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/stubs.c" dest="packages/ai_agent/src/stubs.c"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/tools/skill_loader.c" dest="packages/ai_agent/src/tools/skill_loader.c"/>
   </project>
 </manifest>

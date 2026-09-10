@@ -51,7 +51,7 @@
 #define AGENT_SECRET_API_KEY ""
 #endif
 #ifndef AGENT_SECRET_MODEL
-#define AGENT_SECRET_MODEL "mimo-v2-flash"
+#define AGENT_SECRET_MODEL ""
 #endif
 #ifndef AGENT_SECRET_PROXY_HOST
 #define AGENT_SECRET_PROXY_HOST ""

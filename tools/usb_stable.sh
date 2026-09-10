@@ -3,7 +3,7 @@
 # 根因: esptool --before default_reset 每次硬件复位→设备重枚举(短暂消失)
 # 解决: 每次 USB 操作后等待设备稳定(udev settle + sleep),并带重试
 PORT=/dev/ttyACM0
-FW=${1:-/home/ez/share/openvela/out/nuttx_esp32p4-function-ev-board_nsh/nuttx.bin}
+FW=${1:-/home/ez/share/openvela/cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin}
 
 # 等待设备稳定(复位后设备重枚举,需等 ttyACM0 出现 + 可打开 + 缓冲)
 wait_stable() {

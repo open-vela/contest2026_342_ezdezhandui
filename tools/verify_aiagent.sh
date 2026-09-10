@@ -2,7 +2,7 @@
 # verify_aiagent.sh - 稳定验证 ai_agent 启动
 # 用 stable_usb 复位确保设备稳定,然后启动 ai_agent 持续读取(带重试)
 PORT=/dev/ttyACM0
-FW=${1:-/home/ez/share/openvela/out/nuttx_esp32p4-function-ev-board_nsh/nuttx.bin}
+FW=${1:-/home/ez/share/openvela/cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin}
 
 echo "[1/3] 复位确保设备稳定..."
 bash /tmp/stable_usb.sh "$FW" reset || exit 1

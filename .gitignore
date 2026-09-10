@@ -23,3 +23,7 @@ out/
 *.log
 nohup.out
 
+
+# Secrets / credentials（防误提交；与上游 packages/ai_agent/.gitignore 一致）
+*secrets*
+*.key

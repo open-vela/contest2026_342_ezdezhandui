@@ -445,6 +445,13 @@ endif()
 
 if(CONFIG_ESPRESSIF_BOOTLOADER_MCUBOOT)
   include(${CMAKE_CURRENT_SOURCE_DIR}/Bootloader.cmake)
+
+  # The MCUboot image is a flash-time artifact of this build (it is flashed at
+  # 0x2000 next to the application), but the bootloader target is not part of
+  # "all" on its own.  Without this dependency a plain
+  # `build.sh ... --cmake` on a fresh tree never produces
+  # nuttx/mcuboot-<chip>.bin and the documented two-image flashing flow fails.
+  add_dependencies(nuttx_context bootloader)
 else()
   add_custom_target(bootloader COMMAND ${CMAKE_COMMAND} -E echo
                                        "Using direct bootloader to boot NuttX.")

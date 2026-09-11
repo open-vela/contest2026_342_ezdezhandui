@@ -289,12 +289,23 @@ else()
   set(MCUBOOT_FLASH_FREQ "40m")
 endif()
 
-# Check if ninja is available for generator
+# Check if ninja is available for generator.
+#
+# openvela note: the outer build always runs ninja (build.sh exports
+# VELA_CMAKE_GENERATOR=Ninja), but the openvela ninja is a prebuilt that is not
+# necessarily on PATH.  The ExternalProject inherits CMAKE_GENERATOR from the
+# parent, so an empty -G here means "Ninja without CMAKE_MAKE_PROGRAM" and the
+# inner configure dies with:
+#   CMake was unable to find a build program corresponding to "Ninja".
+# Reuse the parent's ninja when we know it, otherwise fall back to Makefiles.
 find_program(NINJA_EXE NAMES ninja)
 if(NINJA_EXE)
-  set(MCUBOOT_GENERATOR "-GNinja")
+  set(MCUBOOT_GENERATOR "-GNinja" "-DCMAKE_MAKE_PROGRAM=${NINJA_EXE}")
+elseif(DEFINED CMAKE_MAKE_PROGRAM
+       AND "${CMAKE_MAKE_PROGRAM}" MATCHES "ninja")
+  set(MCUBOOT_GENERATOR "-GNinja" "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
 else()
-  set(MCUBOOT_GENERATOR "")
+  set(MCUBOOT_GENERATOR "-GUnix Makefiles")
 endif()
 
 ExternalProject_Add(

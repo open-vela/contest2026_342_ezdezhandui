@@ -337,5 +337,6 @@
     <copyfile src="board/esp32p4_vela/apps/examples/camera/camera_main.c" dest="apps/examples/camera/camera_main.c"/>
     <copyfile src="board/esp32p4_vela/ai_agent/src/channels/nsh_commands.c" dest="packages/ai_agent/src/channels/nsh_commands.c"/>
     <copyfile src="board/esp32p4_vela/ai_agent/src/infra/heartbeat.c" dest="packages/ai_agent/src/infra/heartbeat.c"/>
+    <copyfile src="board/esp32p4_vela/CSI_INTEGRATOR_HANDOFF.md" dest="CSI_INTEGRATOR_HANDOFF.md"/>
   </project>
 </manifest>

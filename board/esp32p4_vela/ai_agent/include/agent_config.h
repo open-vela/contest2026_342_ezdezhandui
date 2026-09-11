@@ -175,7 +175,10 @@
 #define AGENT_CRON_CHECK_INTERVAL_MS (10 * 1000)
 #define AGENT_CRON_ID_LEN 9 /* 8 hex chars + NUL */
 #define AGENT_CRON_STACK (4 * 1024)
-#define AGENT_CRON_PRIO 40
+/* NOTE: threads created with priority < 50 never get scheduled on this port
+ * (pthread_create returns 0 but the entry point is never entered), so all
+ * agent worker threads are pinned to the known-good 50..60 range. */
+#define AGENT_CRON_PRIO 50
 #define AGENT_HEARTBEAT_FILE AGENT_DATA_DIR "/HEARTBEAT.md"
 #define AGENT_HEARTBEAT_INTERVAL_MS (30 * 60 * 1000)
 
@@ -229,7 +232,7 @@
 
 /* ── Serial CLI ─────────────────────────────────────────────── */
 #define AGENT_CLI_STACK (8 * 1024)
-#define AGENT_CLI_PRIO 30
+#define AGENT_CLI_PRIO 50
 #define AGENT_CLI_CORE 0
 
 /* ── Config store keys (config store key strings) ─── */

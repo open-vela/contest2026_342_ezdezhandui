@@ -195,6 +195,67 @@ static const char *TAG = "skills";
     "- Add: get_current_time, then edit_file/write_file to append: - [ ] [YYYY-MM-DD] desc\n" \
     "- Complete: edit_file to change - [ ] to - [x]\n"
 
+/* ── DeskMate (桌伴) custom skills ───────────────────────────── */
+
+#define BUILTIN_CENTER_ASSISTANT \
+    "# 中控助手 (Center Assistant)\n\n" \
+    "桌伴 DeskMate 的智能家居中控场景技能：设备状态查询、回家/离家/睡眠场景、异常告警。\n\n" \
+    "## When to use\n" \
+    "当用户询问家里设备/环境状态，或要求执行中控场景（回家、离家、睡眠、唤醒、看护），\n" \
+    "或需要处理设备异常告警时使用。\n\n" \
+    "## Device registry\n" \
+    "设备清单与状态保存在 " AGENT_DATA_DIR "/memory/DEVICES.md，格式：\n" \
+    "- `## <房间>` 分节\n" \
+    "- 每行 `- <设备名>: <状态> (更新于 YYYY-MM-DD HH:MM)`\n" \
+    "首次使用时该文件可能不存在 —— 先用 write_file 建立初始清单。\n\n" \
+    "## How to use\n" \
+    "1. get_current_time 取当前时间\n" \
+    "2. read_file " AGENT_DATA_DIR "/memory/DEVICES.md 读设备状态（不存在则 write_file 建初始清单）\n" \
+    "3. 环境/天气类信息：web_search 查询本地天气\n" \
+    "4. 按用户意图生成场景动作清单（灯/空调/窗帘/安防等），并逐条汇报\n" \
+    "5. 状态有变化：edit_file 更新 DEVICES.md 对应行（含更新时间）\n" \
+    "6. 异常告警：屏显一句话摘要，并把事件追加到 " AGENT_DATA_DIR "/memory/ALERTS.md\n" \
+    "7. 若用户要求定时执行（如每天 8:00 播报），用 cron_add 建立定时任务\n\n" \
+    "## Scenes\n" \
+    "- **回家 (home)**: 玄关灯开、空调 26C、播报今日天气与待办\n" \
+    "- **离家 (away)**: 非必要设备关闭、安防布防\n" \
+    "- **睡眠 (sleep)**: 灯光渐暗、安防布防、静音\n" \
+    "- **看护 (watch)**: 摄像头事件主动关注，异常即告警\n\n" \
+    "## Example\n" \
+    "User: \"我回来了\"\n" \
+    "-> get_current_time, read_file DEVICES.md, web_search \"今天天气\"\n" \
+    "-> 执行回家场景，回复：\"欢迎回家。客厅灯已开，空调 26C。今天 24C 多云，晚间有雨。\"\n"
+
+#define BUILTIN_QUICK_NOTE \
+    "# 速记工单 (Quick Note / Work Order)\n\n" \
+    "把语音或文字口述内容转成结构化记录/工单，落盘并可到点提醒。\n\n" \
+    "## When to use\n" \
+    "当用户说\"记一下…\"\"帮我记个工单\"\"记录一个问题\"\"备忘\"\"提醒我…\"时使用。\n" \
+    "仅在这些明确记录意图时使用；不要为天气/搜索等任务自动建工单。\n\n" \
+    "## Output format\n" \
+    "工单追加写入 " AGENT_DATA_DIR "/memory/TICKETS.md，每条格式：\n" \
+    "```\n" \
+    "## T-<YYYYMMDD>-<NN>  <标题>\n" \
+    "- 时间: YYYY-MM-DD HH:MM\n" \
+    "- 类别: 待办/故障/想法/会议/采购\n" \
+    "- 优先级: 高/中/低\n" \
+    "- 状态: 未开始\n" \
+    "- 描述: <用户原话要点>\n" \
+    "```\n\n" \
+    "## How to use\n" \
+    "1. get_current_time 取时间戳\n" \
+    "2. read_file " AGENT_DATA_DIR "/memory/TICKETS.md 统计已有条数，生成本条编号 NN（不存在则 write_file 建表头）\n" \
+    "3. 从用户原话抽取：标题、类别、优先级、描述（保留关键细节，不要臆造）\n" \
+    "4. edit_file 或 write_file 追加本条工单\n" \
+    "5. 若原话含明确时间点（\"明早 9 点\"\"半小时后\"），用 cron_add 建提醒任务\n" \
+    "6. 回复工单号 + 字段摘要 + 提醒时间（若有）\n\n" \
+    "## Example\n" \
+    "User: \"记一下明早 9 点项目评审\"\n" \
+    "-> get_current_time, read_file TICKETS.md\n" \
+    "-> 追加 T-20260912-01 项目评审 / 会议 / 高\n" \
+    "-> cron_add 明早 09:00 提醒\n" \
+    "-> \"已记录：T-20260912-01 项目评审（会议，高优先级），将于明早 9:00 提醒你。\"\n"
+
 /* Built-in skill registry */
 typedef struct {
     const char *filename;   /* e.g. "weather" */
@@ -212,6 +273,9 @@ static const builtin_skill_t s_builtins[] = {
     { "news-digest",    BUILTIN_NEWS_DIGEST    },
     { "feishu-test",    BUILTIN_FEISHU_TEST    },
     { "task-manager",   BUILTIN_TASK_MANAGER   },
+    /* DeskMate (桌伴) custom skills — 赛题② 自定义 Skill */
+    { "center-assistant", BUILTIN_CENTER_ASSISTANT },
+    { "quick-note",      BUILTIN_QUICK_NOTE      },
 };
 
 #define NUM_BUILTINS (sizeof(s_builtins) / sizeof(s_builtins[0]))

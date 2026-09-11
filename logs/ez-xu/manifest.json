@@ -3,7 +3,7 @@
   "team_id": "contest2026-342",
   "github_login": "ez-xu",
   "generator": "claude-code-collector@1.2.0",
-  "updated_at": "2026-09-10T07:13:03.397Z",
+  "updated_at": "2026-09-11T08:55:30.492914+00:00",
   "sessions": [
     {
       "session_id": "020c57b8-625e-4b12-8239-f389b6dcac77",
@@ -197,6 +197,30 @@
       "collection_mode": "cli",
       "health": "ok",
       "model": "deepseek-v4-flash"
+    },
+    {
+      "session_id": "68b26cc7-d0a1-475c-ba57-149f017ac47d",
+      "tool": "claude-code",
+      "started_at": "2026-09-10T07:13:00.340Z",
+      "last_event_at": "2026-09-10T07:13:00.340Z",
+      "event_count": 17,
+      "raw_event_count": 54,
+      "file_path": "logs/ez-xu/2026-09-10/claude-code__68b26cc7-d0a1-475c-ba57-149f017ac47d.jsonl",
+      "collection_mode": "cli",
+      "health": "ok",
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "session_id": "7d52faed-5b4f-4e1a-b986-920ba50f2225",
+      "tool": "claude-code",
+      "started_at": "2026-09-10T07:13:00.824Z",
+      "last_event_at": "2026-09-10T07:13:00.824Z",
+      "event_count": 49,
+      "raw_event_count": 135,
+      "file_path": "logs/ez-xu/2026-09-10/claude-code__7d52faed-5b4f-4e1a-b986-920ba50f2225.jsonl",
+      "collection_mode": "cli",
+      "health": "ok",
+      "model": "deepseek-v4-flash-ga-260731"
     }
   ]
 }

@@ -26,10 +26,10 @@ logs/                      # AI Coding 日志（提交前持续导出）
 ## 四、运行方式
 
 移植采用**文件树 + repo manifest copyfile 自动映射**：作品仓 `board/esp32p4_vela/` 保存所有
-改动文件（nuttx 281 + 8 删除、apps 3、ai_agent 9），`contest2026_342_ezdezhandui.xml` 通过
-**293 条 `<copyfile>`**（nuttx 281 + apps 3 + ai_agent 9）在 `repo sync` 时把改动自动覆盖到
-工作区 nuttx/apps/packages/ai_agent 对应路径（评审零手工拷贝）。
-了解实验内那 8 个被删除的上游文件见 `board/esp32p4_vela/nuttx/.deleted-files`。
+改动文件，`contest2026_342_ezdezhandui.xml` 通过 **300 条 `<copyfile>`**
+（nuttx 285 + packages/ai_agent 12 + apps/crypto 3）在 `repo sync` 时把改动自动覆盖到
+工作区对应路径（评审零手工拷贝）。
+被删除的 8 个上游文件见 `board/esp32p4_vela/nuttx/.deleted-files`。
 
 ```bash
 # 1. 环境（repo；esptool 软链见 board/esp32p4_vela/README.md）
@@ -43,30 +43,46 @@ cd contest2026_342_ezdezhandui/board/esp32p4_vela
 ./deploy.sh <openvela 工作区根>   # 幂等 rsync + 按 .deleted-files 删除；不带参数默认 ./(pwd) 为其根
 #   示例：若工作区根是 /path/to/openvela，则 ./deploy.sh /path/to/openvela
 
-# 3. 构建
+# 3. 构建（产出两个镜像）
 cd <openvela 工作区根>
 ./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8
+#   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  ← 应用（MCUboot 签名）
+#   nuttx/mcuboot-esp32p4.bin                         ← MCUboot 二级引导
 
-# 4. 启动：console 在 USB Serial/JTAG 口（ttyACM0, 115200），出现 nsh> 提示符
+# 4. 烧录（⚠️ MCUboot 两镜像；旧的"单镜像写 0x2000"已失效）
+cd contest2026_342_ezdezhandui
+tools/usb_stable.sh
+#   0x2000  ← MCUboot 引导；0x20000 ← 应用（OTA_0 主槽）；两镜像均做 hash 校验
+
+# 5. 看 console：/dev/ttyUSB0（CP2102，115200；打开时须 assert DTR/RTS）→ 出现 nsh>
+python3 tools/board.py reset                 # 复位并抓启动日志
+python3 tools/board.py run "free" "ai_agent"
 ```
+
 
 ## 五、作品功能
 
 | 功能 | 实现 | 赛题点 |
 |---|---|---|
-| openvela 移植 ESP32-P4 | 板级+芯片移植（补丁见 board/）→ 串口 console 启动 | 适配赛道核心 |
-| LLM 对话 | ai_agent + MiMo（goldfish 验证：`ask 现在几点了` 内置工具链路工作） | ① Agent 上硬件 |
-| 自定义 Skill ×2 | 中控助手、速记工单（/data/agent/skills/） | ② |
-| 事件主动（摄像头） | MIPI-CSI 2MP 人形检测 → 主动问候/告警 | ③ |
-| 定时主动 | cron_add + weather/daily-briefing + TTS | ③ |
+| openvela 移植 ESP32-P4X-C5 | 板级+芯片移植（MCUboot 二级引导 + flash XIP，SRAM 460KB→83KB）→ console/ETH/PSRAM | 适配赛道核心 |
+| LLM 对话 | ai_agent + MiMo（`llm_router` 多后端；链路已验证，**key 需有效额度**） | ① Agent 上硬件 |
+| 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
+| 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |
+| 事件主动（摄像头） | MIPI-CSI + SC2336 → 视觉检测 → 主动问候/告警 | ③ |
+| LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸 | ① + 加分 |
 
 ## 六、AI 开发记录
 
 - 全流程 AI Coding，日志导出至 `logs/`（contest-log-collector）
 - 沉淀：openvela 官方 17 个开发技能（.claude/skills/）+ 本仓文档（docs/）
 
-## 七、状态
+## 七、状态（2026-09-11 更新）
 
-- ✅ esp32p4 移植编译通过，镜像生成（nuttx.bin 432KB，ram-only）
-- ✅ 真机烧录验证通过（console 启动 + ai_agent P0~P5 全链路，详见 docs/STATUS.md）
-- ✅ 全流程按 README 四步（init → sync → deploy → build）复现通过（293 copyfile 自动落位）
+- ✅ esp32p4 移植编译通过；**MCUboot 二级引导 + flash XIP 打通**（SRAM 占用 460KB→83KB）
+- ✅ 真机闭环：`tools/usb_stable.sh`（两镜像烧录）→ MCUboot banner → NSH → `ai_agent` P0→P6 全 rc=0
+- ✅ 真机验证：eth0 10.0.0.2、PSRAM 33.9MB、cron 真实启动、WebSocket 控制通道（28789）
+- ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）
+- ⏳ LVGL 触控 UI / 摄像头事件主动：驱动落地中
+- ⏳ 演示视频 + 《作品介绍》随提交材料
+- 📌 详细状态与差距见 `docs/01_开发规划文档.md` §九/§十、`docs/05_开发过程复盘与改进清单.md` §十九~§二十二
+

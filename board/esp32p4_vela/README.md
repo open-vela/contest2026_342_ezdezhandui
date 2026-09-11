@@ -21,7 +21,22 @@ cd contest2026_342_ezdezhandui/board/esp32p4_vela
 # 3. 构建
 cd ../../..
 ./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8
-# 产物：cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin（ram-only 格式，269KB）
+# 产物（两个都要烧）：
+#   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  MCUboot 签名镜像（OTA_0 槽内填充 1,835,008 B）
+#   nuttx/mcuboot-esp32p4.bin                         MCUboot 二级引导（24,640 B）
+
+# 4. 烧录（⚠️ 两镜像流程；旧的"单镜像写 0x2000"已失效）
+cd contest2026_342_ezdezhandui
+tools/usb_stable.sh                    # 默认路径，或 tools/usb_stable.sh <app.bin> <mcuboot.bin>
+#   -> 0x2000  写 MCUboot 引导
+#   -> 0x20000 写应用镜像（OTA_0 主槽）
+#   脚本校验两个镜像都完成 hash 校验，任一未完成即报错退出
+
+# 5. console 在 /dev/ttyUSB0（CP2102 UART 桥，115200）
+#    ⚠️ 打开串口必须 assert DTR/RTS，否则读到 0 字节（见 §四）
+#    /dev/ttyACM0（USB-Serial/JTAG）仅用于烧录与 ROM/MCUboot 日志
+python3 tools/board.py reset              # 复位并抓启动日志
+python3 tools/board.py run "free" "ps"    # 发命令并抓输出
 ```
 
 > ⚠️ HAL 版本锁定：`ESP_HAL_3RDPARTY_VERSION` 需 ≥ `8d0a89891008`（更旧的锁定 commit
@@ -91,20 +106,47 @@ cd <作品仓> && git add -A && git commit -m "..."
 | `nuttx/CMakeLists.txt`（M） | +`NUTTX_BINARY_DIR` 定义（HAL 路径解析）；LD_SCRIPT 多文件 foreach 支持（esp32p4 有 12+ ROM ld 脚本） |
 | `arch/risc-v/src/common/CMakeLists.txt`（M） | `riscv_mtimer.c` 改 `if(CONFIG_ONESHOT)` 条件编译（CONFIG_ONESHOT 未开时 oneshot_operations_s 无该成员） |
 
-## 四、烧录与验证（JTAG）
+## 四、烧录与验证
+
+### 4.1 常规烧录（esptool，两镜像）
 
 ```bash
-# 1. 板子按 Reset（运行模式，下载模式 JTAG 关闭）
-cd /tmp/openocd-esp32/share/openocd/scripts
-nohup /tmp/openocd-esp32/bin/openocd -f interface/esp_usb_jtag.cfg -f target/esp32p4.cfg \
-  > /tmp/openocd.log 2>&1 &
-
-# 2. telnet 4444
-#    flash probe 0 → flash write_image erase <nuttx.bin> 0x0 → reset run
-
-# 3. 停 OpenOCD（否则占用 USB，ttyACM0 消失）
-# 4. 读 ttyACM0 看 nsh> 提示符（console 在 USB Serial/JTAG 口，115200）
+tools/usb_stable.sh          # = esptool 写 0x2000(引导) + 0x20000(应用)，两镜像均校验
 ```
+
+### 4.2 端口拓扑与串口注意事项（2026-09-11 实测）
+
+| 端口 | 用途 | 要点 |
+|---|---|---|
+| `/dev/ttyACM0` | Espressif USB-Serial/JTAG | **烧录**（esptool）+ ROM/MCUboot 日志 |
+| `/dev/ttyUSB0` | CP2102 UART 桥 | **NuttX console（UART0）**，115200 |
+
+> ⚠️ **读 console 必须 assert DTR/RTS**：`serial.Serial(port, ...)` 后需 `s.dtr = True; s.rts = True`，
+> 否则读到的永远是 0 字节（本次调试实际踩到）。`tools/board.py` 已内置该处理。
+> ⚠️ 旧文档写的"console 在 USB Serial/JTAG 口"已过时：`CONFIG_ESPRESSIF_USBSERIAL` 已关闭，
+> console 走 UART0 → CP2102。
+
+### 4.3 JTAG 调试（可选）
+
+```bash
+cd ~/tools/openocd-esp32
+nohup ./bin/openocd -f interface/esp_usb_jtag.cfg -f target/esp32p4.cfg > /tmp/openocd.log 2>&1 &
+# telnet 4444 → halt / reg pc / flash probe 0 / resume
+# ⚠️ OpenOCD 运行期间会占用 USB；用完务必 `pkill -x openocd`，否则 ttyACM0/ttyUSB0 异常
+```
+
+### 4.4 flash 分区（MCUboot 视角：前 4MB）
+
+```
+0x000000 - 0x002000  ROM 引导
+0x002000 - 0x020000  MCUboot 引导 (24,640 B)     ← tools/usb_stable.sh 写 0x2000
+0x020000 - 0x1E0000  OTA_0 主槽 (1.75MB)         ← 写 0x20000
+0x1E0000 - 0x3A0000  OTA_1 副槽
+0x3A0000 - 0x3E0000  scratch (256KB)
+─────────────── MCUboot 视野上限 4MB ───────────────
+0x400000 - 0x1000000 其余 12MB 归应用
+```
+
 
 ## 五、已知环境坑（详见 docs/踩坑笔记_05_esp32p4移植.md）
 

@@ -63,6 +63,14 @@
 CONFIG_ARCH="risc-v"
 CONFIG_ARCH_BOARD="esp32p4-function-ev-board"
 CONFIG_ARCH_BOARD_COMMON=y
+# Build through the "custom board" path so that CMake symlinks this
+# board's Kconfig into $BINDIR/boards/dummy/Kconfig and sources it.
+# Without CUSTOM_DIR resolving to this directory CMake falls back to an
+# empty dummy Kconfig and every ESP32P4_FUNCTION_EV_BOARD_* option below
+# is silently dropped.  Must match boards/risc-v/esp32p4/<board>.
+CONFIG_ARCH_BOARD_CUSTOM=y
+CONFIG_ARCH_BOARD_CUSTOM_DIR="boards/risc-v/esp32p4/esp32p4-function-ev-board"
+CONFIG_ARCH_BOARD_CUSTOM_DIR_RELPATH=y
 CONFIG_ARCH_CHIP="esp32p4"
 CONFIG_ARCH_CHIP_ESP32P4=y
 CONFIG_ARCH_INTERRUPTSTACK=2048
@@ -90,6 +98,9 @@ CONFIG_LIBC_STRERROR=y
 CONFIG_NETDEV_IFINDEX=y
 CONFIG_NETUTILS_CJSON=y
 CONFIG_NET_SOCKOPTS=y
+# TCP for the ai_agent WebSocket control channel (ws_server, port 28789).
+# Without this socket(AF_INET, SOCK_STREAM) fails and the channel is dead.
+CONFIG_NET_TCP=y
 CONFIG_NFILE_DESCRIPTORS_PER_BLOCK=6
 CONFIG_NSH_ARCHINIT=y
 CONFIG_NSH_BUILTIN_APPS=y
@@ -170,3 +181,73 @@ CONFIG_ESPRESSIF_OTA_SECONDARY_SLOT_OFFSET=0x1E0000
 CONFIG_ESPRESSIF_OTA_SLOT_SIZE=0x1C0000
 CONFIG_ESPRESSIF_OTA_SCRATCH_OFFSET=0x3A0000
 CONFIG_ESPRESSIF_OTA_SCRATCH_SIZE=0x40000
+
+# ── MIPI-DSI display: 7.0" 1024x600 EK79007 + EK73217 panel module ──
+# Power path: LDO ch3 @ 2500 mV (VDD_MIPI_DPHY) -> GPIO27 reset pulse ->
+# backlight off until video streams.  GPIO26 (BKLT) and GPIO27 (RST) are not
+# on the LCD FPC; they need the J1 -> J6 jumper.  Turn the two _LCD_BL /
+# _LCD_RST options off if that jumper is not fitted.
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_POWER=y
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_RST=y
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_BL=y
+CONFIG_ESPRESSIF_MIPI_DSI=y
+CONFIG_ESPRESSIF_MIPI_DSI_LANES=2
+CONFIG_ESPRESSIF_MIPI_DSI_LANE_BITRATE_MBPS=900
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_MIPI_DSI=y
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD=y
+# Bring-up aid: flash All-Pixels-On for 1 s to separate "panel + backlight
+# path alive" from "DPI video timing correct".  Disable for production.
+# CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_APO_TEST is not set
+
+# ── GT911 capacitive touch on the shared I2C0 bus (SDA=GPIO7, SCL=GPIO8) ──
+# No INT/RST line is routed on this module: the controller is polled.
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_TOUCHSCREEN=y
+CONFIG_ESPRESSIF_I2C0=y
+CONFIG_ESPRESSIF_I2C0_SDAPIN=7
+CONFIG_ESPRESSIF_I2C0_SCLPIN=8
+CONFIG_INPUT=y
+CONFIG_INPUT_GT9XX=y
+
+# ── LVGL on the framebuffer + touchscreen (NuttX fbdev/input glue) ──
+CONFIG_GRAPHICS_LVGL=y
+CONFIG_LV_USE_NUTTX=y
+CONFIG_LV_USE_NUTTX_TOUCHSCREEN=y
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_USE_CLIB_STRING=y
+
+# ── UART0 console: large TX buffer so bursty output is not dropped ──
+CONFIG_UART0_TXBUFSIZE=2048
+
+# ── LVGL demo as an NSH command (INIT_ENTRYPOINT stays nsh_main) ──
+# Type `lvgldemo` at the NSH prompt to run LVGL on /dev/fb0 with
+# /dev/input0 as the pointer device.  Nothing runs at boot.
+CONFIG_EXAMPLES_LVGLDEMO=y
+CONFIG_EXAMPLES_LVGLDEMO_INPUT_DEVPATH="/dev/input0"
+CONFIG_LV_USE_DEMO_WIDGETS=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+
+# ── MIPI-CSI camera: SC2336 (AS-AG638A32M2-50) on 2-lane CSI-2 -> /dev/video0 ──
+# NOTE: CONFIG_VIDEO_REQBUFS_COUNT_MAX must be written explicitly — it is a
+# prompt-less int inside "if VIDEO_STREAM", and a defconfig does not record
+# defaulted prompt-less ints; without it v4l2_cap.c fails with "undeclared".
+# Lane bit rate MUST be 405 to match the sensor's 1920x1080@30 RAW10 table
+# (the 200 used by Espressif's IDF example yields no frames).
+CONFIG_DRIVERS_VIDEO=y
+CONFIG_VIDEO_STREAM=y
+CONFIG_VIDEO_REQBUFS_COUNT_MAX=3
+CONFIG_ESPRESSIF_MIPI_CSI=y
+CONFIG_ESPRESSIF_MIPI_CSI_H_RES=1920
+CONFIG_ESPRESSIF_MIPI_CSI_V_RES=1080
+CONFIG_ESPRESSIF_MIPI_CSI_LANES=2
+CONFIG_ESPRESSIF_MIPI_CSI_LANE_BITRATE_MBPS=405
+CONFIG_VIDEO_SC2336=y
+CONFIG_SC2336_I2CADDR=0x30
+CONFIG_SC2336_FREQUENCY=100000
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_CAMERA=y
+
+# ── V4L2 capture test app (apps/examples/camera) -> NSH builtin `camera` ──
+# Used to prove the MIPI-CSI/SC2336 capture path end to end on hardware.
+CONFIG_EXAMPLES_CAMERA=y
+CONFIG_EXAMPLES_CAMERA_PROGNAME="camera"
+CONFIG_EXAMPLES_CAMERA_STACKSIZE=8192

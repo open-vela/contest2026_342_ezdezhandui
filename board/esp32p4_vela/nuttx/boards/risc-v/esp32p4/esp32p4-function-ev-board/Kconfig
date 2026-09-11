@@ -3,6 +3,146 @@
 # see the file kconfig-language.txt in the NuttX tools repository.
 #
 
+# This board is built through the "custom board" path: the defconfig selects
+# ARCH_BOARD_CUSTOM and points ARCH_BOARD_CUSTOM_DIR at this directory, which
+# makes CMake symlink this very file to $BINDIR/boards/dummy/Kconfig (sourced
+# by boards/Kconfig).  Because the board is selected by directory rather than
+# by a choice symbol, the conventional ARCH_BOARD_<name> symbol is not
+# otherwise defined anywhere in this tree; declare it here so the rest of the
+# file can use the usual guard.  Only this board's Kconfig is sourced for this
+# board, so the symbol cannot leak into any other board's configuration.
+config ARCH_BOARD_ESP32P4_FUNCTION_EV_BOARD
+	bool
+	default y
+	depends on ARCH_CHIP_ESP32P4
+
 if ARCH_BOARD_ESP32P4_FUNCTION_EV_BOARD
+
+config ESP32P4_FUNCTION_EV_BOARD_LCD_POWER
+	bool "LCD / MIPI-DSI power, reset and backlight path"
+	default n
+	select ESPRESSIF_LDO
+	---help---
+		At board bring-up, enable on-chip LDO channel 3 (ESP_LDO_VO3) at
+		2500 mV for VDD_MIPI_DPHY, pulse the panel reset line and leave the
+		backlight off until video is streaming.
+
+		The MIPI-DSI/CSI PHY supply MUST be up before the DSI host is
+		initialized, so this option is a prerequisite of
+		ESP32P4_FUNCTION_EV_BOARD_MIPI_DSI.
+
+		This option alone does not register the DSI host, initialize the
+		panel, or create /dev/fb0.
+
+if ESP32P4_FUNCTION_EV_BOARD_LCD_POWER
+
+config ESP32P4_FUNCTION_EV_BOARD_LCD_RST
+	bool "Drive the panel reset line (GPIO27)"
+	default y
+	---help---
+		Pulse GPIO27 low for 10 ms and high for 20 ms before sending the
+		panel initialization sequence.
+
+		GPIO27 is NOT part of the LCD FPC pinout: it only reaches the panel
+		adapter when the J1 -> J6 jumper is fitted.  Turn this off when the
+		jumper is absent; nothing else needs to change.
+
+config ESP32P4_FUNCTION_EV_BOARD_LCD_BL
+	bool "Drive the backlight enable (GPIO26)"
+	default y
+	---help---
+		Drive GPIO26 high once the DSI video stream is running and the
+		panel has been switched on.
+
+		GPIO26 is NOT part of the LCD FPC pinout: it only reaches the panel
+		adapter when the J1 -> J6 jumper is fitted.  Turn this off when the
+		jumper is absent (for example when the module backlight is always
+		on) to avoid driving an unconnected pin.
+
+endif # ESP32P4_FUNCTION_EV_BOARD_LCD_POWER
+
+config ESP32P4_FUNCTION_EV_BOARD_MIPI_DSI
+	bool "Register MIPI-DSI host at bring-up"
+	default n
+	depends on ESP32P4_FUNCTION_EV_BOARD_LCD_POWER && ESPRESSIF_MIPI_DSI
+	---help---
+		After the LCD power path succeeds, call esp_mipi_dsi_initialize()
+		with the board's 2-lane / 900 Mbps bus configuration so the generic
+		MIPI-DSI host is registered and LP DCS transfers are possible.
+
+		Does not run panel initialization or create /dev/fb0 by itself;
+		enable ESP32P4_FUNCTION_EV_BOARD_LCD for that.
+
+config ESP32P4_FUNCTION_EV_BOARD_LCD
+	bool "LCD panel (EK79007) and /dev/fb0"
+	default n
+	depends on ESP32P4_FUNCTION_EV_BOARD_MIPI_DSI
+	select DRIVERS_VIDEO
+	select VIDEO_FB
+	select FB_UPDATE
+	---help---
+		Bring up the board's 7.0" 1024x600 MIPI-DSI panel module
+		(AML070JGI50-07403L: EK79007 source driver + EK73217 gate driver),
+		allocate a 1024x600 RGB565 framebuffer from the PSRAM heap, bind it
+		to the DSI bridge through DW-GDMA and register /dev/fb0.
+
+		The panel is initialized with the Espressif esp_lcd_ek79007 vendor
+		sequence and driven with the matching 52 MHz DPI timing.
+
+config ESP32P4_FUNCTION_EV_BOARD_LCD_APO_TEST
+	bool "All-Pixels-On flash after FB bring-up"
+	default n
+	depends on ESP32P4_FUNCTION_EV_BOARD_LCD
+	---help---
+		After /dev/fb0 is ready, force All-Pixels-On for one second, then
+		All-Pixels-Off and restore the solid red test fill.  Useful to
+		separate "panel/backlight path works" from "video stream is
+		configured correctly" during hardware bring-up.
+
+config ESP32P4_FUNCTION_EV_BOARD_TOUCHSCREEN
+	bool "GT911 touch screen controller"
+	default n
+	select INPUT
+	select INPUT_GT9XX
+	select ESPRESSIF_I2C0
+	---help---
+		Probe the GT911 capacitive touch controller on the shared I2C0 bus
+		(SDA = GPIO7, SCL = GPIO8) and register it as /dev/input0.
+
+		Neither the reset nor the interrupt line is routed to the SoC on
+		this panel module, so the controller is polled: the GT9xx driver
+		performs an I2C read per sample and attaches no interrupt handler.
+		This is compatible with the LVGL NuttX touchscreen glue, which reads
+		/dev/input0 from its own input timer.
+
+config ESP32P4_FUNCTION_EV_BOARD_CAMERA
+	bool "MIPI-CSI camera (SC2336) and /dev/video0"
+	default n
+	depends on ESPRESSIF_MIPI_CSI && VIDEO_SC2336
+	select I2C
+	---help---
+		Bring up the MIPI-CSI capture path of the ESP32-P4X-C5-Function-EV
+		Board and register it as a V4L2 capture device (/dev/video0).
+
+		The board carries an AS-AG638A32M2-50 module built around the
+		SmartSens SC2336 (1/3", 1920x1080) on a 2-lane MIPI CSI-2 link.
+
+		The module has its own 24 MHz oscillator and its reset line is hard
+		pulled to 3.3 V, so no clock or reset GPIO is driven.  The MIPI PHY
+		supply (on-chip LDO channel 3 @ 2500 mV, shared with the DSI PHY) is
+		acquired by esp_csi_imgdata_initialize(); it is reference counted,
+		so enabling both the LCD and the camera is safe.
+
+		The sensor SCCB interface shares I2C0 (SDA GPIO7, SCL GPIO8) with
+		the GT911 touch controller.
+
+		The CSI receiver window is fixed at the resolution configured by
+		CONFIG_ESPRESSIF_MIPI_CSI_H_RES/_V_RES; resolution changes at
+		run time are not supported yet.
+
+config ESP32P4_FUNCTION_EV_BOARD_CAMERA_DEVPATH
+	string "Camera capture device path"
+	default "/dev/video0"
+	depends on ESP32P4_FUNCTION_EV_BOARD_CAMERA
 
 endif # ARCH_BOARD_ESP32P4_FUNCTION_EV_BOARD

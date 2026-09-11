@@ -27,3 +27,8 @@ nohup.out
 # Secrets / credentials（防误提交；与上游 packages/ai_agent/.gitignore 一致）
 *secrets*
 *.key
+
+# 构建产物 / 临时备份：绝不进入提交
+build-esp32p4-bootloader/
+*.pre-*-backup
+*.pre-*.backup

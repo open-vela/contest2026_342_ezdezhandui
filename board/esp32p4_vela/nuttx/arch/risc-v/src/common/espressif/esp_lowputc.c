@@ -392,6 +392,29 @@ bool esp_lowputc_uart_module_enable(const struct esp_uart_s *priv)
 void esp_lowputc_send_byte(const struct esp_uart_s *priv, char byte)
 {
   uint32_t write_size;
+
+  /* Wait for room in the TX FIFO.
+   *
+   * Without this wait, uart_hal_write_txfifo() writes nothing when the FIFO is
+   * full (write_size comes back 0) and the byte is silently lost.
+   * up_putc() -> this function is the console path used by syslog/printf, so
+   * any output burst longer than the FIFO depth was being truncated.
+   * Symptom observed on the ESP32-P4X board: ~1.5 KB of ai_agent startup log
+   * vanished and the agent CLI prompt never appeared on the console.
+   *
+   * The FIFO drains at the configured baud rate, so this self-limits.
+   */
+
+  while (uart_hal_get_txfifo_len(priv->hal) <= 1)
+    {
+      if (up_interrupt_context())
+        {
+          continue;   /* cannot sleep in interrupt context */
+        }
+
+      usleep(100);
+    }
+
   uart_hal_write_txfifo(priv->hal, (const uint8_t *)&byte, 1, &write_size);
 }
 

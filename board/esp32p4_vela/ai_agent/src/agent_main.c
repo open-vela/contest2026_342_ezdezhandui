@@ -464,6 +464,7 @@ static inline long boot_ms(struct timespec* t0)
     syslog((rc) == OK ? LOG_INFO : LOG_WARNING, \
         "[%s] [boot +%ldms] " phase ": " msg " (rc=%d)\n", TAG, boot_ms(t0), (rc))
 
+
 int ai_agent_main(int argc, char* argv[])
 {
     (void)argc;
@@ -684,6 +685,17 @@ int ai_agent_main(int argc, char* argv[])
     }
 #endif
 
+    /* ── Phase 6: CLI thread ──
+     * NOTE: on this port the LAST pthread created in a burst is left in
+     * READYTORUN and never scheduled (observed: agent_cli stayed ready while
+     * the four earlier threads all ran). Creating the CLI thread here, before
+     * the network watcher, keeps it off the tail of that burst.
+     */
+    {
+        int rc = nsh_commands_start();
+        BOOT_LOG_RC(&t0, "P6", "nsh_commands_start", rc);
+    }
+
     /* Network watcher thread: reconnect + wait + start net services */
     if (agent_task_create(network_watch_task, "net_watch",
             AGENT_OUTBOUND_STACK, NULL,
@@ -693,14 +705,9 @@ int ai_agent_main(int argc, char* argv[])
     }
     BOOT_LOG(&t0, "P5", "network_watch thread started (async)");
 
-    /* ── Phase 6: CLI thread — all services now in known state ── */
-    {
-        int rc = nsh_commands_start();
-        BOOT_LOG_RC(&t0, "P6", "nsh_commands_start", rc);
-    }
-
     syslog(LOG_INFO, "[%s] [boot +%ldms] AI Agent ready. Type 'help' in NSH for commands.\n",
         TAG, boot_ms(&t0));
+
 
     /* Block main thread until shutdown is requested */
     while (!g_shutdown_requested) {

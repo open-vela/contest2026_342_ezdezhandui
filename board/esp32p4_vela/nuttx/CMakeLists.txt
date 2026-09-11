@@ -321,6 +321,20 @@ else()
   file(TOUCH ${CMAKE_BINARY_DIR}/boards/dummy/Kconfig)
 endif()
 
+# A zero-length placeholder left behind by an earlier configure would satisfy
+# "EXISTS" below and therefore block the symlink, silently dropping the board
+# Kconfig (and every option it defines) from the configuration.  Detect that
+# case and remove the placeholder so the symlink is created as intended.
+if(EXISTS ${CMAKE_BINARY_DIR}/boards/dummy/Kconfig)
+  file(SIZE ${CMAKE_BINARY_DIR}/boards/dummy/Kconfig NUTTX_DUMMY_KSIZE)
+  if(NUTTX_DUMMY_KSIZE EQUAL 0
+     AND CONFIG_ARCH_BOARD_CUSTOM
+     AND EXISTS ${NUTTX_BOARD_ABS_DIR}/Kconfig)
+    message(STATUS "Replacing stale empty boards/dummy/Kconfig with a symlink")
+    file(REMOVE ${CMAKE_BINARY_DIR}/boards/dummy/Kconfig)
+  endif()
+endif()
+
 if(NOT EXISTS ${CMAKE_BINARY_DIR}/boards/dummy/Kconfig)
   if(CONFIG_ARCH_BOARD_CUSTOM AND EXISTS ${NUTTX_BOARD_ABS_DIR}/Kconfig)
     nuttx_create_symlink(${NUTTX_BOARD_ABS_DIR}/Kconfig

@@ -117,6 +117,10 @@ ifeq ($(CONFIG_ESPRESSIF_MIPI_DSI),y)
 	CHIP_CSRCS += esp_mipi_dsi.c
 endif
 
+ifeq ($(CONFIG_ESPRESSIF_MIPI_CSI),y)
+	CHIP_CSRCS += esp_csi.c
+endif
+
 ifeq ($(CONFIG_ESP_SDM),y)
 	CHIP_CSRCS += esp_sdm.c
 endif

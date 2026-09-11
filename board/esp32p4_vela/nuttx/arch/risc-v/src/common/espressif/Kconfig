@@ -2136,6 +2136,86 @@ config ESPRESSIF_MIPI_DSI_LANE_BITRATE_MBPS
 
 endif # ESPRESSIF_MIPI_DSI
 
+menuconfig ESPRESSIF_MIPI_CSI
+	bool "MIPI CSI-2 Capture Host"
+	depends on ARCH_CHIP_ESP32P4
+	default n
+	select ESPRESSIF_LDO
+	select DRIVERS_VIDEO
+	select VIDEO_STREAM
+	---help---
+		Enable the Espressif MIPI-CSI capture driver for the ESP32-P4.
+		It wraps the ESP-IDF CSI HAL (MIPI CSI-2 host + CSI bridge +
+		DW-GDMA) that is already vendored in esp-hal-3rdparty and
+		exposes it through NuttX's V4L2 capture framework
+		(include/nuttx/video/v4l2_cap.h).
+
+		esp_csi_imgdata_initialize() provides the imgdata_s lower half
+		(data path); a separate sensor driver such as sc2336.c provides
+		the imgsensor_s lower half (I2C/SCCB control).  Both are handed
+		to capture_register() by the board, which creates /dev/video0.
+
+		Board code must power VDD_MIPI_DPHY (on-chip LDO channel 3 @
+		2500 mV on the ESP32-P4X-C5-Function-EV-Board) before the CSI
+		controller is created; esp_csi_imgdata_initialize() does this
+		itself unless the config says otherwise.
+
+if ESPRESSIF_MIPI_CSI
+
+config ESPRESSIF_MIPI_CSI_H_RES
+	int "Default CSI horizontal resolution (pixels per line)"
+	default 1920
+	range 16 4096
+	---help---
+		Default receiver window width used by
+		esp_csi_get_default_config().  Boards may override per capture
+		by editing the esp_csi_config_s they pass in.
+
+config ESPRESSIF_MIPI_CSI_V_RES
+	int "Default CSI vertical resolution (lines)"
+	default 1080
+	range 16 4096
+	---help---
+		Default receiver window height used by
+		esp_csi_get_default_config().
+
+config ESPRESSIF_MIPI_CSI_LANES
+	int "Default number of MIPI CSI-2 data lanes"
+	default 2
+	range 1 2
+	---help---
+		ESP32-P4 has two MIPI CSI-2 data lanes.  The camera connector
+		on the ESP32-P4X-C5-Function-EV-Board wires up both.
+
+config ESPRESSIF_MIPI_CSI_LANE_BITRATE_MBPS
+	int "Default MIPI CSI-2 lane bit rate (Mbps)"
+	default 400
+	range 80 1500
+	---help---
+		Per-lane HS bit rate of the CSI-2 link.  This must match what
+		the attached sensor has been programmed for, otherwise the
+		receiver will not lock.  For SC2336 at 1080p30 the sensor is
+		typically configured for 405 Mbps.
+
+config ESPRESSIF_MIPI_CSI_QUEUE_ITEMS
+	int "CSI transaction queue depth"
+	default 1
+	range 1 16
+	---help---
+		Depth of the ESP-IDF HAL's internal transaction queue.  This
+		driver hands frame buffers over through the on_get_new_trans
+		callback instead of the queue, so the value only affects the
+		amount of memory the HAL reserves.
+
+config ESPRESSIF_MIPI_CSI_DEBUG
+	bool "MIPI CSI debug output"
+	default n
+	---help---
+		Enable verbose capture statistics (frame counters) from the
+		CSI driver.
+
+endif # ESPRESSIF_MIPI_CSI
+
 config ESP_COEX_SW_COEXIST_ENABLE
 	bool "Software WiFi/Bluetooth/IEEE 802.15.4 coexistence"
 	depends on (ESPRESSIF_WIFI && ESPRESSIF_BLE) || \

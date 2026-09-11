@@ -28,6 +28,13 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/compiler.h>
+
+#include <stdbool.h>
+
+#ifdef CONFIG_ESPRESSIF_MIPI_DSI
+#  include "espressif/esp_mipi_dsi.h"
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -130,6 +137,143 @@ int esp_gpio_init(void);
 
 #ifdef CONFIG_ESPRESSIF_EMAC
 int board_emac_init(void);
+#endif
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_POWER
+
+/****************************************************************************
+ * Name: board_mipi_phy_power
+ *
+ * Description:
+ *   Acquire or release on-chip LDO channel 3 (ESP_LDO_VO3) at 2500 mV, the
+ *   supply of the MIPI-DSI/CSI PHY (VDD_MIPI_DPHY).
+ *
+ * Input Parameters:
+ *   on - True to enable the LDO, false to release it.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int board_mipi_phy_power(bool on);
+
+/****************************************************************************
+ * Name: board_lcd_reset
+ *
+ * Description:
+ *   Pulse the panel reset line (GPIO27, active low).  No-op unless
+ *   CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_RST is enabled, because the line is
+ *   only reachable when the J1 -> J6 jumper is fitted.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int board_lcd_reset(void);
+
+/****************************************************************************
+ * Name: board_lcd_backlight
+ *
+ * Description:
+ *   Enable or disable the panel backlight (GPIO26).  No-op unless
+ *   CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_BL is enabled, because the line is
+ *   only reachable when the J1 -> J6 jumper is fitted.
+ *
+ * Input Parameters:
+ *   on - True to enable the backlight, false to disable it.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int board_lcd_backlight(bool on);
+
+/****************************************************************************
+ * Name: board_lcd_power_init
+ *
+ * Description:
+ *   Bring up the display power rails in hardware order:
+ *   LDO ch3 2500 mV (DSI PHY) -> panel reset pulse -> backlight off.
+ *   Must run before esp_mipi_dsi_initialize().
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int board_lcd_power_init(void);
+
+#endif /* CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_POWER */
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD
+
+/****************************************************************************
+ * Name: board_lcd_reload_test_pattern
+ *
+ * Description:
+ *   Re-fill the plane with the bring-up test colour and write the cache
+ *   back.  Call after fb_register(): the generic FB driver memsets the
+ *   plane and would otherwise leave a black DMA buffer.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int board_lcd_reload_test_pattern(void);
+
+/****************************************************************************
+ * Name: board_mipi_dsi_dpi_config
+ *
+ * Description:
+ *   Fill the DPI timing for the EK79007/EK73217 panel module.  The arch
+ *   host has no panel defaults, so the board must supply this to
+ *   esp_mipi_dsi_configure_dpi().
+ *
+ * Input Parameters:
+ *   cfg - The DPI configuration structure to fill.
+ *
+ ****************************************************************************/
+
+void board_mipi_dsi_dpi_config(FAR struct esp_mipi_dsi_dpi_config_s *cfg);
+
+#endif /* CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD */
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_TOUCHSCREEN
+
+/****************************************************************************
+ * Name: board_touchscreen_init
+ *
+ * Description:
+ *   Probe the GT911 touch controller on I2C0 and register it as
+ *   /dev/input0.  The panel has no interrupt or reset line routed, so the
+ *   controller is polled by its reader.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int board_touchscreen_init(void);
+
+#endif /* CONFIG_ESP32P4_FUNCTION_EV_BOARD_TOUCHSCREEN */
+
+
+/****************************************************************************
+ * Name: esp32p4_camera_initialize
+ *
+ * Description:
+ *   Register the MIPI-CSI camera (SC2336 on the AS-AG638A32M2-50 module) as
+ *   a V4L2 capture device.  Returns 0 on success, a negated errno otherwise.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_CAMERA
+int esp32p4_camera_initialize(void);
+int esp32p4_camera_uninitialize(void);
 #endif
 
 #endif /* __ASSEMBLY__ */

@@ -312,5 +312,30 @@
     <copyfile src="board/esp32p4_vela/nuttx/tools/espressif/mcuboot_p4_loader_patch.py" dest="nuttx/tools/espressif/mcuboot_p4_loader_patch.py"/>
     <copyfile src="board/esp32p4_vela/nuttx/tools/espressif/mcuboot_mkloadhdr.py" dest="nuttx/tools/espressif/mcuboot_mkloadhdr.py"/>
     <copyfile src="board/esp32p4_vela/nuttx/tools/espressif/mcuboot_toolchain_espressif.cmake" dest="nuttx/tools/espressif/mcuboot_toolchain_espressif.cmake"/>
+
+    <!-- ── MIPI-DSI 显示(EK79007)+GT911 触摸+LVGL / MIPI-CSI 摄像头(SC2336) ── -->
+    <copyfile src="board/esp32p4_vela/nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_lcd_ek79007.c" dest="nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_lcd_ek79007.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_lcd_ek79007.h" dest="nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_lcd_ek79007.h"/>
+    <copyfile src="board/esp32p4_vela/nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_display.c" dest="nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_display.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_mipi_dpi.c" dest="nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_mipi_dpi.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_hmi_power.c" dest="nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_hmi_power.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_touch_gt911.c" dest="nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_touch_gt911.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/drivers/input/gt9xx.c" dest="nuttx/drivers/input/gt9xx.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/arch/risc-v/src/common/espressif/esp_csi.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_csi.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/arch/risc-v/src/common/espressif/esp_csi.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_csi.h"/>
+    <copyfile src="board/esp32p4_vela/nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/FreeRTOS.h" dest="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/FreeRTOS.h"/>
+    <copyfile src="board/esp32p4_vela/nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/queue.h" dest="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/queue.h"/>
+    <copyfile src="board/esp32p4_vela/nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/task.h" dest="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/task.h"/>
+    <copyfile src="board/esp32p4_vela/nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/idf_additions.h" dest="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/idf_additions.h"/>
+    <copyfile src="board/esp32p4_vela/nuttx/drivers/video/sc2336.c" dest="nuttx/drivers/video/sc2336.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/include/nuttx/video/sc2336.h" dest="nuttx/include/nuttx/video/sc2336.h"/>
+    <copyfile src="board/esp32p4_vela/nuttx/drivers/video/CMakeLists.txt" dest="nuttx/drivers/video/CMakeLists.txt"/>
+    <copyfile src="board/esp32p4_vela/nuttx/drivers/video/Make.defs" dest="nuttx/drivers/video/Make.defs"/>
+    <copyfile src="board/esp32p4_vela/nuttx/drivers/video/Kconfig" dest="nuttx/drivers/video/Kconfig"/>
+    <copyfile src="board/esp32p4_vela/nuttx/drivers/video/v4l2_cap.c" dest="nuttx/drivers/video/v4l2_cap.c"/>
+    <copyfile src="board/esp32p4_vela/nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_camera.c" dest="nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/src/esp32p4_camera.c"/>
+    <copyfile src="board/esp32p4_vela/apps/examples/camera/camera_main.c" dest="apps/examples/camera/camera_main.c"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/channels/nsh_commands.c" dest="packages/ai_agent/src/channels/nsh_commands.c"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/infra/heartbeat.c" dest="packages/ai_agent/src/infra/heartbeat.c"/>
   </project>
 </manifest>

@@ -125,6 +125,14 @@
 #  include "espressif/esp_ana_cmpr.h"
 #endif
 
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_MIPI_DSI
+#  include "espressif/esp_mipi_dsi.h"
+#endif
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD
+#  include <nuttx/video/fb.h>
+#endif
+
 #ifdef CONFIG_ESPRESSIF_USE_LP_CORE
 #  include "espressif/esp_ulp.h"
 #  ifdef CONFIG_ESPRESSIF_ULP_USE_TEST_BIN
@@ -136,6 +144,7 @@
 #endif
 
 #include "esp32p4-function-ev-board.h"
+#include <arch/board/board.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -338,6 +347,87 @@ int esp_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "Failed to initialize I2C driver: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD_POWER
+  /* MIPI PHY LDO (ch3 @ 2500 mV) + panel reset + backlight off.
+   * Must run before the DSI host is initialized, because that starts the
+   * DSI PHY PLL which is powered from VDD_MIPI_DPHY.
+   */
+
+  ret = board_lcd_power_init();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: failed to init LCD power path: %d\n", ret);
+      return ret;
+    }
+#endif
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_MIPI_DSI
+  /* 2 data lanes at the EK79007 reference bit rate. */
+
+  struct esp_mipi_dsi_bus_config_s bus_cfg =
+    {
+      .num_data_lanes = BOARD_MIPI_DSI_LANES,
+      .lane_bit_rate_mbps = BOARD_MIPI_DSI_LANE_BITRATE_MBPS,
+    };
+
+  ret = esp_mipi_dsi_initialize(&bus_cfg);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: failed to init MIPI-DSI host: %d\n", ret);
+      return ret;
+    }
+
+  syslog(LOG_INFO, "MIPI-DSI host registered (%d lanes @ %d Mbps)\n",
+         BOARD_MIPI_DSI_LANES, BOARD_MIPI_DSI_LANE_BITRATE_MBPS);
+#endif
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD
+  /* EK79007 DCS init + DPI + DW-GDMA framebuffer -> /dev/fb0 */
+
+  ret = fb_register(0, 0);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: failed to register /dev/fb0: %d\n", ret);
+    }
+  else
+    {
+      /* fb_register() clears the plane; restore the test fill for DMA. */
+
+      ret = board_lcd_reload_test_pattern();
+      if (ret < 0)
+        {
+          syslog(LOG_ERR, "ERROR: failed to reload FB test pattern: %d\n",
+                 ret);
+        }
+
+      syslog(LOG_INFO, "/dev/fb0 registered (%s)\n", BOARD_LCD_PANEL_NAME);
+    }
+#endif
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_TOUCHSCREEN
+  /* GT911 on the shared I2C0 bus.  Registered after the display so that the
+   * panel is already up when the first touch sample arrives.
+   */
+
+  ret = board_touchscreen_init();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: failed to initialize touchscreen: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_CAMERA
+  /* MIPI-CSI camera.  esp_i2cbus_initialize() is reference counted, so this
+   * is safe whether or not the touchscreen brought I2C0 up first.
+   */
+
+  ret = esp32p4_camera_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: failed to initialize the camera: %d\n", ret);
     }
 #endif
 

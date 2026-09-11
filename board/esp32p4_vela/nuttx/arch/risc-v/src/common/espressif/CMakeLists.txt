@@ -112,6 +112,10 @@ if(CONFIG_ESPRESSIF_MIPI_DSI)
   list(APPEND SRCS esp_mipi_dsi.c)
 endif()
 
+if(CONFIG_ESPRESSIF_MIPI_CSI)
+  list(APPEND SRCS esp_csi.c)
+endif()
+
 if(CONFIG_ESP_SDM)
   list(APPEND SRCS esp_sdm.c)
 endif()
@@ -424,6 +428,16 @@ include(${NUTTX_CHIP_ABS_DIR}/hal_${CHIP_SERIES}.cmake)
 target_include_directories(
   arch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
                ${CMAKE_CURRENT_SOURCE_DIR}/platform_include)
+
+# FreeRTOS compatibility headers for the vendored ESP-IDF HAL sources that
+# NuttX compiles (MIPI-CSI capture path).  They wrap the ESP-IDF OS
+# abstraction layer already present in the HAL
+# (esp-hal-3rdparty/nuttx/include/platform/os.h).
+
+if(CONFIG_ESPRESSIF_MIPI_CSI)
+  target_include_directories(arch PRIVATE
+                             ${CMAKE_CURRENT_SOURCE_DIR}/freertos_compat)
+endif()
 
 # ##############################################################################
 # Include Bootloader configuration

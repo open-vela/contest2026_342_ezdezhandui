@@ -61,6 +61,9 @@ set(ESP32P4_INCLUDES
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_ana_conv/include
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_cam/${CHIP_SERIES}/include
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_cam/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/csi/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/interface
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_clock/${CHIP_SERIES}/include
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_clock/include
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_dma/${CHIP_SERIES}/include
@@ -170,6 +173,7 @@ set(ESP32P4_INCLUDES
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ana_cmpr/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ana_cmpr/${CHIP_SERIES}/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_dma/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_dma/include/esp_private
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_dma/src
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_gpio/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_rmt/include
@@ -398,6 +402,7 @@ list(
   ${ESP_HAL_3RDPARTY_REPO}/components/esp_timer/src/esp_timer_impl_common.c
   ${ESP_HAL_3RDPARTY_REPO}/components/hal/${CHIP_SERIES}/efuse_hal.c
   ${ESP_HAL_3RDPARTY_REPO}/components/hal/cache_hal.c
+  ${ESP_HAL_3RDPARTY_REPO}/components/hal/color_hal.c
   ${ESP_HAL_3RDPARTY_REPO}/components/hal/efuse_hal.c
   ${ESP_HAL_3RDPARTY_REPO}/components/hal/hal_utils.c
   ${ESP_HAL_3RDPARTY_REPO}/components/hal/mmu_hal.c
@@ -537,8 +542,29 @@ if(CONFIG_ESPRESSIF_MIPI_DSI)
     APPEND
     HAL_SRCS
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_lcd/mipi_dsi_hal.c
-    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_lcd/${CHIP_SERIES}/mipi_dsi_periph.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_lcd/${CHIP_SERIES}/mipi_dsi_periph.c)
+endif()
+
+# DW-GDMA HAL is shared by the MIPI-DSI framebuffer path and the MIPI-CSI
+# capture path; add it only once when either is enabled.
+
+if(CONFIG_ESPRESSIF_MIPI_DSI OR CONFIG_ESPRESSIF_MIPI_CSI)
+  list(
+    APPEND
+    HAL_SRCS
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_dma/dw_gdma_hal.c)
+endif()
+
+if(CONFIG_ESPRESSIF_MIPI_CSI)
+  list(
+    APPEND
+    HAL_SRCS
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_cam/mipi_csi_hal.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_cam/${CHIP_SERIES}/mipi_csi_periph.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hw_support/mipi_csi_share_hw_ctrl.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/esp_cam_ctlr.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/csi/src/esp_cam_ctlr_csi.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_dma/src/dw_gdma.c)
 endif()
 
 if(CONFIG_ESPRESSIF_IDF_ENV_FPGA)

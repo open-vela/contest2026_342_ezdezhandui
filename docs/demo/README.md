@@ -1,4 +1,4 @@
-# 演示证据包（真机实测，2026-09-11）
+# 演示证据包（真机实测，2026-09-11 夜 · 本轮重编译固件）
 
 > 本目录是**真机串口原始日志**，可直接作为演示与评审证据。
 > 采集方式：`tools/board.py`（console = `/dev/ttyUSB0` @115200，已 assert DTR/RTS）。
@@ -8,8 +8,8 @@
 | 文件 | 内容 | 看点 |
 |---|---|---|
 | `01_boot_mcuboot.log` | 冷启动日志 | **MCUboot 二级引导** → `Mapped IROM vaddr=0x40000000`（flash XIP 执行）→ `NuttShell (NSH)`；随后各外设 bringup |
-| `02_verify.log` | `tools/verify_aiagent.sh` 多轮断言 | ai_agent 启动里程碑 + 12 skills + eth0 + cron 全部 ✓ |
-| `03_runtime.log` | NSH 运行时查询 | `free`（PSRAM 33.9MB）、`ls /dev`（video0/input0）、`ifconfig eth0`（10.0.0.2 RUNNING）、`uname -a` |
+| `02_verify.log` | ai_agent 启动全量日志（本轮采集） | P0→P6 全 rc=0 + `Skills system ready (12 built-in)`（含 center-assistant/quick-note）+ `Cron started` + `WebSocket server started on port 28789` + `Network connected: 10.0.0.2` |
+| `03_runtime.log` | NSH 运行时查询 | `free`（PSRAM 33,986,336 B）、`ls /dev`（console/input0/video0，**无 fb0**）、`ifconfig eth0`（10.0.0.2 RUNNING）、`df`/`mount`（仅 /proc、/tmp）、`camera`（`VIDIOC_S_FMT: 22`）、`nslookup`（`getaddrinfo failed`） |
 
 ## 复现命令
 

@@ -26,9 +26,10 @@ logs/                      # AI Coding 日志（提交前持续导出）
 ## 四、运行方式
 
 移植采用**文件树 + repo manifest copyfile 自动映射**：作品仓 `board/esp32p4_vela/` 保存所有
-改动文件，`contest2026_342_ezdezhandui.xml` 通过 **300 条 `<copyfile>`**
-（nuttx 285 + packages/ai_agent 12 + apps/crypto 3）在 `repo sync` 时把改动自动覆盖到
-工作区对应路径（评审零手工拷贝）。
+改动文件，`contest2026_342_ezdezhandui.xml` 通过 **324 条 `<copyfile>`**
+（nuttx 305 + apps 4 + packages/ai_agent 14 + 仓根文档 1）在 `repo sync` 时把改动自动覆盖到
+工作区对应路径（评审零手工拷贝）。清单与文件树的一一对应由
+`tools/gen_manifest_copyfiles.py` 保证（`--check` 校验，直接运行则再生）。
 被删除的 8 个上游文件见 `board/esp32p4_vela/nuttx/.deleted-files`。
 
 ```bash
@@ -43,11 +44,12 @@ cd contest2026_342_ezdezhandui/board/esp32p4_vela
 ./deploy.sh <openvela 工作区根>   # 幂等 rsync + 按 .deleted-files 删除；不带参数默认 ./(pwd) 为其根
 #   示例：若工作区根是 /path/to/openvela，则 ./deploy.sh /path/to/openvela
 
-# 3. 构建（产出两个镜像）
+# 3. 构建（**一条命令即产出两个镜像**，2026-09-11 夜起；引导构建已挂进默认构建图）
 cd <openvela 工作区根>
 ./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8
-#   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  ← 应用（MCUboot 签名）
-#   nuttx/mcuboot-esp32p4.bin                         ← MCUboot 二级引导
+#   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  ← 应用（MCUboot 签名，1,835,008 B）
+#   nuttx/mcuboot-esp32p4.bin                         ← MCUboot 二级引导（24,640 B）
+#   干净树实测：10 分 39 秒（含 HAL clone + MCUboot ExternalProject + 2410 编译步）
 
 # 4. 烧录（⚠️ MCUboot 两镜像；旧的"单镜像写 0x2000"已失效）
 cd contest2026_342_ezdezhandui
@@ -76,13 +78,16 @@ python3 tools/board.py run "free" "ai_agent"
 - 全流程 AI Coding，日志导出至 `logs/`（contest-log-collector）
 - 沉淀：openvela 官方 17 个开发技能（.claude/skills/）+ 本仓文档（docs/）
 
-## 七、状态（2026-09-11 更新）
+## 七、状态（2026-09-11 夜 复验更新）
 
 - ✅ esp32p4 移植编译通过；**MCUboot 二级引导 + flash XIP 打通**（SRAM 占用 460KB→83KB）
-- ✅ 真机闭环：`tools/usb_stable.sh`（两镜像烧录）→ MCUboot banner → NSH → `ai_agent` P0→P6 全 rc=0
-- ✅ 真机验证：eth0 10.0.0.2、PSRAM 33.9MB、cron 真实启动、WebSocket 控制通道（28789）
+- ✅ 干净树一次 `build.sh` 产出**双镜像**（本轮修复 `bootloader` 目标未入 `all` + 内层 ninja 生成器丢失）
+- ✅ 真机闭环：`tools/usb_stable.sh`（两镜像烧录）→ MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
+- ✅ 真机验证：eth0 10.0.0.2（主机 ping 0% 丢包）、PSRAM 33.9MB、cron 真实启动、12 skills
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）
-- ⏳ LVGL 触控 UI / 摄像头事件主动：驱动落地中
+- 🔶 摄像头：SC2336 识别通过（`chip ID: 0xcb3a` → `/dev/video0`），出帧待接 ISP（`VIDIOC_S_FMT` EINVAL）
+- ❌ 显示：EK79007 无应答 → **无 `/dev/fb0`**（I2C0 上 SC2336 正常，疑模组供电/FPC/J1→J6 跳线）
+- ❌ DNS 不可用（无 `/etc/resolv.conf`）；WebSocket 28789 板端已监听、主机侧未打通（非同一 L2）
 - ⏳ 演示视频 + 《作品介绍》随提交材料
-- 📌 详细状态与差距见 `docs/01_开发规划文档.md` §九/§十、`docs/05_开发过程复盘与改进清单.md` §十九~§二十二
+- 📌 详细状态与差距见 `docs/STATUS.md`、`docs/04_功能闭环测试.md` §七、`docs/05_开发过程复盘与改进清单.md`
 

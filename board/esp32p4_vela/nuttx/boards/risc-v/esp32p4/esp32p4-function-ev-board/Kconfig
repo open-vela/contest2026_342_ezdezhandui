@@ -145,4 +145,18 @@ config ESP32P4_FUNCTION_EV_BOARD_CAMERA_DEVPATH
 	default "/dev/video0"
 	depends on ESP32P4_FUNCTION_EV_BOARD_CAMERA
 
+config ESP32P4_FUNCTION_EV_BOARD_DNS_PRIMARY
+	string "Primary DNS nameserver (static fallback)"
+	default "10.0.0.1"
+	depends on NETDB_DNSCLIENT
+	---help---
+		Static DNS server injected into the resolver at bring-up via
+		dns_add_nameserver().  This is a fallback for when DHCP does not
+		provide one; a DHCP lease, if obtained, overrides it.
+
+		The board's default static address is 10.0.0.2/24 with router
+		10.0.0.1 (see the EMAC bring-up), so 10.0.0.1 is the consistent
+		default.  Change this to your own resolver (e.g. 192.168.1.1) when
+		running the board on a different subnet, or rely on DHCP.
+
 endif # ARCH_BOARD_ESP32P4_FUNCTION_EV_BOARD

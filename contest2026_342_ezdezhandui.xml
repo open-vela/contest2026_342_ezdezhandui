@@ -338,5 +338,7 @@
     <copyfile src="board/esp32p4_vela/ai_agent/src/channels/nsh_commands.c" dest="packages/ai_agent/src/channels/nsh_commands.c"/>
     <copyfile src="board/esp32p4_vela/ai_agent/src/infra/heartbeat.c" dest="packages/ai_agent/src/infra/heartbeat.c"/>
     <copyfile src="board/esp32p4_vela/CSI_INTEGRATOR_HANDOFF.md" dest="CSI_INTEGRATOR_HANDOFF.md"/>
+    <copyfile src="board/esp32p4_vela/nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
+    <copyfile src="board/esp32p4_vela/ai_agent/src/infra/network_manager.c" dest="packages/ai_agent/src/infra/network_manager.c"/>
   </project>
 </manifest>

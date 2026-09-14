@@ -146,6 +146,12 @@
 #include "esp32p4-function-ev-board.h"
 #include <arch/board/board.h>
 
+#ifdef CONFIG_NETDB_DNSCLIENT
+#  include <nuttx/net/dns.h>
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -602,6 +608,38 @@ int esp_bringup(void)
     {
       syslog(LOG_ERR, "ERROR: board_emac_init failed: %d\n", ret);
     }
+#endif
+
+#ifdef CONFIG_NETDB_DNSCLIENT
+  /* 把 DNS 服务器真正塞进解析器。
+   *
+   * 只写 /tmp/resolv.conf 是不够的：resolv.conf 是"每次解析时读一次"的
+   * 后备来源，而 gethostbyname()/getaddrinfo() 走的是解析器内部的
+   * nameserver 列表。不调用 dns_add_nameserver() 的话，即使 DNS 客户端
+   * 编进来了、文件也写了，仍然是"查不到"。这里先用配置的静态 DNS 兜底，
+   * 之后 DHCP 拿到租约时 NuttX 会自动覆盖为租约下发的服务器。
+   */
+
+  {
+    struct sockaddr_in dns;
+
+    memset(&dns, 0, sizeof(dns));
+    dns.sin_family      = AF_INET;
+    dns.sin_port        = htons(53);
+    dns.sin_addr.s_addr = inet_addr(CONFIG_ESP32P4_FUNCTION_EV_BOARD_DNS_PRIMARY);
+
+    ret = dns_add_nameserver((FAR const struct sockaddr *)&dns, sizeof(dns));
+    if (ret < 0)
+      {
+        syslog(LOG_WARNING, "WARN: dns_add_nameserver(%s) failed: %d\n",
+               CONFIG_ESP32P4_FUNCTION_EV_BOARD_DNS_PRIMARY, ret);
+      }
+    else
+      {
+        syslog(LOG_INFO, "DNS nameserver set to %s\n",
+               CONFIG_ESP32P4_FUNCTION_EV_BOARD_DNS_PRIMARY);
+      }
+  }
 #endif
 
 #ifdef CONFIG_ESPRESSIF_USE_LP_CORE

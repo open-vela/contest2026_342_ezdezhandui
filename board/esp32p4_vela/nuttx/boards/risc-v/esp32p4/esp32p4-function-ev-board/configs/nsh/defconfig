@@ -101,6 +101,10 @@ CONFIG_NET_SOCKOPTS=y
 # TCP for the ai_agent WebSocket control channel (ws_server, port 28789).
 # Without this socket(AF_INET, SOCK_STREAM) fails and the channel is dead.
 CONFIG_NET_TCP=y
+# UDP 是 DNS 与 DHCP 的前置：NETDB_DNSCLIENT/NETUTILS_DHCPC 都 depends on
+# NET_UDP。此前 UDP 未开, kconfig 会把这两个符号**静默丢弃**, 于是无论怎么
+# 配 DNS 都解析不了域名(agent 的 LLM/https 在解析阶段就失败)。
+CONFIG_NET_UDP=y
 CONFIG_NFILE_DESCRIPTORS_PER_BLOCK=6
 CONFIG_NSH_ARCHINIT=y
 CONFIG_NSH_BUILTIN_APPS=y
@@ -251,3 +255,25 @@ CONFIG_ESP32P4_FUNCTION_EV_BOARD_CAMERA=y
 CONFIG_EXAMPLES_CAMERA=y
 CONFIG_EXAMPLES_CAMERA_PROGNAME="camera"
 CONFIG_EXAMPLES_CAMERA_STACKSIZE=8192
+
+# ── DNS 解析（ai_agent 走域名的 HTTPS/LLM 必需）──────────────────────────
+# 症状: nslookup api.xiaomimimo.com -> getaddrinfo failed: 1 且 nuttx.map 里
+#       dns_* 符号数 = 0 —— 即 CONFIG_NETDB_DNSCLIENT 根本没编进固件,
+#       agent 侧写 /tmp/resolv.conf 也没人读。
+CONFIG_NETDB_DNSCLIENT=y
+CONFIG_NETDB_DNSCLIENT_ENTRIES=8
+# root FS 只读、/tmp 是 tmpfs 可写, 与 ai_agent network_set_dns() 落点一致
+CONFIG_NETDB_RESOLVCONF=y
+CONFIG_NETDB_RESOLVCONF_PATH="/tmp/resolv.conf"
+
+# DHCP 客户端: 让路由器同时下发 地址/网关/DNS, 避免静态 10.0.0.2 与
+# 实际网段不一致(会把 DNS 与主机侧可达性一起修好)
+CONFIG_NETUTILS_DHCPC=y
+CONFIG_NETUTILS_DHCPC_HOST_NAME="deskmate"
+
+# 视频栈错误日志默认被编译掉(只有 errno 没有人话), 打开后
+# VIDIOC_S_FMT 拒绝原因才会打印
+CONFIG_DEBUG_FEATURES=y
+CONFIG_DEBUG_ERROR=y
+CONFIG_DEBUG_VIDEO=y
+CONFIG_DEBUG_VIDEO_ERROR=y

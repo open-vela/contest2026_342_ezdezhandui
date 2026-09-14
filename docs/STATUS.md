@@ -1,6 +1,6 @@
 # 项目状态（STATUS）
 
-> 最后更新：**2026-09-11（夜）** · 全量重同步 manifest + 干净重编译 + 真机闭环复验
+> 最后更新：**2026-09-14** · 问题项复验（§04 §八）+ 构建健壮性修复（HAL 补丁幂等/顺序）
 > （逐项结果见 `docs/04_功能闭环测试.md` §七）；收尾计划见 `docs/01_开发规划文档.md` §十
 >
 > 本轮复验要点：一次 `build.sh` 即产出**双镜像**（修复 `bootloader` 目标未入 `all` +
@@ -56,18 +56,22 @@ python3 tools/board.py run "free" "ps"    # 任意 NSH 命令并断言
    port 28789`，但从主机 TCP 连接被拒/超时：主机 `ip route get 10.0.0.2` 显示经路由器
    `192.168.1.1` 转发（非同一二层），ICMP ping 通（0% 丢包）而 TCP 不通。需在同一网段的
    主机上复测，或在板端加一个本机自连用例。
-6. **DNS 不可用**（本轮新发现）—— 镜像根文件系统只有 `dev/ proc/ tmp/ var/`，无 `/etc`、
-   无 `/etc/resolv.conf`；`nslookup` 返回 `getaddrinfo failed: 1`。ai_agent 有
-   `network_set_dns()`（写 `/tmp/resolv.conf`），但目前只能从不可交互的 agent CLI 调用。
+6. **DNS 不可用**（2026-09-14 复验修正根因）—— 主因是 **`CONFIG_NETDB_DNSCLIENT` 未编入**
+   （`nuttx.map` 中 `dns_*` 符号数 = 0），因此 `nslookup` 直接返回 `getaddrinfo failed: 1`；
+   镜像无 `/etc`、无 `/etc/resolv.conf` 是次要现象。修法与验收见 `docs/09_问题处理方案.md`。
+7. **构建健壮性**（2026-09-14 已修）—— 干净树连续构建会因 HAL 兼容补丁重复应用/顺序
+   问题 `config fail`；已改为"应用前 `git reset --hard` 钉定版本 + 幂等 apply + 固定顺序
+   0002→0001"，并删除补丁中两段过时 hunk（详见 `docs/04_功能闭环测试.md` §八.3）。
 
 ## 五、硬件外设进展
 
-| 外设 | 状态（2026-09-11 夜真机复验） |
+| 外设 | 状态（2026-09-14 复验） |
 |---|---|
-| MIPI-DSI 7" EK79007 + GT911 触摸 + LVGL | ❌ 显示：`EK79007 DCS 0xb2 failed: -110` → **无 `/dev/fb0`**（I2C0 上 SC2336 正常应答，故非控制器问题，疑模组供电/FPC/J1→J6 跳线）<br>🔶 触摸：GT911 首次探测失败后以 polling 方式注册 `/dev/input0` |
-| MIPI-CSI SC2336 → `/dev/video0` | ✅ 识别（`SC2336 chip ID: 0xcb3a`）<br>❌ 出帧：`camera` → `VIDIOC_S_FMT: errno=22`（RAW10 与 NuttX V4L2 语义不匹配，需接 ISP 输出 RGB565/YUV422） |
-| 网络 DNS | ❌ `nslookup` → `getaddrinfo failed`：镜像无 `/etc/resolv.conf`；agent 的 `set_dns`（写 `/tmp/resolv.conf`）只在不可交互的 agent CLI 上 |
+| MIPI-DSI 7" EK79007 + GT911 触摸 + LVGL | ❌ 显示：`EK79007 DCS 0xb2 failed: -110` → **无 `/dev/fb0`**<br>❌ 触摸：GT911 `not detected at 0x5d or 0x14`；**注意 `/dev/input0` 是"未探测到也注册"的 stub**<br>判据：SC2336 与 GT911 **共用 I2C0** 且摄像头正常应答 → I2C0 无问题，指向 LCD 模组供电/FPC/J1→J6 跳线 |
+| MIPI-CSI SC2336 → `/dev/video0` | ✅ 识别（`SC2336 chip ID: 0xcb3a`）<br>❌ 出帧：`camera` → `VIDIOC_S_FMT: errno=22`；**驱动错误被 `verr()` 编译掉**（需 `CONFIG_DEBUG_VIDEO_ERROR=y` 才能看到拒绝原因），中短期解法是接 ISP 输出 RGB565/YUV422 |
+| 网络 DNS | ❌ 根因修正：`nuttx.map` 里 **`dns_*` 符号数 = 0** —— `CONFIG_NETDB_DNSCLIENT` 未编入；`/etc/resolv.conf` 缺失只是次要现象 |
 | ai_agent `vela>` CLI 串口交互 | ❌ agent 启动后 console 输入无响应（agent 启动**前** NSH 交互完全正常） |
+| 运维通道 | ⚠️ 板子的 CP2102 UART 桥（`/dev/ttyUSB0`）**已从主机 USB 消失**，console（UART0）暂时读不到；期间用 `CONFIG_ESPRESSIF_USBSERIAL=y` + `OTHER_SERIAL_CONSOLE` 切到 USJ 口做诊断，现已恢复交付配置 |
 
 ## 六、安全提醒
 

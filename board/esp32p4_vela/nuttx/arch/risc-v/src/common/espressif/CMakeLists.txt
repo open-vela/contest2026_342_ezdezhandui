@@ -307,6 +307,24 @@ if(NOT IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}")
   endif()
   # cmake-format: off
 
+  # openvela: make the HAL tree deterministic before patching.
+  #
+  # The HAL checkout lives inside the build directory and is reused across
+  # configure runs, and the FetchContent update step may leave it on a
+  # different revision; a tree that already carries (part of) our compat
+  # patches makes the `git apply` below fail and aborts configure with
+  # "Configuring incomplete" (observed 2026-09-14, sdkconfig.h:683/941).
+  # Hard-reset to the pinned revision so the patches always start from the
+  # same content — same idea as the mbedtls submodule reset just below.
+  execute_process(COMMAND git reset --hard ${ESP_HAL_3RDPARTY_VERSION}
+                  WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
+                  RESULT_VARIABLE VELA_HAL_RESET)
+  if(NOT VELA_HAL_RESET EQUAL 0)
+    message(
+      FATAL_ERROR
+        "cannot reset ${ESP_HAL_3RDPARTY_REPO} to ${ESP_HAL_3RDPARTY_VERSION}")
+  endif()
+
   # Patch mbedtls
   execute_process(COMMAND git submodule --quiet update --init components/mbedtls/mbedtls
                   WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_FETCH_SOURCE_DIR})
@@ -324,19 +342,48 @@ if(NOT IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}")
   endif()
 
   # Apply openvela compatibility patches to the HAL (nxtask_init signature, fcntl.h)
-  execute_process(
-    COMMAND git apply --check ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0001-openvela-compat-os.c.patch
-    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO})
-  execute_process(
-    COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0001-openvela-compat-os.c.patch
-    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO})
-  # openvela: keep apps mbedTLS Kconfig symbols visible in HAL TUs (PSA-less build)
-  execute_process(
-    COMMAND git apply --check ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch
-    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO})
-  execute_process(
-    COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch
-    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO})
+  #
+  # openvela note: this used to run `git apply --check` and then `git apply`
+  # unconditionally.  The HAL checkout is *not* reset between configure runs,
+  # so the second configure of the same build tree tried to re-apply an
+  # already-applied patch, `git apply` failed and CMake aborted with
+  # "Configuring incomplete" (observed on 2026-09-14: sdkconfig.h:941).
+  # Apply only when the patch is really absent, and treat "already applied"
+  # (reverse-check succeeds) as success.
+  function(vela_apply_hal_patch patch_file)
+    execute_process(COMMAND git apply --check ${patch_file}
+                    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
+                    RESULT_VARIABLE _vela_check)
+    if(_vela_check EQUAL 0)
+      execute_process(COMMAND git apply ${patch_file}
+                      WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
+                      RESULT_VARIABLE _vela_apply)
+      if(NOT _vela_apply EQUAL 0)
+        message(FATAL_ERROR "failed to apply ${patch_file}")
+      endif()
+      message(STATUS "HAL patch applied: ${patch_file}")
+    else()
+      execute_process(COMMAND git apply -R --check ${patch_file}
+                      WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
+                      RESULT_VARIABLE _vela_revcheck)
+      if(_vela_revcheck EQUAL 0)
+        message(STATUS "HAL patch already applied: ${patch_file}")
+      else()
+        message(
+          FATAL_ERROR
+            "${patch_file} neither applies nor is already applied — HAL drift?")
+      endif()
+    endif()
+  endfunction()
+
+  # Order matters: both patches touch nuttx/esp32p4/include/sdkconfig.h, and
+  # 0001 inserts a comment block right above the context that 0002 anchors on
+  # (~line 941).  Applying 0001 first made 0002 fail.  Apply 0002 (mbedTLS
+  # Kconfig visibility) first, then 0001 (os.c/os.h + MEMPROT note).
+  vela_apply_hal_patch(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch)
+  vela_apply_hal_patch(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0001-openvela-compat-os.c.patch)
 
   # Copy gpio_sig_map.h and irq.h from the esp-hal-3rdparty repository to the NuttX directory
   file(MAKE_DIRECTORY ${NUTTX_BINARY_DIR}/include/arch/chip)

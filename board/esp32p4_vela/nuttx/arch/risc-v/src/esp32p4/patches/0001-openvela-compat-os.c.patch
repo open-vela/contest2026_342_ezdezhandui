@@ -1,9 +1,7 @@
-diff --git a/components/mbedtls/mbedtls b/components/mbedtls/mbedtls
---- a/components/mbedtls/mbedtls
-+++ b/components/mbedtls/mbedtls
-@@ -1 +1 @@
--Subproject commit 582ff482038db6e4010dbf6f943d97b05ad06ea5
-+Subproject commit 582ff482038db6e4010dbf6f943d97b05ad06ea5-dirty
+# openvela 2026-09-14: the MEMPROT note that used to be appended here
+# (nuttx/esp32p4/include/sdkconfig.h) is already present in the pinned
+# esp-hal-3rdparty revision (8d0a8989100), so this hunk was dropped —
+# re-applying it made `git apply` fail and aborted configure.
 diff --git a/nuttx/include/platform/os.h b/nuttx/include/platform/os.h
 index 118b35570f4..629225093ff 100644
 --- a/nuttx/include/platform/os.h
@@ -58,16 +56,3 @@ index 99470d7e7c0..93af56524a1 100644
    if (ret < 0)
      {
        kmm_free(wrapper_args);
-diff --git a/nuttx/esp32p4/include/sdkconfig.h b/nuttx/esp32p4/include/sdkconfig.h
---- a/nuttx/esp32p4/include/sdkconfig.h
-+++ b/nuttx/esp32p4/include/sdkconfig.h
-@@ -941,6 +941,9 @@
- #define CONFIG_RTC_CLK_SRC_INT_8MD256   1
- #endif
- 
-+/* openvela: MEMPROT's IRAM/DRAM split (RX-only IRAM / RW-only DRAM) does
-+ * not match the SIMPLE_BOOT flat layout (.flash.text above _iram_text_end);
-+ * keep it disabled or all non-IRAM code faults on execute. */
- #define CONFIG_ESP_SYSTEM_MEMPROT 1
- #define CONFIG_ESP_SYSTEM_MEMPROT_PMP 1
- 

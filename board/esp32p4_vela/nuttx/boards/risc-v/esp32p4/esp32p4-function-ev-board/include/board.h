@@ -95,6 +95,24 @@
 
 #define BOARD_GT911_I2C_ADDR        0x5d /* Primary address (INT pin high) */
 #define BOARD_GT911_I2C_ADDR_ALT    0x14 /* Alternate address (INT pin low) */
-#define BOARD_GT911_I2C_FREQUENCY   400000
+
+/* Bus clock for the touch controller: 100 kHz.
+ *
+ * Measured on the assembled board (2026-09-14): a full address scan of I2C0
+ * finds 0x18 (ES8311), 0x30 (SC2336) and 0x5d (GT911) acknowledging at BOTH
+ * 400 kHz and 100 kHz, so the long path is not actually a speed problem --
+ * the "not detected" report was a bug in the product-ID validator, see
+ * board_gt911_probe() in esp32p4_touch_gt911.c.
+ *
+ * 100 kHz is kept anyway, as margin rather than as a fix: the GT911 hangs off
+ * dev board -> DSI FPC -> LCD adapter -> touch FPC, i.e. two extra connectors
+ * and two extra FPCs compared with the camera, and the camera on the short
+ * CSI path already runs at 100 kHz (CONFIG_SC2336_FREQUENCY).  Running the
+ * whole shared bus at one conservative rate also removes a class of
+ * rise-time-dependent flakiness.  Raising it to 400 kHz is not known to
+ * break anything -- measure rise time on the assembled board first.
+ */
+
+#define BOARD_GT911_I2C_FREQUENCY   100000
 
 #endif /* __BOARDS_RISCV_ESP32P4_ESP32P4_FUNCTION_EV_BOARD_INCLUDE_BOARD_H */

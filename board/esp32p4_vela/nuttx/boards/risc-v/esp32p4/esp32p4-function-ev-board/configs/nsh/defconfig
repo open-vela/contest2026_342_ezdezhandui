@@ -83,7 +83,6 @@ CONFIG_BOARD_LOOPSPERMSEC=15000
 CONFIG_BUILTIN=y
 CONFIG_CRYPTO_MBEDTLS=y
 CONFIG_ESPRESSIF_EMAC=y
-# CONFIG_ESPRESSIF_USBSERIAL is not set
 CONFIG_EXAMPLES_AI_AGENT_VELA=y
 CONFIG_EXPERIMENTAL=y
 CONFIG_FS_PROCFS=y
@@ -146,12 +145,41 @@ CONFIG_IOB_NCHAINS=4
 # CONFIG_MBEDTLS_CIPHER_PADDING_ZEROS is not set
 # CONFIG_MBEDTLS_PK_RSA_ALT_SUPPORT is not set
 CONFIG_MBEDTLS_ECP_WINDOW_SIZE=2
-# run builtin apps (ai_agent) directly from NSH
+# Run builtin apps (ai_agent, lvgldemo, camera, sh) directly in the NSH task.
+#
+# ── 2026-09-15: the alternative was tried on HW and REVERTED ──────────────
+# Setting CONFIG_NSH_BUILTIN_AS_COMMAND=n + CONFIG_LIBC_EXECFUNCS=y does fix
+# the "cmd &" abort described below (openvela 7d54946ab compiles out the
+# builtin-spawn dispatch that terminates nsh_execute()'s background-wrapper
+# recursion), and the board boots and networks with it -- BUT every attempt to
+# actually dispatch a builtin then wedges the whole system:
+#
+#   sh  -c "free"      -> g_system_ticks frozen (system dead, no ping)
+#   sh  -c "free &"    -> same
+#   lvgldemo (task_spawn of a plain non-NSH builtin, 32 KB registered stack)
+#                      -> same, wedged at ~5.3 s right at the spawn
+#
+# i.e. on this port nsh_fileapp()->task_spawn() of a builtin hangs, which would
+# take down ai_agent / lvgldemo / camera (the demo's whole app set).  That is
+# strictly worse than the "&" abort, so keep the in-process dispatch.
+#
+# The "&" abort is fully root-caused in docs/05 §23.10; re-validating the
+# nsh_fileapp route needs a working console (see §23.11) before it is retried.
 CONFIG_NSH_BUILTIN_AS_COMMAND=y
 # TLS record buffers: 4KB each (was 16KB) — MiMo JSON fits, saves 24KB bss
 CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
-# console on UART0 (CP210x USB-UART bridge -> /dev/ttyUSB0) for stable debug
+# Console stays on UART0 (CP2102 bridge -> /dev/ttyUSB0).
+#
+# Tried moving it to the USB-Serial/JTAG (/dev/ttyACM0, same cable as esptool)
+# to remove the CP2102 single point of failure: with CONFIG_ESPRESSIF_USBSERIAL=y
+# the board hangs in a PMP Load access fault right after the PSRAM init, i.e.
+# exactly where console bring-up happens, and never reaches NSH (no ping).
+# So USB-Serial/JTAG is NOT usable as the console in this MCUboot + flash-XIP
+# configuration.  Keep UART0; the CP2102 must be present to see the console.
+# (esp_serial.c still guards CONSOLE_DEV against a USBSERIAL redefinition, so a
+#  future retry fails loudly instead of silently shadowing the UART console.)
+CONFIG_UART0_SERIAL_CONSOLE=y
 # EMAC DMA buffers sized to fit the 35KB heap (SRAM-only build)
 CONFIG_ESPRESSIF_ETH_NRXDESC=2
 CONFIG_ESPRESSIF_ETH_NTXDESC=2
@@ -166,7 +194,6 @@ CONFIG_FS_TMPFS_FILE_FREEGUARD=512
 CONFIG_EXAMPLES_AI_AGENT_VELA_STACKSIZE=16384
 
 CONFIG_ESPRESSIF_SPIRAM=y
-CONFIG_UART0_SERIAL_CONSOLE=y
 CONFIG_MM_REGIONS=2
 # CONFIG_ESPRESSIF_SPIRAM_SPEED_80M is not set
 # CONFIG_ESPRESSIF_SPIRAM_SPEED_20M is not set
@@ -211,6 +238,11 @@ CONFIG_ESPRESSIF_I2C0_SDAPIN=7
 CONFIG_ESPRESSIF_I2C0_SCLPIN=8
 CONFIG_INPUT=y
 CONFIG_INPUT_GT9XX=y
+# 100 kHz, not the 400 kHz default: the GT911 sits at the far end of the
+# DSI FPC + LCD adapter + touch FPC chain, so its bus capacitance is much
+# higher than the camera's on the short CSI path.  See board.h
+# (BOARD_GT911_I2C_FREQUENCY) for the full reasoning.
+CONFIG_INPUT_GT9XX_I2C_FREQUENCY=100000
 
 # ── LVGL on the framebuffer + touchscreen (NuttX fbdev/input glue) ──
 CONFIG_GRAPHICS_LVGL=y
@@ -266,10 +298,46 @@ CONFIG_NETDB_DNSCLIENT_ENTRIES=8
 CONFIG_NETDB_RESOLVCONF=y
 CONFIG_NETDB_RESOLVCONF_PATH="/tmp/resolv.conf"
 
-# DHCP 客户端: 让路由器同时下发 地址/网关/DNS, 避免静态 10.0.0.2 与
-# 实际网段不一致(会把 DNS 与主机侧可达性一起修好)
+# DHCP: 让路由器同时下发 地址/网关/DNS。
+#
+# ⚠️ 两个符号缺一不可 —— 2026-09-14 真机踩到:
+#   CONFIG_NETUTILS_DHCPC  只把 DHCP **客户端编进来**, 不会有人去调用它;
+#   CONFIG_NETINIT_DHCPC   才是让 netinit 在开机时**真正跑** DHCP。
+# 只开前者时, netinit 走 else 分支, 用 NuttX 出厂默认把网卡刷成
+#   10.0.0.2/24  + 默认路由 10.0.0.1  (见 CONFIG_NETINIT_IPADDR/DRIPADDR)
+# 而现场实际网段是 192.168.1.0/24 —— 于是 DNS 查询全部发往并不存在的
+# 10.0.0.1, 30s 后超时; nslookup 报 "getaddrinfo failed: 1"
+# (NuttX netdb.h: EAI_AGAIN=1, 即"超时"而非"域名不存在")。
+# 同一原因也让主机侧够不到板子(不同网段), WebSocket 因此不可达。
+#
+# netinit.c:509  ifdef CONFIG_NETINIT_DHCPC -> addr=0, g_use_dhcpc=true
+# netinit.c:660  if (g_use_dhcpc) netlib_obtain_ipv4addr()  -> 跑 DHCP
+# netlib_obtainipv4addr.c:82  租约里的 dnsaddr -> netlib_set_ipv4dnsaddr()
+# netlib_setipv4dnsaddr.c:73  -> dns_add_nameserver()  -> 解析器真正拿到 DNS
 CONFIG_NETUTILS_DHCPC=y
 CONFIG_NETUTILS_DHCPC_HOST_NAME="deskmate"
+CONFIG_NETINIT_DHCPC=y
+
+# ⚠️ 必须显式设置。不设时 configure 会落到 NuttX 的默认值 590
+# (即 MTU 576), 而本板其余配置 (ethernet/webpanel/python) 都写 1514。
+#
+# 后果: MTU 576 下, 任何超过 576 字节的出站报文都要走 IP 分片。
+# 之前网络本身不通(DNS 失败), ai_agent 从没真正发出去过流量, 所以没暴露;
+# 2026-09-14 打通网络后, ai_agent 一启动 (~15s) 整块板子就冻死 ——
+# 实测把 eth0 ifdown 掉再启动 ai_agent, 控制台 90s+ 一直正常, 说明冻结
+# 由真实的出站流量触发。改成 1514 (MTU 1500) 与板内其他配置一致。
+CONFIG_NET_ETH_PKTSIZE=1514
+
+# ifup 只是"启动 PHY 状态机", 链路是异步协商好的。netinit 若不等于链路
+# up 就发 DISCOVER, 第一个包会打进一条还没起来的链路并被静默丢弃 ——
+# 表现为开机后 addr 停在 0.0.0.0, 手动 `ifconfig eth0 dhcp` 才拿到地址。
+# 这里让它等 IFF_RUNNING (真 carrier, 只由 netdev_carrier_on 置位)。
+CONFIG_NETINIT_DHCPC_LINK_WAIT_MS=5000
+
+# 静态 DNS 仅作兜底(与现场网关一致); DHCP 拿到租约后会自动覆盖为
+# 路由器下发的服务器。留成 10.0.0.1 会让解析器把"死地址"排在列表最前,
+# 每次解析都先白等一轮超时。
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_DNS_PRIMARY="192.168.1.1"
 
 # 视频栈错误日志默认被编译掉(只有 errno 没有人话), 打开后
 # VIDIOC_S_FMT 拒绝原因才会打印

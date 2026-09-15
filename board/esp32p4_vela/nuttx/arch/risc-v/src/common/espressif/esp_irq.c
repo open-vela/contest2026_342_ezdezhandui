@@ -400,14 +400,33 @@ void up_enable_irq(int irq)
       irqerr("Failed to enable interrupt %d\n", irq);
     }
 
-  /* esp_intr_enable() re-connects the interrupt routing matrix on
-   * ESP32-P4.  The CLIC IE bit for the allocated intno was already set by
-   * esp_intr_alloc() (ESP_INTR_ENABLE(intr)), so no further CLIC write is
-   * needed here.  Note: do NOT add esp_intr_enable_source(ESP_IRQ2SOURCE
-   * (irq)) - the source number is NOT the CLIC intno; passing it would
-   * enable an unrelated interrupt line (and 1 << source is UB for
-   * source >= 32, e.g. ETH_MAC = 92).
+  /* esp_intr_enable() ONLY re-connects the routing matrix when the interrupt
+   * comes from the peripheral matrix (source >= 0) -- it does not write the
+   * CLIC IE bit (in esp_intr_enable() the ESP_INTR_ENABLE() branch is only
+   * taken for source < 0).  esp_intr_alloc() does set that bit, but
+   * esp_setup_irq_intrstatus() asks for ESP_INTR_FLAG_INTRDISABLED, so
+   * esp_intr_alloc() clears it again immediately via esp_intr_disable().
+   *
+   * Net effect before this fix: any interrupt routed through esp_setup_irq()
+   * + up_enable_irq() had CLIC IE == 0 forever and was NEVER delivered to the
+   * CPU.  Observed on real HW as the MIPI-DSI panel freezing on its first
+   * frame: esp_mipi_dsi_dma_isr never ran (a breakpoint on it never hit), so
+   * esp_mipi_dsi_dma_restart() never re-armed the DW-GDMA.
+   *
+   * Re-enable the CLIC line here, using the intno that was actually allocated
+   * -- NOT the peripheral source number.  The previously removed line passed
+   * esp_intr_enable_source(ESP_IRQ2SOURCE(irq)), i.e. a *source* where an
+   * *intno* is expected: it enabled an unrelated line (and 1 << source is
+   * undefined for source >= 32, e.g. ETH_MAC = 92).  Removing it dropped a
+   * necessary step along with the wrong argument; this restores the step with
+   * the correct argument.
+   *
+   * Safe for shared lines: shared_intr_isr() still filters sub-vectors by
+   * their own 'disabled' flag, which esp_intr_enable() has just cleared for
+   * this handle, so this only makes the line deliverable at the CPU.
    */
+
+  esp_intr_enable_source(esp_intr_get_intno(intr_handle));
 }
 
 /****************************************************************************

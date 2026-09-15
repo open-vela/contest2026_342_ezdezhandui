@@ -204,11 +204,29 @@ static bool board_gt911_probe(FAR struct i2c_master_s *i2c, uint8_t addr)
       return false;
     }
 
-  /* A GT9xx answers with an ASCII product ID (for example "911" or "917S").
-   * Anything else means the address is either empty or another device.
+  /* A GT9xx answers register 0x8140 with a four-byte product ID such as
+   * "911" or "917S".
+   *
+   * ⚠️ The field is NUL-padded.  A GT911 reports "911" followed by 0x00, so
+   * requiring all four bytes to be printable ASCII rejects a perfectly
+   * healthy controller.  That is exactly what made this board log
+   * "GT911 not detected at 0x5d or 0x14" while the part was in fact
+   * acknowledging on the bus -- the I2C read succeeded and the validator
+   * threw the answer away.
+   *
+   * Log the raw bytes so the next person sees the data rather than a
+   * conclusion.
    */
 
-  for (i = 0; i < GT911_ID_LEN; i++)
+  syslog(LOG_INFO, "GT911: raw ID at 0x%02x = %02x %02x %02x %02x\n",
+         addr, id[0], id[1], id[2], id[3]);
+
+  if (id[0] < '0' || id[0] > '9')
+    {
+      return false;             /* every GT9xx product ID starts with a digit */
+    }
+
+  for (i = 0; i < 3; i++)
     {
       if (id[i] < 0x20 || id[i] > 0x7e)
         {
@@ -216,9 +234,96 @@ static bool board_gt911_probe(FAR struct i2c_master_s *i2c, uint8_t addr)
         }
     }
 
+  /* The fourth byte is either NUL padding or another printable character. */
+
+  if (id[3] != 0x00 && (id[3] < 0x20 || id[3] > 0x7e))
+    {
+      return false;
+    }
+
   syslog(LOG_INFO, "GT911: product ID \"%c%c%c%c\" at 0x%02x\n",
          id[0], id[1], id[2], id[3], addr);
   return true;
+}
+
+/****************************************************************************
+ * Name: board_i2c_scan
+ *
+ * Description:
+ *   Probe every legal 7-bit address on I2C0 at the given clock rate and log
+ *   the ones that acknowledge.
+ *
+ *   This exists because "the touch controller does not answer" is ambiguous
+ *   on a bus shared with the ES8311 codec and the SC2336 camera: a silent
+ *   probe cannot distinguish "controller absent / unpowered" from "controller
+ *   present but not answering at this clock rate".  Scanning at two rates
+ *   separates those two cases, and a bare 1-byte read is used as the probe so
+ *   that no device register can be modified by the scan itself.
+ *
+ * Input Parameters:
+ *   i2c       - The I2C0 master instance.
+ *   frequency - Bus clock in Hz.
+ *
+ * Returned Value:
+ *   Number of devices that acknowledged.
+ *
+ ****************************************************************************/
+
+static int board_i2c_scan(FAR struct i2c_master_s *i2c, uint32_t frequency)
+{
+  struct i2c_msg_s msg;
+  uint8_t dummy;
+  uint8_t addr;
+  int found = 0;
+
+  memset(&msg, 0, sizeof(msg));
+  msg.frequency = frequency;
+  msg.flags     = I2C_M_READ;
+  msg.buffer    = &dummy;
+  msg.length    = 1;
+
+  for (addr = 0x08; addr <= 0x77; addr++)
+    {
+      msg.addr = addr;
+      if (I2C_TRANSFER(i2c, &msg, 1) == OK)
+        {
+          syslog(LOG_INFO, "I2C0 @%u Hz: ACK from 0x%02x\n",
+                 (unsigned int)frequency, addr);
+          found++;
+        }
+    }
+
+  syslog(LOG_INFO, "I2C0 @%u Hz: scan done, %d device(s)\n",
+         (unsigned int)frequency, found);
+  return found;
+}
+
+/****************************************************************************
+ * Name: board_gt911_probe_retry
+ *
+ * Description:
+ *   board_gt911_probe() with a few retries.  The GT911 needs some time after
+ *   its supply settles before it answers, and the module's reset is only an
+ *   RC network (no host control line), so a single early probe can miss it.
+ *
+ ****************************************************************************/
+
+static bool board_gt911_probe_retry(FAR struct i2c_master_s *i2c,
+                                    uint8_t addr)
+{
+  int i;
+
+  for (i = 0; i < 5; i++)
+    {
+      if (board_gt911_probe(i2c, addr))
+        {
+          return true;
+        }
+
+      up_mdelay(20);
+    }
+
+  return false;
 }
 
 /****************************************************************************
@@ -249,15 +354,23 @@ int board_touchscreen_init(void)
       return -ENODEV;
     }
 
+  /* Record what is actually on the bus before probing, at both the speed we
+   * used to run at and the speed we now use.  This is the difference between
+   * "the controller is not wired" and "the controller cannot keep up".
+   */
+
+  board_i2c_scan(i2c, 400000);
+  board_i2c_scan(i2c, BOARD_GT911_I2C_FREQUENCY);
+
   /* The GT911 latches its address from the INT pin level at power-on; the
    * module does not route that pin, so try both documented addresses.
    */
 
-  if (board_gt911_probe(i2c, BOARD_GT911_I2C_ADDR))
+  if (board_gt911_probe_retry(i2c, BOARD_GT911_I2C_ADDR))
     {
       addr = BOARD_GT911_I2C_ADDR;
     }
-  else if (board_gt911_probe(i2c, BOARD_GT911_I2C_ADDR_ALT))
+  else if (board_gt911_probe_retry(i2c, BOARD_GT911_I2C_ADDR_ALT))
     {
       addr = BOARD_GT911_I2C_ADDR_ALT;
     }

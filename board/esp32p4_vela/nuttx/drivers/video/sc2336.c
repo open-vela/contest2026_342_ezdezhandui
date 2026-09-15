@@ -320,6 +320,49 @@ static const struct sc2336_framesize_s g_sc2336_framesizes[] =
 #define SC2336_NFRAMESIZES \
   (sizeof(g_sc2336_framesizes) / sizeof(g_sc2336_framesizes[0]))
 
+/* Advertised frame intervals.
+ *
+ * ⚠️ 这个数组不是"可选的元数据", 缺了它 VIDIOC_S_FMT 会直接失败。
+ *
+ * v4l2_cap.c 的 initialize_frame_setting() 在驱动没有声明 frmintervals 时,
+ * 会退回到一个**写死的 15 fps** 默认值 (v4l2_cap.c:967-968):
+ *
+ *     else
+ *       {
+ *         interval->denominator = 15;
+ *         interval->numerator   = 1;
+ *       }
+ *
+ * 而这个 15 fps 会被原样送进 sc2336_validate_frame_setting(), 那里的
+ * 规则是"只接受 1/30"(见 SC2336_FPS) -> 校验失败 -> -EINVAL。
+ * 应用侧看到的只是 `Failed to VIDIOC_S_FMT: errno = 22`, 完全看不出原因;
+ * 打开 CONFIG_DEBUG_VIDEO_ERROR 后才打印
+ *     "ERROR: SC2336: only 30 fps is supported"。
+ *
+ * 所以驱动必须把"我支持 1/30"显式声明出来, 上层的默认值才会取对。
+ * 2026-09-14 真机实测: 补上本数组前 S_FMT 必失败, 补上后通过。
+ */
+
+static const struct v4l2_frmivalenum g_sc2336_frmintervals[] =
+{
+  {
+    .index        = 0,
+    .buf_type     = V4L2_BUF_TYPE_VIDEO_CAPTURE,
+    .pixel_format = V4L2_PIX_FMT_SBGGR10,
+    .width        = 1920,
+    .height       = 1080,
+    .type         = V4L2_FRMIVAL_TYPE_DISCRETE,
+    .discrete     =
+    {
+      .numerator   = 1,
+      .denominator = SC2336_FPS
+    }
+  }
+};
+
+#define SC2336_NFRMINTERVALS \
+  (sizeof(g_sc2336_frmintervals) / sizeof(g_sc2336_frmintervals[0]))
+
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
@@ -1010,6 +1053,13 @@ FAR struct imgsensor_s *sc2336_initialize(FAR struct i2c_master_s *i2c,
   priv->sensor.fmtdescs     = g_sc2336_fmtdescs;
   priv->sensor.fmtdescs_num = sizeof(g_sc2336_fmtdescs) /
                               sizeof(g_sc2336_fmtdescs[0]);
+
+  /* 必须声明支持的分辨率/帧率: v4l2_cap 用它们生成默认 frame setting,
+   * 不声明就会退回 15 fps 的写死默认值 -> S_FMT 被本驱动自己的校验拒绝。
+   */
+
+  priv->sensor.frmintervals     = g_sc2336_frmintervals;
+  priv->sensor.frmintervals_num = SC2336_NFRMINTERVALS;
 
   priv->i2c  = i2c;
   priv->addr = addr;

@@ -42,6 +42,7 @@
 #include "esp_attr.h"
 #include "esp_cache.h"
 #include "esp_clk_tree.h"
+#include "esp_intr_alloc.h"
 #include "esp_irq.h"
 #include "esp_private/periph_ctrl.h"
 #include "hal/mipi_dsi_hal.h"
@@ -338,10 +339,55 @@ static int esp_mipi_dsi_dma_setup(FAR struct esp_mipi_dsi_priv_s *priv)
 
   if (priv->dma_cpuint < 0)
     {
-      ret = esp_setup_irq(DW_GDMA_INTR_SOURCE,
-                          ESP_IRQ_PRIORITY_DEFAULT,
-                          ESP_IRQ_TRIGGER_LEVEL,
-                          esp_mipi_dsi_dma_isr, priv);
+      /* DW-GDMA is a *shared* peripheral interrupt source: every channel
+       * (DSI bridge ch0, CSI camera ch1, ...) raises the same DW_GDMA
+       * interrupt.  The ESP-IDF HAL registers it that way and says so
+       * explicitly in dw_gdma.c:
+       *
+       *   "DW_GDMA multiple channels share the same interrupt source, so
+       *    we use a shared interrupt handle"
+       *
+       *   isr_flags = ... | ESP_INTR_FLAG_SHARED;
+       *   esp_intr_alloc_intrstatus(ETS_DW_GDMA_INTR_SOURCE, isr_flags,
+       *                             dw_gdma_ll_get_intr_status_reg(dev),
+       *                             DW_GDMA_LL_CHANNEL_EVENT_MASK(chan_id), ...);
+       *
+       * Claiming it non-shared here marks the last free CLIC line
+       * VECDESC_FL_NONSHARED, so is_vect_desc_usable() refuses the camera's
+       * later shared request for the very same source and, with no other
+       * line left, esp_intr_alloc() fails outright:
+       *
+       *   E intr_alloc: No free interrupt inputs for DW_GDMA interrupt
+       *                 (flags 0x10E)
+       *   E dw-gdma: dw_gdma_install_channel_interrupt(641): alloc failed
+       *   E CSI: esp_cam_new_csi_ctlr(238): failed to register dwgdma cb
+       *   ERROR: failed to initialize the camera: -5
+       *
+       * Register shared instead so DSI ch0 and the camera channel coexist on
+       * one CLIC line.  The IRAM property must stay clear to match the HAL's
+       * flags (0x10E == SHARED | LOWMED), because is_vect_desc_usable()
+       * rejects shared lines whose IRAM flag differs.
+       */
+
+      /* NOTE on the status register: passing intrstatusreg != 0 makes
+       * shared_intr_isr() call this ISR *only* when that register has the
+       * given bit set.  Doing that here silently froze the panel: the ISR
+       * never ran, so esp_mipi_dsi_dma_restart() was never called and the
+       * DW-GDMA stopped after the first frame (verified with a breakpoint on
+       * esp_mipi_dsi_dma_isr -- it never hit -- while the framebuffer kept
+       * changing but the screen did not).
+       *
+       * So register with statusreg == NULL: shared_intr_isr() then invokes the
+       * ISR unconditionally, exactly like the old non-shared allocation did.
+       * That is safe because the ISR always reads/clears only its own channel
+       * status (ESP_MIPI_DSI_DMA_CHAN) and returns immediately otherwise.
+       * The camera keeps its own status mask, so it is not woken needlessly.
+       */
+
+      ret = esp_setup_irq_with_flags(
+              DW_GDMA_INTR_SOURCE,
+              ESP_INTR_FLAG_SHARED | ESP_INTR_FLAG_LOWMED,
+              esp_mipi_dsi_dma_isr, priv);
       if (ret < 0)
         {
           verr("esp_mipi_dsi: DW-GDMA IRQ setup failed: %d\n",

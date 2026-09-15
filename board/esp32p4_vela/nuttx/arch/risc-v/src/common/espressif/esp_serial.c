@@ -91,19 +91,33 @@
 
 /* In case a UART was assigned to be the console and the corresponding
  * peripheral was also selected.
+ *
+ * NOTE: when CONFIG_ESPRESSIF_USBSERIAL is enabled it unconditionally takes
+ * over CONSOLE_DEV further below (the USB-Serial/JTAG peripheral is wired to
+ * the same USB cable used for flashing, so it is the more robust console on
+ * this board).  Do not let the UART branches define CONSOLE_DEV in that case,
+ * otherwise the macro is redefined and the "redefined" warning hides the fact
+ * that the UART is no longer the console.  TTYS0_DEV/UARTn_ASSIGNED are still
+ * set so the UART stays available as a plain serial device.
  */
 
 #ifdef CONSOLE_UART
 #  if defined(CONFIG_UART0_SERIAL_CONSOLE)
-#    define CONSOLE_DEV     g_uart0_dev     /* UART0 is console */
+#    ifndef CONFIG_ESPRESSIF_USBSERIAL
+#      define CONSOLE_DEV     g_uart0_dev     /* UART0 is console */
+#    endif
 #    define TTYS0_DEV       g_uart0_dev     /* UART0 is ttyS0 */
 #    define UART0_ASSIGNED      1
 #  elif defined(CONFIG_UART1_SERIAL_CONSOLE)
-#    define CONSOLE_DEV         g_uart1_dev  /* UART1 is console */
+#    ifndef CONFIG_ESPRESSIF_USBSERIAL
+#      define CONSOLE_DEV         g_uart1_dev  /* UART1 is console */
+#    endif
 #    define TTYS0_DEV           g_uart1_dev  /* UART1 is ttyS0 */
 #    define UART1_ASSIGNED      1
 #  elif defined(CONFIG_LPUART0_SERIAL_CONSOLE)
-#    define CONSOLE_DEV         g_lp_uart0_dev  /* LPUART0 is console */
+#    ifndef CONFIG_ESPRESSIF_USBSERIAL
+#      define CONSOLE_DEV         g_lp_uart0_dev  /* LPUART0 is console */
+#    endif
 #    define TTYS0_DEV           g_lp_uart0_dev  /* LPUART0 is ttyS0 */
 #    define LPUART0_ASSIGNED    1
 #  endif /* CONFIG_UART0_SERIAL_CONSOLE */

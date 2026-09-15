@@ -11,7 +11,7 @@
   <!-- revision 节点锁定（SHA）: 固定到含 copyfile 重定向的提交, 避免 repo sync
        按 default(dev-ai-contest-2026) 退回无 copyfile 旧版。更新: rev-parse fix-clic-interrupt -->
   <project path="contest2026_342_ezdezhandui" name="contest2026_342_ezdezhandui"
-         revision="09e59b1c5d56af89496ee7f4201126e1903a6e6f">
+         revision="7e3447b4980c0a633f43e6bbb2cf744af320995b">
     <copyfile src="board/esp32p4_vela/apps/crypto/mbedtls/CMakeLists.txt" dest="apps/crypto/mbedtls/CMakeLists.txt"/>
     <copyfile src="board/esp32p4_vela/apps/crypto/mbedtls/Kconfig" dest="apps/crypto/mbedtls/Kconfig"/>
     <copyfile src="board/esp32p4_vela/apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h" dest="apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h"/>

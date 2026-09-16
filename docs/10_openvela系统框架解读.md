@@ -454,5 +454,5 @@ grep -E "Mapped IROM|start=0x|NuttShell" /tmp/boot.log
 
 > 相关文档：`docs/03_框架模块设计.md`（本项目的模块设计）、
 > `docs/04_功能闭环测试.md`（五层测试体系与真机结果）、
-> `docs/09_问题处理方案.md`（未决问题的处理方案）、
+> `docs/踩坑笔记_04_MCUboot与FlashXIP.md`（RAM 执行 → Flash XIP 迁移的 10 个坑）、
 > `board/esp32p4_vela/README.md`（移植代码地图与复现步骤）。

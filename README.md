@@ -22,7 +22,6 @@ docs/                      # 开发规划 + 框架解读 + 复盘/测试/方案 
   ├── 10_openvela系统框架解读.md   # ★ openvela 整体架构（repo/分层/配置/构建/启动）
   ├── 03_框架模块设计.md           # 本项目的模块设计
   ├── 04_功能闭环测试.md           # 五层测试体系与真机结果
-  ├── 09_问题处理方案.md           # 未决问题的处理方案
   ├── 踩坑笔记_03_烧录与启动.md     # RAM 执行时代的烧录/启动坑
   └── 踩坑笔记_04_MCUboot与FlashXIP.md  # ★ RAM 执行 → Flash XIP 迁移全过程（10 个坑）
 .claude/skills/            # openvela 官方 AI 开发技能集（17 个，AI Coding 资产）

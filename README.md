@@ -19,6 +19,10 @@ AI 硬件产品创新 + 新硬件平台适配（双赛道）。
 ```text
 board/esp32p4_vela/        # ESP32-P4 平台移植（文件树 nuttx+apps+ai_agent + 构建/烧录说明）
 docs/                      # 开发规划 V5.1 + 踩坑笔记 #01/#04/#05 + 状态交接
+  ├── 10_openvela系统框架解读.md   # ★ openvela 整体架构（repo/分层/配置/构建/启动）
+  ├── 03_框架模块设计.md           # 本项目的模块设计
+  ├── 04_功能闭环测试.md           # 五层测试体系与真机结果
+  └── 09_问题处理方案.md           # 未决问题的处理方案
 .claude/skills/            # openvela 官方 AI 开发技能集（17 个，AI Coding 资产）
 logs/                      # AI Coding 日志（提交前持续导出）
 ```

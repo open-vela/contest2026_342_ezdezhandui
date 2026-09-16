@@ -122,8 +122,14 @@ nuttx/boards/risc-v/esp32p4/
 ```
 
 板级 bringup 决定"硬件怎么活过来"。本项目里这些日志全部出自这一层：
-`MIPI-DSI host registered` / `EK79007 DCS 0xb2 failed` / `GT911 … registered` /
+`MIPI-DSI host registered` / `EK79007 panel initialized` / `GT911 … registered` /
 `SC2336 chip ID: 0xcb3a` / `Camera registered on /dev/video0`。
+
+> 注：早期日志里的 `EK79007 DCS 0xb2 failed: -110`、`GT911 not detected`、`VIDIOC_S_FMT errno=22`
+> 看着都像硬件问题，实际根因分别在 **NuttX 驱动层**（`drivers/video/mipidsi/mipi_dsi_device.c`
+> 未零初始化 `mipi_dsi_msg`）、**传感器驱动**（GT911 产品 ID 校验）与 **V4L2 上层**
+> （`v4l2_cap.c` 在驱动未声明 `frmintervals` 时回退写死 15 fps）。三处均已修复，
+> 详见 `docs/05_开发过程复盘与改进清单.md` §22/§23。
 
 ### 3) 内核层：NuttX 本体（按目录读）
 

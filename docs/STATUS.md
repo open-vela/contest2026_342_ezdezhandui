@@ -1,6 +1,7 @@
 # 项目状态（STATUS）
 
-> 最后更新：**2026-09-14** · 问题项复验（§04 §八）+ 构建健壮性修复（HAL 补丁幂等/顺序）
+> 最后更新：**2026-09-16** · 新增《openvela 系统框架解读》（`docs/10`）；
+> §五 外设状态按 9/14–9/15 的**平台级驱动修复**重写（显示/触摸/DNS 已打通，详见 `docs/05` §22/§23）
 > （逐项结果见 `docs/04_功能闭环测试.md` §七）；收尾计划见 `docs/01_开发规划文档.md` §十
 >
 > 本轮复验要点：一次 `build.sh` 即产出**双镜像**（修复 `bootloader` 目标未入 `all` +
@@ -56,22 +57,26 @@ python3 tools/board.py run "free" "ps"    # 任意 NSH 命令并断言
    port 28789`，但从主机 TCP 连接被拒/超时：主机 `ip route get 10.0.0.2` 显示经路由器
    `192.168.1.1` 转发（非同一二层），ICMP ping 通（0% 丢包）而 TCP 不通。需在同一网段的
    主机上复测，或在板端加一个本机自连用例。
-6. **DNS 不可用**（2026-09-14 复验修正根因）—— 主因是 **`CONFIG_NETDB_DNSCLIENT` 未编入**
-   （`nuttx.map` 中 `dns_*` 符号数 = 0），因此 `nslookup` 直接返回 `getaddrinfo failed: 1`；
-   镜像无 `/etc`、无 `/etc/resolv.conf` 是次要现象。修法与验收见 `docs/09_问题处理方案.md`。
+6. ~~**DNS 不可用**~~ —— **2026-09-14 已修复**（真因三项：`CONFIG_NET_UDP` 未开、
+   `CONFIG_NETINIT_DHCPC` 未开、netinit 不等链路；详见 §五 与 `docs/05` §23.2），
+   现状为 **DHCP 全自动**：`eth0 192.168.1.105`、`nslookup → 202.69.4.22`。
 7. **构建健壮性**（2026-09-14 已修）—— 干净树连续构建会因 HAL 兼容补丁重复应用/顺序
    问题 `config fail`；已改为"应用前 `git reset --hard` 钉定版本 + 幂等 apply + 固定顺序
    0002→0001"，并删除补丁中两段过时 hunk（详见 `docs/04_功能闭环测试.md` §八.3）。
 
-## 五、硬件外设进展
+## 五、硬件外设进展（2026-09-16 更新；本节已按 9/14–9/15 的修复结果重写）
 
-| 外设 | 状态（2026-09-14 复验） |
-|---|---|
-| MIPI-DSI 7" EK79007 + GT911 触摸 + LVGL | ❌ 显示：`EK79007 DCS 0xb2 failed: -110` → **无 `/dev/fb0`**<br>❌ 触摸：GT911 `not detected at 0x5d or 0x14`；**注意 `/dev/input0` 是"未探测到也注册"的 stub**<br>判据：SC2336 与 GT911 **共用 I2C0** 且摄像头正常应答 → I2C0 无问题，指向 LCD 模组供电/FPC/J1→J6 跳线 |
-| MIPI-CSI SC2336 → `/dev/video0` | ✅ 识别（`SC2336 chip ID: 0xcb3a`）<br>❌ 出帧：`camera` → `VIDIOC_S_FMT: errno=22`；**驱动错误被 `verr()` 编译掉**（需 `CONFIG_DEBUG_VIDEO_ERROR=y` 才能看到拒绝原因），中短期解法是接 ISP 输出 RGB565/YUV422 |
-| 网络 DNS | ❌ 根因修正：`nuttx.map` 里 **`dns_*` 符号数 = 0** —— `CONFIG_NETDB_DNSCLIENT` 未编入；`/etc/resolv.conf` 缺失只是次要现象 |
-| ai_agent `vela>` CLI 串口交互 | ❌ agent 启动后 console 输入无响应（agent 启动**前** NSH 交互完全正常） |
-| 运维通道 | ⚠️ 板子的 CP2102 UART 桥（`/dev/ttyUSB0`）**已从主机 USB 消失**，console（UART0）暂时读不到；期间用 `CONFIG_ESPRESSIF_USBSERIAL=y` + `OTHER_SERIAL_CONSOLE` 切到 USJ 口做诊断，现已恢复交付配置 |
+> ⚠️ 9/14 那份"显示/触摸失败、疑似模组硬件问题"的判断**已被推翻**：
+> 真因是三个**平台级驱动缺陷**（见 `docs/05_开发过程复盘与改进清单.md` §22、§23）。
+
+| 外设 | 状态 | 根因 / 证据 |
+|---|---|---|
+| MIPI-DSI 7" EK79007 + LVGL | ✅ **已点亮** | 真因：`drivers/video/mipidsi/mipi_dsi_device.c` 8 处 `struct mipi_dsi_msg` **未零初始化**（`rx_len`/`rx_buf` 残留 → 一条 DCS **写**被当成**读**发出去 → 等 BTA 应答 → `-110`）。修复后真机：`/dev/fb0 ready 1024x600 RGB565 @ 0x48000040`、`/dev/fb0 registered (EK79007)` |
+| GT911 触摸 | ✅ **已修** | 真因：**产品 ID 校验吃掉 NUL 补齐字节**，控制器一直被误判为"未检测到"（commit `6499860`）。显示修好后需复测触摸是否随之恢复（`docs/05` §23.5(c)） |
+| MIPI-CSI SC2336 → `/dev/video0` | 🔶 识别 ✅；出帧链路修复已就位 | `VIDIOC_S_FMT: errno=22` 的真因是 `v4l2_cap.c` 在驱动未声明 `frmintervals` 时**回退写死 15 fps**，而 SC2336 只接受 1/30 → 已显式声明 `g_sc2336_frmintervals[]`；随后暴露的 DW_GDMA 中断分配失败也已修（改 `ESP_INTR_FLAG_SHARED` + 补 `up_enable_irq` 的 CLIC IE，commit `3d7b1f25`）。出帧最终验证以 `docs/05` 为准 |
+| 网络 / DNS | ✅ **已打通且开机全自动** | 三个叠加原因：① `CONFIG_NET_UDP` 未开（`dns_*` 符号数为 0）② `CONFIG_NETINIT_DHCPC` 未开（注意 `NETUTILS_DHCPC` 只是"编进来"、`NETINIT_DHCPC` 才是"去跑它"）③ netinit 不等链路就发 DHCP。修复后真机：`eth0 192.168.1.105 DRaddr 192.168.1.1`、`nslookup api.xiaomimimo.com → 202.69.4.22`；顺带把 MTU 从 576 对齐到 1500 |
+| 🔴 ai_agent 启动后整板冻结 | **当前最大阻塞** | `All network services started!` 之后约 15–27s 整板冻死（未复位）。已排除：空闲、纯网络压测、显示、MTU；嫌疑收窄到网络服务启动后跑起来的组件（与 cron 10s tick 时间吻合）。**注意：`docs/09` §七 记的 "agent 启动后 console 输入无响应" 与本冻结是同一个问题**（不是输入通道问题） |
+| 运维通道 | ⚠️ 注意 | CP2102（`/dev/ttyUSB0`）不在时可用 USJ 口：`python3 tools/board.py run "…" --port /dev/ttyACM0`；但 USJ 的 **DTR/RTS 直接控制复位/下载模式**，被串口软件占用会造成"板子假死"的假象（`docs/05` §23.6） |
 
 ## 六、安全提醒
 

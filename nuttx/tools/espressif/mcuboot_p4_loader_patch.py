@@ -25,6 +25,25 @@ import sys
 
 MARKER = "openvela: map flash-mapped (XIP) regions"
 
+# --- LP_IRAM(TCM) 校验放行 -------------------------------------------------
+# 本仓的链接脚本会把一小段代码/数据放进 TCM（vaddr 0x30100000 段，见
+# mcuboot_mkloadhdr.py 生成的 LP_IRAM 段），但上游 MCUboot 的 ESP32-P4 加载器
+# 只认 RTC fast RAM，于是直接拒收：
+#     [ERR] LP_IRAM region in load header is not valid. Aborting
+# 启动循环。这里让校验同时接受 TCM。
+TCM_MARKER = "openvela: accept TCM (LP_IRAM) segments"
+
+TCM_OLD = '''    if (load_header.lp_rtc_iram_size > 0) {
+        if (!esp_ptr_in_rtc_iram_fast((void *)load_header.lp_rtc_iram_dest_addr) ||
+            !esp_ptr_in_rtc_iram_fast((void *)(load_header.lp_rtc_iram_dest_addr + load_header.lp_rtc_iram_size))) {'''
+
+TCM_NEW = '''    if (load_header.lp_rtc_iram_size > 0) {
+        /* openvela: accept TCM (LP_IRAM) segments */
+        if ((!esp_ptr_in_rtc_iram_fast((void *)load_header.lp_rtc_iram_dest_addr) &&
+             !esp_ptr_in_tcm((void *)load_header.lp_rtc_iram_dest_addr)) ||
+            (!esp_ptr_in_rtc_iram_fast((void *)(load_header.lp_rtc_iram_dest_addr + load_header.lp_rtc_iram_size)) &&
+             !esp_ptr_in_tcm((void *)(load_header.lp_rtc_iram_dest_addr + load_header.lp_rtc_iram_size)))) {'''
+
 INCLUDES = '''#include "hal/mmu_hal.h"
 #include "hal/cache_hal.h"
 #include "hal/cache_ll.h"
@@ -65,44 +84,58 @@ def main():
     with open(path) as f:
         src = f.read()
 
-    if MARKER in src:
+    changed = []
+
+    # ---- 补丁 A：接受 TCM 作为 LP_IRAM 目标（与本仓链接脚本配套）----
+    # 必须排在 XIP 补丁的"已应用就 return"之前，否则新增补丁永远不生效。
+    if TCM_MARKER not in src:
+        if TCM_OLD not in src:
+            raise SystemExit("loader patch: LP_IRAM anchor not found in " + path)
+        # esp_ptr_in_tcm() 已由本文件既有的 esp_memory_utils.h 提供，
+        # 不要再 include 一次（该头无重入保护，会 redefinition）。
+        src = src.replace(TCM_OLD, TCM_NEW, 1)
+        changed.append("TCM LP_IRAM")
+
+    # ---- 补丁 B：把 flash(XIP) 区映射进 MMU 再跳转 ----
+    if MARKER not in src:
+        if ANCHOR not in src:
+            raise SystemExit("loader patch: anchor not found in " + path)
+
+        # 1. Add the required HAL headers.
+        inc_anchor = '#include "esp_mcuboot_image.h"'
+        if inc_anchor in src and "hal/mmu_hal.h" not in src:
+            src = src.replace(inc_anchor, inc_anchor + "\n" + INCLUDES.rstrip(), 1)
+        elif "hal/mmu_hal.h" not in src:
+            lines = src.split("\n")
+            for i, line in enumerate(lines):
+                if line.startswith('#'):
+                    continue
+                lines.insert(i, INCLUDES.rstrip())
+                break
+            src = "\n".join(lines)
+
+        # 2. Map the XIP region right before control is handed over.
+        src = src.replace(ANCHOR, MAP_CODE, 1)
+
+        # 3. A zero-length region is valid in the load header (ESP32-P4 aliases
+        #    IRAM and DRAM, so only one copy is needed) but bootloader_mmap()
+        #    rejects a zero length.  Skip such regions instead of logging an
+        #    error.
+        old_seg = "    const uint32_t *data = (const uint32_t *)bootloader_mmap((fap->fa_off + data_addr), data_len);"
+        new_seg = ("    if (data_len == 0) {\n"
+                   "        return 0;\n"
+                   "    }\n\n" + old_seg)
+        if old_seg in src:
+            src = src.replace(old_seg, new_seg, 1)
+        changed.append("XIP mapping")
+
+    if not changed:
         print("loader patch: already applied")
         return
 
-    if ANCHOR not in src:
-        raise SystemExit(f"loader patch: anchor not found in {path}")
-
-    # 1. Add the required HAL headers.
-    inc_anchor = '#include "esp_mcuboot_image.h"'
-    if inc_anchor in src and "hal/mmu_hal.h" not in src:
-        src = src.replace(inc_anchor, inc_anchor + "\n" + INCLUDES.rstrip(), 1)
-    elif "hal/mmu_hal.h" not in src:
-        # Fall back to prepending after the first block of includes.
-        lines = src.split("\n")
-        for i, line in enumerate(lines):
-            if line.startswith('#'):
-                continue
-            lines.insert(i, INCLUDES.rstrip())
-            break
-        src = "\n".join(lines)
-
-    # 2. Map the XIP region right before control is handed over.
-    src = src.replace(ANCHOR, MAP_CODE, 1)
-
-    # 3. A zero-length region is valid in the load header (ESP32-P4 aliases
-    #    IRAM and DRAM, so only one copy is needed) but bootloader_mmap()
-    #    rejects a zero length.  Skip such regions instead of logging an
-    #    error.
-    old_seg = "    const uint32_t *data = (const uint32_t *)bootloader_mmap((fap->fa_off + data_addr), data_len);"
-    new_seg = ("    if (data_len == 0) {\n"
-               "        return 0;\n"
-               "    }\n\n" + old_seg)
-    if old_seg in src:
-        src = src.replace(old_seg, new_seg, 1)
-
     with open(path, "w") as f:
         f.write(src)
-    print("loader patch: applied (MMU mapping of IROM regions)")
+    print("loader patch: applied (" + ", ".join(changed) + ")")
 
 
 if __name__ == "__main__":

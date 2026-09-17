@@ -2,8 +2,8 @@
   "schema_version": "1.0",
   "team_id": "contest2026-342",
   "github_login": "ez-xu",
-  "generator": "claude-code-collector@1.2.0",
-  "updated_at": "2026-09-11T08:55:30.492914+00:00",
+  "generator": "dsh-exporter@1.0",
+  "updated_at": "2026-09-17T05:38:49.949385+00:00",
   "sessions": [
     {
       "session_id": "020c57b8-625e-4b12-8239-f389b6dcac77",
@@ -221,6 +221,17 @@
       "collection_mode": "cli",
       "health": "ok",
       "model": "deepseek-v4-flash-ga-260731"
+    },
+    {
+      "session_id": "96802734-455a-4fa8-9928-e1b4dcf50987",
+      "tool": "dsh",
+      "started_at": "2026-09-11T06:53:23.954000Z",
+      "last_event_at": "2026-09-17T05:38:42.871000Z",
+      "event_count": 6948,
+      "raw_event_count": 66732,
+      "file_path": "logs/ez-xu/2026-09-11/dsh__96802734-455a-4fa8-9928-e1b4dcf50987.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
     }
   ]
 }

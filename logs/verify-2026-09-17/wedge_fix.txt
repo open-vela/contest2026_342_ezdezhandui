@@ -1,0 +1,56 @@
+# 「ai_agent 启动后整机失聪」—— 根因与修复验证（2026-09-17 傍晚）
+# 固件：应用 sha256 56c6e5072ef9f150e0443d542b953994b904e1061446ee9849f92e9f3c5fd090
+#       引导 mcuboot-esp32p4.bin 24,672 B（0x2000）+ 应用 1,835,008 B（0x20000）
+
+== 根因（一行） ==
+nuttx/arch/risc-v/src/common/riscv_doirq.c 里那段"早期引导保护"：
+    if (g_running_task == NULL) { return regs; }        ← 原样
+把**所有** trap 都吞掉了；而 up_exit() 恰恰是**故意**先把 g_running_task 置 NULL，
+再发 ECALL(SYS_restore_context=1) 去做上下文切换 —— 于是这条 ECALL 进不到
+riscv_swint()，被返回后原地重发，形成死循环。任何任务退出都会触发。
+
+== 现场证据（修复前） ==
+JTAG 读计数（两次采样间隔 4~5s）：
+  g_dbg_irq_cnt[0..5]  = 0x1ea5 0x1a 0x112 0x126f 0x25 0x5bd   ← 两次完全相同：没有任何中断被派发
+  g_dbg_demux_cnt      = 0x3822                               ← 冻结
+  g_dbg_tick_cnt       = 0x1ea5 / g_system_ticks = 0x1ea5      ← 节拍冻死
+  g_dbg_exc_cnt        = 0x013efbdd -> 0x0160c58b              ← +2.2e6 / 5s ≈ 49 万次/秒
+  g_dbg_exc_mcause     = 0x3000000b                            ← ECALL from M-mode (异常 11)
+  g_dbg_exc_mepc       = 0x4002fa64                            ← 落在 up_exit 的 ecall 指令上
+  g_dbg_exc_ra         = 0x4002fa5a                            ← 同一函数内部
+反汇编（riscv-none-elf-objdump）：
+  4002fa56: jal  nxtask_exit
+  4002fa5e: sw   zero,188(a5)   # g_running_tasks = NULL   ← up_exit 故意置空
+  4002fa62: li   a0,1           # SYS_restore_context
+  4002fa64: ecall               # ★ 陷入点（mepc）
+  4002fa6a: j    4002fa62       # ★ 原地重发 → 死循环
+调度器现场：g_running_tasks[0] = NULL；就绪队列只剩 idle（g_readytorun.head=tail=g_idletcb）
+外设现场：SYSTIMER INT_ENA=5 INT_RAW=5 INT_ST=5（节拍闹钟在请求，没人服务）
+         手动写 INT_CLR 可清掉，但 3s 后又 pending —— 系统仍不恢复（挂起位是症状）
+判别实验：子 shell 里执行 `exit`（与 agent 无关的普通任务退出）→ 同样死：
+  ping 0/4（100% 丢）、mepc 同样 0x4002fa64、exc_cnt 同样爆炸
+
+== 修复 ==
+riscv_doirq() 的保护只对**硬件中断**生效（irq > RISCV_MAX_EXCEPTION=15），
+异常/系统调用（0..15，含 ECALLM=11）必须继续派发：
+
+    if (g_running_task == NULL && irq > RISCV_MAX_EXCEPTION)
+      {
+        return regs;
+      }
+
+== 修复后验证（生产固件，诊断开关已关回 0） ==
+① 普通任务退出：子 shell `exit` 后 ping 4/4 收（0% 丢），系统照常运行（修复前必死）
+   计数：g_system_ticks 持续推进；mepc 已回到正常换上下文路径 0x4002fcd6（up_switch_context）
+② ai_agent 启动：日志走到 "[agent] All network services started!"
+   ping 5/6（16.7% 丢，与空闲基线一致；修复前 0/5 = 100% 丢）
+   TCP 28789 连接建立成功（WS 服务在监听）
+③ 启动 60s 后再测：ping 仍 4/5（20% 丢）—— 不再出现"整机失聪"
+
+== 修复后仍未闭环的（独立问题，如实记录） ==
+* 对 28789 发起 WebSocket / HTTP 请求会在 ~10ms 内被 RST（收到 0 字节）。
+  TCP 三次握手正常、端口在监听；REST 接口未编入（CONFIG_AI_AGENT_REST_API 未开），
+  所有连接都走 ws_server.c 的握手分支。待查方向：握手返回路径 / abortive close
+  （SO_LINGER=0）与 NuttX 侧行为。与"失聪"无关，修复前后一致。
+* MiMo API key（tp-…whc）经主机直连验证仍为 **HTTP 401 Invalid API Key**
+  （api.xiaomimimo.com/v1/chat/completions 与 /v1/models 均拒），故 LLM 真实对话未验证。

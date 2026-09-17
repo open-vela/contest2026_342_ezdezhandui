@@ -111,6 +111,35 @@ static volatile intr_handle_t g_handle_map[CONFIG_SMP_NCPUS][NR_IRQS];
 static uint64_t g_iram_count[CONFIG_SMP_NCPUS][NR_IRQS];
 #endif
 
+/* ── WEDGE_DIAG: "ai_agent 启动后整机失聪" 现场诊断（默认关）────────────────
+ *
+ * 置 1 编出诊断固件后，用 JTAG 只读这几个全局即可定量判定：
+ *   g_dbg_irq_cnt[]   每条 CPU 中断线(cpuint)的派发次数 —— 谁在风暴、谁被饿死
+ *   g_dbg_demux_cnt   esp_isr_demultiplexing 进入次数（外设中断共用入口）
+ *   g_dbg_exc_cnt     非中断(异常)派发次数，配 g_dbg_exc_mcause —— 区分
+ *                     "中断风暴" 与 "异常死循环"
+ *   g_dbg_dis_ring[]  up_disable_irq() / esp_clear_handle() 的环形记录
+ *                     {irq, 调用者返回地址} —— 谁最后动了哪条线，直接看这里
+ *
+ * 读法（openocd）: mdw <符号地址> <字数>，符号地址见 System.map；
+ * 完整流程见 tools/wedge_diag.sh 与 docs/05 §26。
+ */
+
+#define ESP_WEDGE_DIAG 0
+
+#if ESP_WEDGE_DIAG
+volatile uint32_t g_dbg_irq_cnt[ESP_NCPUINTS];   /* 各 cpuint 派发次数 */
+volatile uint32_t g_dbg_demux_cnt;               /* 外设中断共用入口进入次数 */
+volatile uint32_t g_dbg_exc_cnt;                 /* 异常(非中断)派发次数 */
+volatile uint32_t g_dbg_exc_mcause;              /* 最后一次异常 mcause */
+volatile uint32_t g_dbg_exc_mepc;                /* 最后一次异常的发生 PC（ECALL 就在这） */
+volatile uint32_t g_dbg_exc_ra;                  /* 最后一次异常时 x1（= 该函数的调用者） */
+volatile uint32_t g_dbg_exc_sp;                  /* 最后一次异常时 x2 */
+volatile uint32_t g_dbg_exc_a0;                  /* 最后一次异常时 a0 */
+volatile uint32_t g_dbg_dis_ring[16];            /* {irq, ra, 0, 0} × 4 条环形记录 */
+volatile uint32_t g_dbg_dis_idx;                 /* 环形写指针 */
+#endif
+
 /****************************************************************************
  * Public Data
  ****************************************************************************/
@@ -204,6 +233,10 @@ IRAM_ATTR static int esp_isr_demultiplexing(int irq, void *context,
   int cpuint = esp_get_cpuint(this_cpu(), irq);
   intr_handler_t handler;
   struct intr_adapter_from_nuttx *handler_arg;
+
+#if ESP_WEDGE_DIAG
+  g_dbg_demux_cnt++;
+#endif
 
   /* Validate cpuint - if invalid, the interrupt was not properly
    * registered via esp_setup_irq. This is a bug that needs to be fixed.
@@ -448,6 +481,18 @@ void up_disable_irq(int irq)
   esp_err_t ret;
   intr_handle_t intr_handle = esp_get_handle(this_cpu(), irq);
 
+#if ESP_WEDGE_DIAG
+  /* 记录"谁 disable 了哪条线"（环形，4 条） */
+
+  {
+    uint32_t i = (g_dbg_dis_idx++ & 3u) * 4u;
+    g_dbg_dis_ring[i + 0] = (uint32_t)irq;
+    g_dbg_dis_ring[i + 1] = (uint32_t)(uintptr_t)__builtin_return_address(0);
+    g_dbg_dis_ring[i + 2] = 0xdd000000u | (uint32_t)irq;
+    g_dbg_dis_ring[i + 3] = 0;
+  }
+#endif
+
   ret = esp_intr_disable(intr_handle);
   if (ret != ESP_OK)
     {
@@ -643,6 +688,13 @@ IRAM_ATTR void *riscv_dispatch_irq(uintreg_t mcause, uintreg_t *regs)
       uint8_t cpuint = (mcause & VECTORS_MCAUSE_REASON_MASK) -
                        RV_EXTERNAL_INT_OFFSET;
 
+#if ESP_WEDGE_DIAG
+      if (cpuint < ESP_NCPUINTS)
+        {
+          g_dbg_irq_cnt[cpuint]++;
+        }
+#endif
+
       DEBUGASSERT(cpuint >= 0 && cpuint < ESP_NCPUINTS);
 
       irq = esp_cpuint_to_irq(cpuint, cpu);
@@ -679,6 +731,15 @@ IRAM_ATTR void *riscv_dispatch_irq(uintreg_t mcause, uintreg_t *regs)
   else
     {
       /* It's exception */
+
+#if ESP_WEDGE_DIAG
+      g_dbg_exc_cnt++;
+      g_dbg_exc_mcause = (uint32_t)mcause;
+      g_dbg_exc_mepc = (uint32_t)regs[0];   /* 帧里 index0 = 发生异常的 PC */
+      g_dbg_exc_ra   = (uint32_t)regs[1];   /* x1 = 该函数的返回地址（调用者） */
+      g_dbg_exc_sp   = (uint32_t)regs[2];   /* x2 = 栈指针 */
+      g_dbg_exc_a0   = (uint32_t)regs[10];  /* a0 = 第一个参数 */
+#endif
 
       irq = mcause &
             (VECTORS_MCAUSE_INTBIT_MASK | VECTORS_MCAUSE_REASON_MASK);
@@ -782,6 +843,18 @@ intr_handle_t esp_get_handle(int cpu, int irq)
 
 static void esp_clear_handle(int cpu, int irq)
 {
+#if ESP_WEDGE_DIAG
+  /* 记录"谁把哪条线的 handle 清掉了"（环形，4 条，tag=0xcc） */
+
+  {
+    uint32_t i = (g_dbg_dis_idx++ & 3u) * 4u;
+    g_dbg_dis_ring[i + 0] = (uint32_t)irq;
+    g_dbg_dis_ring[i + 1] = (uint32_t)(uintptr_t)__builtin_return_address(0);
+    g_dbg_dis_ring[i + 2] = 0xcc000000u | (uint32_t)irq;
+    g_dbg_dis_ring[i + 3] = 0;
+  }
+#endif
+
   g_handle_map[cpu][irq] = IRQ_UNMAPPED;
 }
 

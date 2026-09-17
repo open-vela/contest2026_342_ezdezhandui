@@ -183,9 +183,20 @@ uintreg_t *riscv_doirq(int irq, uintreg_t *regs)
   /* Early boot (openvela SIMPLE_BOOT): an interrupt source armed by the
    * ROM can fire before the scheduler is up, when g_running_task is still
    * NULL and the top-half would fault on the null dereference.  Ignore
-   * such interrupts; the scheduler re-enables what it needs. */
+   * such interrupts; the scheduler re-enables what it needs.
+   *
+   * ⚠️ The guard must apply to **hardware interrupts only** (irq >
+   * RISCV_MAX_EXCEPTION).  Exceptions/syscalls (irq 0..15) have to reach
+   * riscv_doirq_top() even when g_running_task is NULL, because up_exit()
+   * clears g_running_task *on purpose* and then raises SYS_restore_context
+   * (an ECALL, i.e. exception 11) so that the top-half can switch to the
+   * next ready task.  Swallowing that ECALL here made every task exit a
+   * terminal hang: the ECALL was re-executed forever (~5e5/s) with
+   * interrupts effectively dead, taking the tick, the network and the
+   * console down with it (observed on ai_agent startup and on a plain
+   * NSH `exit`; details in docs/06 §26). */
 
-  if (g_running_task == NULL)
+  if (g_running_task == NULL && irq > RISCV_MAX_EXCEPTION)
     {
       return regs;
     }

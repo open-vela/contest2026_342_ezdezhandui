@@ -65,6 +65,16 @@
 
 static systimer_hal_context_t systimer_hal;
 
+/* WEDGE_DIAG: 节拍 ISR 实际进入次数（配合 esp_irq.c 的 g_dbg_* 判"中断有没有跑到
+ * 处理器"；JTAG 只读）。默认关，需要时改 1 编诊断固件。详见 docs/06 §26。
+ */
+
+#define ESP_WEDGE_DIAG 0
+
+#if ESP_WEDGE_DIAG
+volatile uint32_t g_dbg_tick_cnt;
+#endif
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -88,6 +98,10 @@ static systimer_hal_context_t systimer_hal;
 
 static int systimer_irq_handler(int irq, void *context, void *arg)
 {
+#if ESP_WEDGE_DIAG
+  g_dbg_tick_cnt++;
+#endif
+
   systimer_ll_clear_alarm_int(systimer_hal.dev,
                               SYSTIMER_ALARM_OS_TICK_CORE0);
 

@@ -160,7 +160,7 @@ def main():
     #    ManifestInvalidPathError: "<path>: traversing symlinks not allow"，
     #    评审端 repo sync 就少这个路径 → 构建失败。而 <linkfile> 只能把 dest
     #    链到作品仓内的路径，无法还原"链到工作区内的相对目标"。
-    #    （已用 repo 源码实测：目录软链与文件软链都报错，见 docs/05 §24.3）
+    #    （已用 repo 源码实测：目录软链与文件软链都报错，见 docs/06 §24.3）
     for sub, _dest_prefix in GROUPS:
         root = os.path.join(REPO, sub)
         if not os.path.isdir(root):

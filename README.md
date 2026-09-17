@@ -60,7 +60,7 @@ logs/                      # AI Coding 日志（提交前持续导出）
 > 那个软链只有 make 构建路径在用（该路径本身已不通，评审走 `--cmake`），已随本次改动删除。
 >
 > 因此评审只需 `repo sync` + `build.sh`，**不需要 deploy/rsync 之类的部署步骤**
-> （详见 `docs/05` §二十四）。
+> （详见 `docs/06` §二十四）。
 
 ```bash
 # 1. 拉取（repo sync 自动应用全部改动）
@@ -115,5 +115,5 @@ python3 tools/board.py run "free" "ai_agent"
 - ❌ 显示：EK79007 无应答 → **无 `/dev/fb0`**（I2C0 上 SC2336 正常，疑模组供电/FPC/J1→J6 跳线）
 - ❌ DNS 不可用（无 `/etc/resolv.conf`）；WebSocket 28789 板端已监听、主机侧未打通（非同一 L2）
 - ⏳ 演示视频 + 《作品介绍》随提交材料
-- 📌 详细状态与差距见 `docs/STATUS.md`、`docs/04_功能闭环测试.md` §七、`docs/05_开发过程复盘与改进清单.md`
+- 📌 详细状态与差距见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
 

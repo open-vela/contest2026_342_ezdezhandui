@@ -209,7 +209,7 @@ def main():
                     print(f"    ⚠️ {_dest_rel(rel)} 是软链 —— manifest <copyfile> 不接受"
                           f"任何软链（repo 报 traversing symlinks not allow），"
                           f"评审端将缺失该路径；请改为普通文件/目录在源码层消化"
-                          f"（参见 docs/05 §二十四）")
+                          f"（参见 docs/06 §二十四）")
                     if os.path.lexists(d):
                         os.remove(d)
                     os.symlink(os.readlink(s), d)

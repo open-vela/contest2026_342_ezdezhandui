@@ -65,7 +65,15 @@ sleep 4
 sample B
 
 cat <<'EOF'
-──────── 判读（对照 logs/verify-2026-09-17/wedge_jtag.txt）────────
+──────── 判读 ────────
+ 2026-09-17 晚：本症状**已定位并修复** —— riscv_doirq() 的早期引导保护
+ `if (g_running_task == NULL) return regs;` 把 up_exit() 故意发出的
+ ECALL(SYS_restore_context) 也一起吞掉，于是任何任务退出都卡成 ECALL 死循环
+ （修复：该保护只对 irq > RISCV_MAX_EXCEPTION 的硬件中断生效）。
+ 本脚本保留作**回归检查**：若再出现下面的读数，说明这条路径又断了。
+ 现场与验证：logs/verify-2026-09-17/wedge_fix.txt、docs/06 §26.7
+
+──────── 读数对照（修复前基线，原始记录 wedge_jtag.txt）────────
  健康态: pc 落在 esp_cpu_wait_for_intr(WFI) ; mstatus.MIE=1 ; g_system_ticks 每次采样都在涨
          SYSTIMER INT_RAW=0（每个 tick 都被 ISR 清掉）
  wedge  : pc 落在 exception_common/riscv_dispatch_irq/return_from_exception（trap 进出路径）
@@ -73,6 +81,7 @@ cat <<'EOF'
          SYSTIMER INT_ENA=5 INT_RAW=5 INT_ST=5（TARGET0 节拍闹钟 + TARGET2 esp_timer 都在请求）
          mintthresh/mtvec/mtvt/mie/mip 与健康态一致（不是阈值/向量表的问题）
          s_intr_handlers 与健康态逐字节相同（intno0 仍是 systimer_irq_handler=4002f672）
- 结论   : 外设在请求中断、处理器仍注册着，但 CPU 侧没有把这条中断跑完 →
-          中断投递/共享线(CLIC)路径在 ai_agent 启动网络服务之后失效（详见 docs/05 §二十六）
+ 结论   : 外设在请求中断、处理器仍注册着，但 CPU 侧没有把这条中断跑完
+          ⇒ 当时收敛到"中断投递失效"；后续埋点进一步证明真因是 up_exit 的
+          SYS_restore_context ECALL 被 riscv_doirq() 的早期引导保护吞掉（见上）
 EOF

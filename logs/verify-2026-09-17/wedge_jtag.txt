@@ -1,0 +1,58 @@
+# ai_agent 启动后整机失聪 —— JTAG 现场取证（2026-09-17 14:35-14:57）
+# 工具: /home/ez/tools/openocd-esp32/bin/openocd -f board/esp32p4-builtin.cfg
+# 固件: 最终固件 nuttx.bin sha256 ea630aa9f94e8ac3964e94133b381687337b1c0c150297c47169d605a60b8032
+
+== 复现（100% 稳定，今天 3/3 次）==
+nsh> ai_agent
+...[agent] All network services started!
+之后: ping 5 包 0 收（100% 丢包）；TCP 28789 connect 超时；串口输入无回显
+
+== 采样 1/2（两次间隔 4s，resume 之后 CPU 继续跑）==
+采样A  pc=0x4ff4015e  mcycle=0xebb8a32c  minstret=0x70fe5ea0  mstatus=0x00001801
+       mcause=0x3000000b (ECALL, halt 伪迹)  mepc=0x4002f964  mtvec=0x4ff40003  mtvt=0x4ff40040
+       mintthresh=0x1f  mie=0  mip=0  g_system_ticks=0x157d(=5501)
+       UART0 INT_RAW=0x4002 INT_ENA=0x0101 STATUS=0xe000c000
+       SYSTIMER INT_ENA=5 INT_RAW=5 INT_CLR=0 INT_ST=5   TARGET0_CONF=0xc0027100(period=160000=10ms@16MHz, work_en=1)
+       SYSTIMER UNIT0_VALUE_LO=0x32b53120
+采样B  pc=0x4ff4061e  mcycle=0x05cf39d1  minstret=0x84e5fa1e  （其余同上，g_system_ticks 仍 0x157d）
+
+  → mcycle/minstret 在两采样间大幅前进（CPU 在跑，不是停摆）
+  → g_system_ticks 纹丝不动（100Hz 节拍中断没在跑）
+
+== 对照：健康态（复位后未启 ai_agent，同样方式 halt）==
+       pc=0x4ff412fe = esp_cpu_wait_for_intr（WFI 空闲）
+       mstatus=0x00000089（MIE=1）  mintthresh=0x1f  mtvec=0x4ff40003
+       g_system_ticks=0x0b5b → 4s 后 0x0cf5（+410，≈102.5Hz，节拍正常）
+       SYSTIMER INT_RAW=0（每个 tick 都被 ISR 清掉了）
+
+  → mintthresh / mtvec / mtvt / mie / mip 在两种状态下一致 ⇒ 不是阈值/向量表被改
+  → halt 伪迹里 mstatus.MPIE=1 ⇒ 进入 trap 前 CPU 的中断是开着的（MIE 不是被关的）
+  → PC 落在 exception_common(0x4ff40100..) / riscv_dispatch_irq(0x4ff405c4..) /
+     return_from_exception ⇒ CPU 绝大多数时间在 trap 进出路径上（中断风暴），
+     而健康态 PC 稳定停在 WFI
+
+== 中断向量与处理器表（wedge 与 healthy 逐字节相同）==
+g_irqvector[0..17]: 16 项 0x40001eba + 1 项 0x40002032 + 0x4ff404f6(esp_isr_demultiplexing) + 0
+s_intr_handlers[core0] (fn,arg):
+  intno0 4ff404bc 4ff5ee58   intno1 4ff404bc 4ff5efd0   intno2 4ff404bc 4ff63718
+  intno3 4000236c 4ff639c8   intno4 4ff404bc 4ff64eb8   intno5 4ff404bc 4ff65028
+各 intno 的 adapter 参数（func, irq, ctx, arg）:
+  intno0: func=4002f672 (=systimer_irq_handler, NuttX 节拍 ISR) irq=0x46(70)
+  intno1: func=40001aca irq=0x30(48)    intno2: func=400413e8 irq=0x3d(61)
+  intno3: shared_intr_isr(HAL 共享线)   intno4: func=4000028e irq=0x48(72)
+  intno5: func=4000028e irq=0x6d(109)
+  → 节拍 ISR 仍然注册在 intno0 上、SYSTIMER 外设侧 INT_ENA=5/INT_ST=5（在向 CPU 请求），
+    但 g_system_ticks 不动 ⇒ 中断被"取走"后没有走到该 handler（或被更高优先级线持续抢占）
+
+== 手动清 pending 的判别实验 ==
+halt 后写 SYSTIMER_INT_CLR=0x5：INT_RAW 5 → 0；resume 3s 后 INT_RAW 回到 0x1（TARGET0 周期闹钟照常再来）
+  → 清挂起位不能救活系统（g_system_ticks 仍 0x157d，ping 仍 100% 丢）
+  → 挂起位是"症状"：外设在请求、CPU 侧没有把它跑完
+
+== 相关代码线索 ==
+board_emac_init()                     -> esp_hr_timer_init()            (vendor/espressif/.../esp32p4_ethernet.c:64)
+esp_hr_timer_init() [esp_timer_adapter.c] -> esp_timer_early_init() + esp_timer_init()   (ROM IDF esp_timer)
+esp_timer_impl_systimer.c             -> 用 SYSTIMER_ALARM_ESPTIMER + ETS_SYSTIMER_TARGET2_INTR_SOURCE
+nuttx esp_timerisr.c                  -> 用 SYSTIMER_ALARM_OS_TICK_CORE0 + SYSTIMER_TARGET0_INTR_SOURCE
+  → 两者共用同一颗 systimer、由 port 的 esp_irq.c(CLIC/共享线)统一分配 CPU 中断线；
+    现场同时看到 TARGET0 与 TARGET2 的 pending 位（INT_RAW=0x5）

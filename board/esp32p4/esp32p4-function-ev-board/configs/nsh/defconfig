@@ -89,8 +89,8 @@ CONFIG_FS_PROCFS=y
 CONFIG_IDLETHREAD_STACKSIZE=2048
 CONFIG_INIT_ENTRYPOINT="nsh_main"
 CONFIG_INTELHEX_BINARY=y
-CONFIG_IOB_NBUFFERS=32
-CONFIG_IOB_NCHAINS=8
+CONFIG_IOB_NBUFFERS=128
+CONFIG_IOB_NCHAINS=32
 CONFIG_LIBC_NETDB=y
 CONFIG_LIBC_PERROR_STDOUT=y
 CONFIG_LIBC_STRERROR=y
@@ -125,9 +125,15 @@ CONFIG_SYSTEM_SYSTEM=y
 # CONFIG_MBEDTLS_SSL_EXTENDED_MASTER_SECRET is not set
 # CONFIG_MBEDTLS_ECDSA_DETERMINISTIC is not set
 # CONFIG_MBEDTLS_SSL_MAX_EARLY_DATA_SIZE is not set
-# shrink network buffering
-CONFIG_IOB_NBUFFERS=8
-CONFIG_IOB_NCHAINS=4
+# Network packet buffering (see CONFIG_IOB_NBUFFERS / _NCHAINS above).
+# CONFIG_IOB_BUFSIZE is 196B, so one 1500B Ethernet frame costs ~8 IOBs; the
+# earlier "SRAM-only" build had shrunk the pool to 8 buffers / 4 chains, which
+# is too small once several sockets are live at once (agent: WS listen + TLS
+# client + readahead). With flash XIP the window has >400KB free, so size it
+# properly instead of starving it.
+# ⚠️ This is sizing hygiene, NOT the fix for the "agent runs -> board goes deaf"
+# symptom: the 8->128 change was A/B tested on hardware and that symptom was
+# unchanged (see docs/STATUS.md §四.1, docs/05 §二十五).
 # slim system features not needed for the demo
 # CONFIG_SCHED_BACKTRACE is not set
 # CONFIG_LIBC_STRERROR is not set
@@ -180,9 +186,12 @@ CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
 # (esp_serial.c still guards CONSOLE_DEV against a USBSERIAL redefinition, so a
 #  future retry fails loudly instead of silently shadowing the UART console.)
 CONFIG_UART0_SERIAL_CONSOLE=y
-# EMAC DMA buffers sized to fit the 35KB heap (SRAM-only build)
-CONFIG_ESPRESSIF_ETH_NRXDESC=2
-CONFIG_ESPRESSIF_ETH_NTXDESC=2
+# EMAC DMA buffers (heap-allocated; the heap is now the 32MB PSRAM region, so
+# the old "fit in a 35KB SRAM heap" limit of 2/2 no longer applies). Raised for
+# throughput headroom — like the IOB change above it was A/B tested and did not
+# change the "agent runs -> board goes deaf" symptom.
+CONFIG_ESPRESSIF_ETH_NRXDESC=8
+CONFIG_ESPRESSIF_ETH_NTXDESC=8
 CONFIG_SYSLOG_DEVPATH="/dev/console"
 CONFIG_SYSLOG_MAX_CHANNELS=2
 CONFIG_FS_TMPFS=y

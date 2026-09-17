@@ -1,0 +1,31 @@
+# ai_agent 端到端对话（WebSocket → LLM → 回答）真机实录（2026-09-17 晚）
+# 板子: ESP32-P4X-C5-Function-EV-Board 192.168.1.105，固件含本轮三处修复
+# 客户端: /tmp/ws_demo.py（无依赖的极简 WS 客户端），服务端: ai_agent ws_server 28789
+
+[ws] connected to ws://192.168.1.105:28789/
+[ws] -> {"type": "message", "content": "只回复：你好"}
+[ws] <- op=1 {"type":"response","content":"让我查一下...","chat_id":"ws_4"}      ← agent 本地进度提示
+[ws] <- op=1 {"type":"response","content":"你好","chat_id":"ws_4"}              ← ★ LLM 真实回答
+[ws] done: 2 frames in 261.1s
+
+# 板子侧串口同时打印（同一次会话，节选）：
+#   [llm] LLM proxy initialized (model: mimo-v2.5, host: token-plan-cn.xiaomimimo.com)
+#   [ws] client connected: fd=4 / Client connected: ws_4 (fd=4)
+#   [ws] WS msg from ws_4: 只回复：你好
+#   [llm] OpenAI API with tools (model: mimo-v2.5, 15090 bytes)
+#   [llm] Response: 6 bytes text, 0 tool calls, finish=end_turn      ← 请求确实成功
+#   [agent] Dispatching response → websocket:ws_4
+
+# ── 本轮修掉的三件事（都在这条链路里）──────────────────────────────
+# ① 端点不对：key 属于 Token Plan 网关，默认 api.xiaomimimo.com → 401。
+#    改为 token-plan-cn.xiaomimimo.com（密钥文件里覆盖，见 docs/06 §27.1）
+# ② 连接被 RST：CONFIG_NET_TCPBACKLOG=n ⇒ 监听 socket 的 poll 永远不报可读，
+#    WS 服务端永远 accept 不到连接（peer 收到 RST、0 字节）。开启后握手成功：
+#      HTTP/1.1 101 Switching Protocols / Sec-WebSocket-Accept: r0TrHkmdTpTfiD/0Yp3vjFG6h7c=
+# ③ 回答被丢弃：LLM 时延用 gettimeofday 量，而 TLS 层在首次握手时会把
+#    CLOCK_REALTIME 强推到 2026（证书校验需要），于是"一次调用"里跨了 1.7e9 秒的跳变，
+#    看门狗报 "call took 2748619798 ms (limit 60s)" 把**已经拿到的好答案**丢掉。
+#    改为 CLOCK_MONOTONIC 计时 + 看门狗 60→180s（socket 120→240s）。
+
+# 已知体验问题（如实记录）：一次问答实测 261s（推理模型 + 15KB 工具 schema），
+# 后续可通过降低 max_tokens / 精简工具集 / 换非推理模型来提速。

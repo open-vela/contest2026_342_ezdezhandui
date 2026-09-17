@@ -43,6 +43,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/time.h>
+#include <time.h>
 
 #include "cJSON.h"
 
@@ -64,6 +65,26 @@ static bool llm_call_timed_out(uint32_t latency_ms);
     "请求超时，LLM 响应时间过长。请稍后重试，或尝试简化你的问题。"
 #define LLM_TIMEOUT_TASK_COMPLETE_MSG \
     "任务已完成，但生成确认消息超时。"
+
+/* ── Monotonic elapsed time ─────────────────────────────────
+ *
+ * NOTE: latency MUST NOT be measured with the wall clock here.
+ * The TLS layer (infra/vela_tls.c) forces CLOCK_REALTIME forward when it
+ * finds the clock too old for certificate validation; on this board that
+ * happens *during the first HTTPS handshake*, so a wall-clock window spans
+ * a ~1.7e9 s jump and the LLM watchdog declared a timeout on calls that had
+ * actually completed (observed: "call took 2748619798 ms (limit 60s)" while
+ * the reply had already arrived).  CLOCK_MONOTONIC is tick-based and is not
+ * affected by wall-clock adjustments.
+ */
+
+static inline uint32_t mono_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint32_t)((uint64_t)ts.tv_sec * 1000u
+        + (uint64_t)ts.tv_nsec / 1000000u);
+}
 
 /* ── Clock-safe elapsed time calculation ───────────────────── */
 
@@ -819,11 +840,9 @@ static char* force_finish_reply(const char* system_prompt,
 
     llm_response_t resp;
     char* result = NULL;
-    struct timeval t0, t1;
-    gettimeofday(&t0, NULL);
+    uint32_t t0_ms = mono_ms();
     int err = llm_chat_tools(system_prompt, messages, NULL, &resp);
-    gettimeofday(&t1, NULL);
-    uint32_t ms = calc_elapsed_ms(&t0, &t1);
+    uint32_t ms = mono_ms() - t0_ms;
     bool timed_out = llm_call_timed_out(ms);
 
     if (err == OK && !timed_out && resp.text && resp.text_len > 0) {
@@ -989,11 +1008,9 @@ static char* handle_task_complete(const char* sys_prompt, cJSON* messages,
 
     llm_response_t final_resp;
     char* result = NULL;
-    struct timeval t0, t1;
-    gettimeofday(&t0, NULL);
+    uint32_t t0_ms = mono_ms();
     int err = llm_chat_tools(sys_prompt, messages, NULL, &final_resp);
-    gettimeofday(&t1, NULL);
-    uint32_t ms = calc_elapsed_ms(&t0, &t1);
+    uint32_t ms = mono_ms() - t0_ms;
     bool timed_out = llm_call_timed_out(ms);
 
     if (err == OK && !timed_out
@@ -1064,11 +1081,9 @@ static char* run_react_loop(const char* sys_prompt, cJSON* messages,
         send_working_status(msg, iteration);
 
         llm_response_t resp;
-        struct timeval tv_start, tv_end;
-        gettimeofday(&tv_start, NULL);
+        uint32_t iter_start_ms = mono_ms();
         int err = llm_chat_tools(sys_prompt, messages, tools_json, &resp);
-        gettimeofday(&tv_end, NULL);
-        uint32_t latency_ms = calc_elapsed_ms(&tv_start, &tv_end);
+        uint32_t latency_ms = mono_ms() - iter_start_ms;
 
         /* Router failover: on LLM call failure, try next backend */
         if (err != OK && router_idx >= 0) {
@@ -1083,11 +1098,10 @@ static char* run_react_loop(const char* sys_prompt, cJSON* messages,
                 router_idx = next_idx;
                 trace.backend_idx = next_idx;
                 llm_response_free(&resp);
-                gettimeofday(&tv_start, NULL);
+                uint32_t fo_start_ms = mono_ms();
                 err = llm_chat_tools(sys_prompt, messages,
                     tools_json, &resp);
-                gettimeofday(&tv_end, NULL);
-                latency_ms = calc_elapsed_ms(&tv_start, &tv_end);
+                latency_ms = mono_ms() - fo_start_ms;
             }
         }
 
@@ -1183,11 +1197,10 @@ static char* run_react_loop(const char* sys_prompt, cJSON* messages,
                     router_idx = prem_idx;
                     trace.backend_idx = prem_idx;
 
-                    gettimeofday(&tv_start, NULL);
+                    uint32_t retry_start_ms = mono_ms();
                     err = llm_chat_tools(sys_prompt, messages,
                         tools_json, &resp);
-                    gettimeofday(&tv_end, NULL);
-                    latency_ms = calc_elapsed_ms(&tv_start, &tv_end);
+                    latency_ms = mono_ms() - retry_start_ms;
 
                     /* Watchdog check on cascade retry */
                     if (llm_call_timed_out(latency_ms)) {

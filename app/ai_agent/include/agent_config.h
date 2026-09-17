@@ -116,13 +116,18 @@
  * a timeout and replies with a user-friendly error message.
  * The socket-level SO_RCVTIMEO (AGENT_LLM_SOCKET_TIMEOUT_SEC)
  * acts as the hard backstop that actually unblocks the read. */
-#define AGENT_LLM_TIMEOUT_SEC 60
+/* NOTE (openvela ESP32-P4, measured 2026-09-17): with a *reasoning* model
+ * (MiMo v2.5) and the full tool schema (~15 KB request), one call on this
+ * board measured ~93 s end-to-end while the reply itself was correct, so a
+ * 60 s watchdog threw away good answers ("LLM watchdog: call took 92950 ms
+ * (limit 60s)").  Keep a realistic budget here. */
+#define AGENT_LLM_TIMEOUT_SEC 180
 
 /* Socket-level read timeout applied via SO_RCVTIMEO in vela_tls.
  * Must be >= AGENT_LLM_TIMEOUT_SEC to allow the agent-level
  * watchdog to fire first on normal slow responses.  Set higher
  * to cover TLS handshake + full response read. */
-#define AGENT_LLM_SOCKET_TIMEOUT_SEC 120
+#define AGENT_LLM_SOCKET_TIMEOUT_SEC 240
 
 /* ── Timezone (POSIX TZ format) ────────────────────────────── */
 #define AGENT_TIMEZONE "CST-8"
@@ -131,8 +136,12 @@
 #define AGENT_LLM_DEFAULT_MODEL "mimo-v2.5"
 #define AGENT_LLM_MAX_TOKENS 4096
 #define AGENT_LLM_MAX_TOKENS_OPENAI 16384
+#ifndef AGENT_LLM_API_HOST
 #define AGENT_LLM_API_HOST "api.xiaomimimo.com"
+#endif
+#ifndef AGENT_LLM_API_PATH
 #define AGENT_LLM_API_PATH "/v1/chat/completions"
+#endif
 #ifndef AGENT_LLM_API_URL
 #define AGENT_LLM_API_URL ""
 #endif
@@ -154,7 +163,9 @@
 #define AGENT_LLM_OPENROUTER_MODEL "qwen/qwen3-coder:free"
 
 /* ── MiMo (Xiaomi MiMo platform) ───────────────────────────── */
+#ifndef AGENT_LLM_MIMO_HOST
 #define AGENT_LLM_MIMO_HOST "api.xiaomimimo.com"
+#endif
 #define AGENT_LLM_MIMO_PATH "/v1/chat/completions"
 #define AGENT_LLM_MIMO_MODEL "mimo-v2.5"
 

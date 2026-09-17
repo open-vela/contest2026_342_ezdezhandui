@@ -4,7 +4,7 @@
 > 吞掉了 `up_exit()` 的 `SYS_restore_context` ECALL（任何任务退出都会死机），修复后 agent 启动完成
 > 板子照常在线（ping/TCP 28789 均通）—— 根因、证据、验证见 `docs/06` §26.7 与 `logs/verify-2026-09-17/wedge_fix.txt`；
 > §四.4 摄像头按最终固件复测写入定论；LVGL 截图在最终固件上复采（同一工具 `tools/fb2png.py`）；
-> §二/§三 收拢到**无部署步骤**的交付路径（manifest 324 条 copyfile，见 `docs/06` §24）。
+> §二/§三 收拢到**无部署步骤**的交付路径（manifest 325 条 copyfile，见 `docs/06` §24）。
 > §五 外设状态仍按 9/14–9/15 的**平台级驱动修复**（显示/触摸/DNS 已打通，见 `docs/06` §22/§23）；
 > 逐项结果见 `docs/05_功能闭环测试.md` §七；收尾计划见 `docs/01_开发规划文档.md` §十。
 
@@ -18,7 +18,8 @@
 | console（UART0/CP2102） | ✅ | **`/dev/ttyUSB0`**（须 assert DTR/RTS）；`/dev/ttyACM0` 仅烧录 |
 | eth0 RJ45 联网 | ✅ | DHCP `192.168.1.105` RUNNING（主机同网段 192.168.1.119，ICMP 通）|
 | PSRAM 32MB heap | ✅ | `free`：Umem total ≈ 33.9 MB |
-| ai_agent 完整启动 | ✅ | P0→P6 全 rc=0，36 tools / **12 skills**，WebSocket 板端监听 28789、`All network services started!`（**交互链路见 §四.1**）|
+| ai_agent 完整启动 | ✅ | P0→P6 全 rc=0，36 tools / **12 skills**，WebSocket 板端监听 28789、`All network services started!` |
+| **ai_agent 端到端对话** | ✅ | WS 28789 → 消息 → LLM → 回答（真机实测 `你好`；证据 `logs/verify-2026-09-17/agent_llm_ws.txt`）。链路修复见 `docs/06` §27（端点 401 / TCPBACKLOG RST / 计时被 TLS 改时钟）|
 | LVGL demo（显示+触摸）| ✅ | 最终固件上运行 `lvgldemo`（GT911 上电 + `/dev/fb0 1024x600 RGB565`），JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4，与首采一致；存档 `logs/verify-2026-09-17/lvgl_demo_final.png`）|
 | 摄像头驱动链路 | ⚠️ 有帧→无 | 传感器 I2C/寄存器/stream-on ✅、CSI 2 lane + RAW10 + DMA 武装 ✅、零错误；但桥 FIFO 零字节（数据未跨 MIPI 物理链路），最终固件复测同结论，**一条命令可复测**：`tools/camera_diag.sh` |
 | **自定义 Skill ×2（赛题②）** | ✅ | `center-assistant` / `quick-note`；`Skills system ready (12 built-in)` |
@@ -27,7 +28,7 @@
 
 ## 二、当前交付
 
-- **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **324 条 copyfile** 自动映射（清单由 `tools/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
+- **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **325 条 copyfile** 自动映射（清单由 `tools/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
 - **复现路径**：根 `README.md` §四（init → sync → build → **两镜像烧录** → console，**无部署步骤**；copyfile 在 `repo sync` 时自动落位，且移植不删除任何上游文件）
 - **闭环工具**：`tools/board.py`（串口 harness/断言）、`tools/usb_stable.sh`（两镜像烧录）、`tools/verify_aiagent.sh`（ai_agent 启动里程碑断言）、`tools/camera_diag.sh`（摄像头链路一次性判定）、`tools/fb2png.py`（JTAG 帧缓冲→PNG 截图）、`tools/wedge_diag.sh`（agent 失聪现场 JTAG 取证）
 - **真机证据存档**：`logs/verify-2026-09-17/`（`lvgl_demo.png` / `lvgl_demo_final.png` 帧缓冲截图、`camera_final.log` 摄像头实录、`wedge_jtag.txt` 失聪现场）

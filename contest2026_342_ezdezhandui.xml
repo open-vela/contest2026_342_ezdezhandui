@@ -198,6 +198,7 @@
     <copyfile src="app/ai_agent/src/agent_main.c" dest="packages/ai_agent/src/agent_main.c"/>
     <copyfile src="app/ai_agent/src/channels/cmd_llm.c" dest="packages/ai_agent/src/channels/cmd_llm.c"/>
     <copyfile src="app/ai_agent/src/channels/nsh_commands.c" dest="packages/ai_agent/src/channels/nsh_commands.c"/>
+    <copyfile src="app/ai_agent/src/channels/ws_server.c" dest="packages/ai_agent/src/channels/ws_server.c"/>
     <copyfile src="app/ai_agent/src/core/agent_loop.c" dest="packages/ai_agent/src/core/agent_loop.c"/>
     <copyfile src="app/ai_agent/src/infra/config_store.c" dest="packages/ai_agent/src/infra/config_store.c"/>
     <copyfile src="app/ai_agent/src/infra/cron_service.c" dest="packages/ai_agent/src/infra/cron_service.c"/>

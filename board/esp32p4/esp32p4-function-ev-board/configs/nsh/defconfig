@@ -190,6 +190,13 @@ CONFIG_UART0_SERIAL_CONSOLE=y
 # the old "fit in a 35KB SRAM heap" limit of 2/2 no longer applies). Raised for
 # throughput headroom — like the IOB change above it was A/B tested and did not
 # change the "agent runs -> board goes deaf" symptom.
+# TCP server support (ai_agent WebSocket / REST server on 28789).
+# The server listens, then poll()s the listener before accept(); NuttX only
+# reports a listener as readable through the backlog path (tcp_netpoll's
+# TCP_BACKLOG event needs CONFIG_NET_TCPBACKLOG), so with the default "n" the
+# connection was never accepted and the peer saw an immediate RST.
+CONFIG_NET_TCPBACKLOG=y
+CONFIG_NET_TCPBACKLOG_CONNS=8
 CONFIG_ESPRESSIF_ETH_NRXDESC=8
 CONFIG_ESPRESSIF_ETH_NTXDESC=8
 CONFIG_SYSLOG_DEVPATH="/dev/console"

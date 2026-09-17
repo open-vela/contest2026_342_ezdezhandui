@@ -34,7 +34,7 @@ contest2026_342_ezdezhandui/openvela.xml          ← 官方 manifest：264 个 
    ...（其余 261 个）
 
 contest2026_342_ezdezhandui/contest2026_342_ezdezhandui.xml   ← 本项目 manifest
-   self-ref <project> + 324 条 <copyfile>（把本仓文件树映射回工作区各路径）
+   self-ref <project> + 325 条 <copyfile>（把本仓文件树映射回工作区各路径）
 ```
 
 自查：
@@ -42,7 +42,7 @@ contest2026_342_ezdezhandui/contest2026_342_ezdezhandui.xml   ← 本项目 mani
 ```bash
 cd <openvela 根>/contest2026_342_ezdezhandui
 grep -c "<project" openvela.xml          # → 264
-grep -c copyfile contest2026_342_ezdezhandui.xml   # → 324
+grep -c copyfile contest2026_342_ezdezhandui.xml   # → 325
 ```
 
 ### 顶层目录一览

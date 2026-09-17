@@ -31,33 +31,47 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
-TREE = os.path.join(REPO, "board", "esp32p4_vela")
-
-# 文件树子目录 -> 工作区目标前缀
+# 作品仓内目录 -> openvela 工作区目标前缀
 GROUPS = [
-    ("nuttx", "nuttx"),
-    ("apps", "apps"),
-    ("ai_agent", "packages/ai_agent"),
+    ("nuttx",          "nuttx"),
+    ("board/esp32p4",  "vendor/espressif/boards/esp32p4"),
+    ("app/apps",       "apps"),
+    ("app/ai_agent",   "packages/ai_agent"),
 ]
 
 COPYFILE_RE = re.compile(r'^(\s*)<copyfile src="([^"]+)" dest="([^"]+)"\s*/>\s*$')
-SRC_PREFIX = "board/esp32p4_vela/"
+SRC_PREFIX = ""
+GROUP_DIRS = [g[0] for g in GROUPS]
+
+# 旧布局前缀：迁移期必须显式丢弃，否则它们会被当成"树外条目"保留下来，
+# 与新布局条目产生同 dest 冲突。
+LEGACY_PREFIXES = ["board/esp32p4_vela/"]
 
 
 def tree_entries():
-    """枚举文件树 -> [(src, dest)]，顺序稳定。"""
+    """枚举各组文件树 -> [(src, dest)]，顺序稳定。
+
+    符号链接必须单独处理：`os.walk` 默认不跟随指向目录的链接，这类链接
+    既不会出现在 filenames 里，也不会被递归进去 —— 于是会被整个漏掉。
+    板级的 `common/board` 正是这种链接。
+    """
     out = []
     for sub, dest_prefix in GROUPS:
-        root = os.path.join(TREE, sub)
+        root = os.path.join(REPO, sub)
         if not os.path.isdir(root):
             continue
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames.sort()
+            for d in list(dirnames):
+                if os.path.islink(os.path.join(dirpath, d)):
+                    rel = os.path.relpath(os.path.join(dirpath, d), root)
+                    out.append((sub + "/" + rel, dest_prefix + "/" + rel))
+                    dirnames.remove(d)          # 不递归进去
             for name in sorted(filenames):
                 if name == ".deleted-files":
                     continue
                 rel = os.path.relpath(os.path.join(dirpath, name), root)
-                out.append((SRC_PREFIX + sub + "/" + rel, dest_prefix + "/" + rel))
+                out.append((sub + "/" + rel, dest_prefix + "/" + rel))
     return out
 
 
@@ -79,10 +93,11 @@ def main():
             existing.append((m.group(2), m.group(3)))
 
     # 树外条目（例如仓根文档）原样保留，且在清单末尾
+    wanted_dests = {d for _s, d in tree_entries()}
     extras = [(s, d) for s, d in existing
-              if not s.startswith(SRC_PREFIX + "nuttx/")
-              and not s.startswith(SRC_PREFIX + "apps/")
-              and not s.startswith(SRC_PREFIX + "ai_agent/")]
+              if not any(s == g or s.startswith(g + "/") for g in GROUP_DIRS)
+              and not any(s.startswith(p) for p in LEGACY_PREFIXES)
+              and d not in wanted_dests]
 
     wanted = tree_entries()
     wanted.sort(key=lambda sd: (sd[1].split("/")[0], sd[0]))
@@ -97,7 +112,7 @@ def main():
 
     # 1. 树覆盖：wanted 已含全部树内文件；检查是否有条目 src 不存在
     for src, dest in wanted + extras:
-        if not os.path.exists(os.path.join(REPO, src)):
+        if not os.path.lexists(os.path.join(REPO, src)):
             problems.append("src 不存在: " + src)
 
     # 2. dest 唯一

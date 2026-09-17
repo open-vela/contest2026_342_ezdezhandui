@@ -32,3 +32,6 @@ nohup.out
 build-esp32p4-bootloader/
 *.pre-*-backup
 *.pre-*.backup
+
+# Python 缓存（工具脚本运行产生）
+__pycache__/

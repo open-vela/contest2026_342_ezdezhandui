@@ -22,7 +22,8 @@ untracked 文件 = 相对基线**新增**的文件，必须导出。
 --------
 每个逻辑仓导出到作品仓的哪个子树，由下面的 SYNC_MAP 定义：
     (project_path, 目标子树, 说明)
-默认映射到 `<repo_root>/board/esp32p4_vela/<子树>`。
+映射到作品仓根的 4 棵文件树（nuttx/ board/esp32p4/ app/apps/ app/ai_agent/），
+与 manifest 的 <copyfile> 一一对应。
 
 用法
 ----
@@ -61,7 +62,7 @@ SUBTREE_FILTER = {
 }
 
 # 这些文件名属于"仓级/构建级"，不进作品仓
-SKIP_NAMES = {".gitignore", ".gitmodules", ".built", ".depend"}
+SKIP_NAMES = {".gitignore", ".gitmodules", ".built", ".depend", "Make.dep"}
 SKIP_PREFIXES = ("build-esp32p4", "cmake_out/", "out/")
 
 
@@ -202,6 +203,13 @@ def main():
                 if os.path.islink(s):
                     # NuttX 的 board/include/board.h 之类会以符号链接形式存在，
                     # 直接复制会跟随链接（目标可能是目录）→ 必须原样重建链接。
+                    # ⚠️ 但 repo 的 <copyfile> 不接受**任何**软链（_SafeExpandPath
+                    # 逐段校验，报 "traversing symlinks not allow"）→ 树里出现软链
+                    # 就等于评审端缺这个路径，必须改写为普通文件/目录。
+                    print(f"    ⚠️ {_dest_rel(rel)} 是软链 —— manifest <copyfile> 不接受"
+                          f"任何软链（repo 报 traversing symlinks not allow），"
+                          f"评审端将缺失该路径；请改为普通文件/目录在源码层消化"
+                          f"（参见 docs/05 §二十四）")
                     if os.path.lexists(d):
                         os.remove(d)
                     os.symlink(os.readlink(s), d)
@@ -235,6 +243,19 @@ def main():
             if len(pruned) > 5:
                 print(f"       … 另有 {len(pruned)-5} 个")
 
+        # 删除清单：本仓相对基线删除的上游文件（manifest 无法表达删除，只有部署端
+        # 能还原）。**按当前状态重算，不累加历史** —— 否则源仓停止删除后旧清单会
+        # 永久残留，评审端就会去删一个不该删的文件。空清单直接移除文件本身，使
+        # "交付物不需要部署步骤" 成为可校验的不变量。
+        if args.apply:
+            delfile = os.path.join(dst_tree, ".deleted-files")
+            if deleted:
+                with open(delfile, "w", encoding="utf-8") as fh:
+                    fh.write("\n".join(sorted(set(deleted))) + "\n")
+            elif os.path.isfile(delfile):
+                os.remove(delfile)
+                print("    🧹 移除已失效的 .deleted-files（本仓当前无删除文件）")
+
         if deleted:
             total_del += len(deleted)
             if args.apply:
@@ -242,15 +263,6 @@ def main():
                     d = os.path.join(dst_tree, _dest_rel(rel))
                     if os.path.isfile(d):
                         os.remove(d)
-                # 删除清单（供部署端还原）
-                delfile = os.path.join(dst_tree, ".deleted-files")
-                old = set()
-                if os.path.isfile(delfile):
-                    with open(delfile, "r", encoding="utf-8") as fh:
-                        old = {x.strip() for x in fh if x.strip()}
-                old |= set(deleted)
-                with open(delfile, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(sorted(old)) + "\n")
 
         print()
 

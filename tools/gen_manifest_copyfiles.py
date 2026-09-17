@@ -3,14 +3,14 @@
 """重新生成作品仓 manifest 的 <copyfile> 清单。
 
 背景
-    contest2026_342_ezdezhandui.xml 通过 <copyfile> 把本仓
-    board/esp32p4_vela/{nuttx,apps,ai_agent}/ 文件树映射回 openvela 工作区位置：
+    contest2026_342_ezdezhandui.xml 通过 <copyfile> 把本仓文件树映射回 openvela 工作区位置：
 
-        board/esp32p4_vela/nuttx/<rel>      -> nuttx/<rel>
-        board/esp32p4_vela/apps/<rel>        -> apps/<rel>
-        board/esp32p4_vela/ai_agent/<rel>    -> packages/ai_agent/<rel>
+        nuttx/<rel>           -> nuttx/<rel>
+        board/esp32p4/<rel>   -> vendor/espressif/boards/esp32p4/<rel>
+        app/apps/<rel>        -> apps/<rel>
+        app/ai_agent/<rel>    -> packages/ai_agent/<rel>
 
-    文件树由 board/esp32p4_vela/export.sh 维护，本脚本保证清单与文件树**严格一一对应**：
+    文件树由 tools/export.py 维护，本脚本保证清单与文件树**严格一一对应**：
     新增文件自动补条目、已删除文件自动移除条目、原清单中的"树外条目"（例如
     CSI_INTEGRATOR_HANDOFF.md）原样保留。
 
@@ -22,6 +22,8 @@
     1. 树中每个文件都有 copyfile 条目（除 .deleted-files；含 .gitignore 等点文件）
     2. 每条 copyfile 的 src 在仓内真实存在
     3. dest 全局唯一
+    4. 不存在"需要部署端删除上游文件"的 .deleted-files
+       （manifest 只能 copy/link，无法表达删除 → 那会逼评审多跑一步部署脚本）
 """
 
 import argparse
@@ -133,6 +135,46 @@ def main():
     print("移除       : %d" % len(removed))
     for p in removed[:25]:
         print("   - " + p)
+
+    # 3. 不得存在"需要部署端删除上游文件"的清单
+    #    repo manifest 只能 copyfile/linkfile，**无法表达删除**：一旦某仓相对
+    #    基线删了上游文件，评审端 repo sync 之后该文件仍然在，只有手工部署
+    #    （deploy.sh）才会删 —— 那正是我们要消灭的步骤。所以这里直接判失败，
+    #    迫使在移植源码里消化冲突（例如改用 <esp_timer.h> 这类非遮蔽 include）。
+    for sub, _dest_prefix in GROUPS:
+        delfile = os.path.join(REPO, sub, ".deleted-files")
+        if not os.path.isfile(delfile):
+            continue
+        with open(delfile, encoding="utf-8") as fh:
+            entries = [x.strip() for x in fh if x.strip()]
+        if entries:
+            head = ", ".join(entries[:3]) + (" ..." if len(entries) > 3 else "")
+            problems.append(
+                "删除清单非空（manifest 无法复现删除，评审端会缺这一步）: %s -> %s"
+                % (os.path.relpath(delfile, REPO), head)
+            )
+
+    # 4. 文件树里不能有**任何软链**。
+    #    <copyfile> 的 src 会经 repo 的 _SafeExpandPath() 逐段校验，只要路径上
+    #    出现软链（含最后一个组件、含指向普通文件的软链）就直接抛
+    #    ManifestInvalidPathError: "<path>: traversing symlinks not allow"，
+    #    评审端 repo sync 就少这个路径 → 构建失败。而 <linkfile> 只能把 dest
+    #    链到作品仓内的路径，无法还原"链到工作区内的相对目标"。
+    #    （已用 repo 源码实测：目录软链与文件软链都报错，见 docs/05 §24.3）
+    for sub, _dest_prefix in GROUPS:
+        root = os.path.join(REPO, sub)
+        if not os.path.isdir(root):
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            for name in list(dirnames) + list(filenames):
+                p = os.path.join(dirpath, name)
+                if not os.path.islink(p):
+                    continue
+                problems.append(
+                    "文件树含软链（copyfile src 不允许，repo sync 会抛 "
+                    "traversing symlinks not allowed）: %s -> %s"
+                    % (os.path.relpath(p, REPO), os.readlink(p))
+                )
 
     if problems:
         print("\n❌ 校验失败:")

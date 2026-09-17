@@ -208,9 +208,7 @@
     <copyfile src="app/ai_agent/src/tools/skill_loader.c" dest="packages/ai_agent/src/tools/skill_loader.c"/>
     <copyfile src="board/esp32p4/common/CMakeLists.txt" dest="vendor/espressif/boards/esp32p4/common/CMakeLists.txt"/>
     <copyfile src="board/esp32p4/common/Kconfig" dest="vendor/espressif/boards/esp32p4/common/Kconfig"/>
-    <copyfile src="board/esp32p4/common/Make.dep" dest="vendor/espressif/boards/esp32p4/common/Make.dep"/>
     <copyfile src="board/esp32p4/common/Makefile" dest="vendor/espressif/boards/esp32p4/common/Makefile"/>
-    <copyfile src="board/esp32p4/common/board" dest="vendor/espressif/boards/esp32p4/common/board"/>
     <copyfile src="board/esp32p4/common/include/esp_board_adc.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_adc.h"/>
     <copyfile src="board/esp32p4/common/include/esp_board_bmp180.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_bmp180.h"/>
     <copyfile src="board/esp32p4/common/include/esp_board_i2c.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_i2c.h"/>

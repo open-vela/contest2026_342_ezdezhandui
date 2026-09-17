@@ -27,8 +27,8 @@
 
 ## 二、当前交付
 
-- **交付形态**：`board/esp32p4_vela/` 文件树（nuttx + apps + ai_agent）+ `contest2026_342_ezdezhandui.xml` **324 条 copyfile** 自动映射（清单由 `tools/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
-- **复现路径**：根 `README.md` §四（init → sync → deploy → build → **两镜像烧录** → console）
+- **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **324 条 copyfile** 自动映射（清单由 `tools/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
+- **复现路径**：根 `README.md` §四（init → sync → build → **两镜像烧录** → console，**无部署步骤**；copyfile 在 `repo sync` 时自动落位，且移植不删除任何上游文件）
 - **闭环工具**：`tools/board.py`（串口 harness/断言）、`tools/usb_stable.sh`（两镜像烧录）、`tools/verify_aiagent.sh`（启动里程碑断言）
 
 ## 三、演示脚本

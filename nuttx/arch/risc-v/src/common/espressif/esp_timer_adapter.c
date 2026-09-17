@@ -33,7 +33,14 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/spinlock.h>
 
-#include "esp_timer.h"
+/* <esp_timer.h> with angle brackets is deliberate: the openvela base tree
+ * still ships a legacy arch-local espressif/esp_timer.h (old
+ * esp_timer_initialize() API).  A quoted include searches the including
+ * file's own directory first and would pick up that stale header; the angle
+ * form skips it and takes the ESP-IDF HAL header (components/esp_timer).
+ */
+
+#include <esp_timer.h>
 #include "esp_timer_adapter.h"
 
 #include "esp_private/esp_timer_private.h"

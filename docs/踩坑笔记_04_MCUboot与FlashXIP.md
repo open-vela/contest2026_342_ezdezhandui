@@ -198,7 +198,7 @@
    → `Bootloader.cmake` 显式传 `-GNinja -DCMAKE_MAKE_PROGRAM=<ninja 绝对路径>`。
 
 **回归验证**：`rm -rf cmake_out` 后单条
-`./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8`
+`./build.sh esp32p4-function-ev-board:nsh --cmake -j8`
 应同时产出 `cmake_out/.../nuttx.bin` 与 `nuttx/mcuboot-esp32p4.bin`（干净树约 9–11 分钟）。
 
 ---

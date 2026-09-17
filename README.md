@@ -17,51 +17,72 @@ AI 硬件产品创新 + 新硬件平台适配（双赛道）。
 ## 三、目录结构
 
 ```text
-board/esp32p4_vela/        # ESP32-P4 平台移植（文件树 nuttx+apps+ai_agent + 构建/烧录说明）
-docs/                      # 开发规划 + 框架解读 + 复盘/测试 + 项目状态 + 踩坑笔记 #01~#04
-  ├── 10_openvela系统框架解读.md   # ★ openvela 整体架构（repo/分层/配置/构建/启动）
+nuttx/                     # 移植文件树①：NuttX 内核 / arch / 驱动 / 链接脚本（评审直接可读）
+board/esp32p4/             # 移植文件树②：板级源码 + defconfig（openvela vendor 风格）
+app/apps/                  # 移植文件树③：apps 侧改动（camera 示例 / lvgl 端口 / netinit / mbedtls）
+app/ai_agent/              # 移植文件树④：ai_agent 应用（含自定义 Skill 定义）
+tools/                     # 同步与真机工具（export / manifest 校验 / revision 锁定 / 烧录 / console）
+docs/                      # 开发规划 + 框架解读 + 复盘/测试 + 项目状态 + 踩坑笔记 #01~#07
+  ├── 00_openvela系统框架解读.md   # ★ openvela 整体架构（repo/分层/配置/构建/启动）
   ├── 03_框架模块设计.md           # 本项目的模块设计
   ├── 04_功能闭环测试.md           # 五层测试体系与真机结果
-  ├── 踩坑笔记_03_烧录与启动.md     # RAM 执行时代的烧录/启动坑
-  └── 踩坑笔记_04_MCUboot与FlashXIP.md  # ★ RAM 执行 → Flash XIP 迁移全过程（10 个坑）
-.claude/skills/            # openvela 官方 AI 开发技能集（17 个，AI Coding 资产）
+  ├── 踩坑笔记_04_MCUboot与FlashXIP.md  # ★ RAM 执行 → flash XIP 迁移全过程
+  └── 踩坑笔记_05~07               # 显示 / 触摸 GT911 / 摄像头 MIPI-CSI
 logs/                      # AI Coding 日志（提交前持续导出）
 ```
 
 ## 四、运行方式
 
-移植采用**文件树 + repo manifest copyfile 自动映射**：作品仓 `board/esp32p4_vela/` 保存所有
-改动文件，`contest2026_342_ezdezhandui.xml` 通过 **324 条 `<copyfile>`**
-（nuttx 305 + apps 4 + packages/ai_agent 14 + 仓根文档 1）在 `repo sync` 时把改动自动覆盖到
-工作区对应路径（评审零手工拷贝）。清单与文件树的一一对应由
-`tools/gen_manifest_copyfiles.py` 保证（`--check` 校验，直接运行则再生）。
-被删除的 8 个上游文件见 `board/esp32p4_vela/nuttx/.deleted-files`。
+交付形态是**文件树 + repo manifest copyfile 自动映射**，评审侧**零手工步骤**：
+仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **324 条 `<copyfile>`**
+在 `repo sync` 时把它们自动覆盖到工作区对应位置 ——
+
+| 作品仓 | 工作区 |
+|---|---|
+| `nuttx/**` | `nuttx/**` |
+| `board/esp32p4/**` | `vendor/espressif/boards/esp32p4/**` |
+| `app/apps/**` | `apps/**` |
+| `app/ai_agent/**` | `packages/ai_agent/**` |
+
+清单与文件树的**严格一一对应**由 `tools/gen_manifest_copyfiles.py` 保证
+（`--check` 校验，直接运行则再生）。校验会**直接拒绝**两类"manifest 表达不了、
+只能靠部署脚本补"的东西：需要删除的上游文件清单、指向目录的软链。
+
+> **本移植不删除任何上游文件**：`manifest copyfile` 只能复制、不能删除，一旦依赖删除
+> 就必须让评审再跑一次部署脚本。凡遇上游旧文件与新驱动冲突，一律在移植源码里消化 ——
+> 例如 `esp_timer_adapter.c` 用 `#include <esp_timer.h>`（尖括号）而不是引号形式，
+> 避开上游遗留的同名旧头 `espressif/esp_timer.h`。
+>
+> 同理，交付物里**不放任何软链**：`<copyfile>` 的 src 会经 repo `_SafeExpandPath()` 逐段校验，
+> 只要路径上出现软链就抛 `ManifestInvalidPathError: traversing symlinks not allow`
+> （实测目录软链与文件软链**都**失败）；`<linkfile>` 也只能链到作品仓内的路径，
+> 链不回工作区内的目标。原先 `vendor/…/esp32p4/common/board → …/esp32p4-function-ev-board/src`
+> 那个软链只有 make 构建路径在用（该路径本身已不通，评审走 `--cmake`），已随本次改动删除。
+>
+> 因此评审只需 `repo sync` + `build.sh`，**不需要 deploy/rsync 之类的部署步骤**
+> （详见 `docs/05` §二十四）。
 
 ```bash
-# 1. 环境（repo；esptool 软链见 board/esp32p4_vela/README.md）
-#    注意：本仓的 PR 需先合入（或评审从含 PR 的 fork 分支拉取），否则 gitee 官方分支是旧 manifest。
+# 1. 拉取（repo sync 自动应用全部改动）
 repo init -u https://gitee.com/open-vela/contest2026_342_ezdezhandui.git \
   -b dev-ai-contest-2026 -m contest2026_342_ezdezhandui.xml
-repo sync -c -j8     # copyfile 自动应用全部改动 + 生成软链工具
+repo sync -c -j8
+# 可选自检：清单与文件树一致性（应输出"✅ 清单与文件树一致"）
+python3 contest2026_342_ezdezhandui/tools/gen_manifest_copyfiles.py --check
 
-# 2. 处理被删除的上游文件（deploy 脚本按 .deleted-files 删除）
-cd contest2026_342_ezdezhandui/board/esp32p4_vela
-./deploy.sh <openvela 工作区根>   # 幂等 rsync + 按 .deleted-files 删除；不带参数默认 ./(pwd) 为其根
-#   示例：若工作区根是 /path/to/openvela，则 ./deploy.sh /path/to/openvela
-
-# 3. 构建（**一条命令即产出两个镜像**，2026-09-11 夜起；引导构建已挂进默认构建图）
+# 2. 构建（**一条命令即产出两个镜像**；引导构建已挂进默认构建图）
 cd <openvela 工作区根>
-./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8
+./build.sh esp32p4-function-ev-board:nsh --cmake -j8
 #   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  ← 应用（MCUboot 签名，1,835,008 B）
-#   nuttx/mcuboot-esp32p4.bin                         ← MCUboot 二级引导（24,640 B）
-#   干净树实测：10 分 39 秒（含 HAL clone + MCUboot ExternalProject + 2410 编译步）
+#   nuttx/mcuboot-esp32p4.bin                         ← MCUboot 二级引导（24,672 B）
+#   干净树实测：约 11 分钟（含 HAL clone + MCUboot ExternalProject + 2400+ 编译步）
 
-# 4. 烧录（⚠️ MCUboot 两镜像；旧的"单镜像写 0x2000"已失效）
+# 3. 烧录（⚠️ MCUboot 两镜像；旧的"单镜像写 0x2000"已失效）
 cd contest2026_342_ezdezhandui
 tools/usb_stable.sh
 #   0x2000  ← MCUboot 引导；0x20000 ← 应用（OTA_0 主槽）；两镜像均做 hash 校验
 
-# 5. 看 console：/dev/ttyUSB0（CP2102，115200；打开时须 assert DTR/RTS）→ 出现 nsh>
+# 4. 看 console：/dev/ttyUSB0（CP2102，115200；打开时须 assert DTR/RTS）→ 出现 nsh>
 python3 tools/board.py reset                 # 复位并抓启动日志
 python3 tools/board.py run "free" "ai_agent"
 ```

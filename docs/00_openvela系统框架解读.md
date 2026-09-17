@@ -243,7 +243,7 @@ grep -n "CONFIG_BUILD_FLAT\|CONFIG_NETDB_DNSCLIENT" cmake_out/<build-dir>/.confi
 ## 四、构建系统：`build.sh` → `envsetup.sh` → CMake/Ninja
 
 ```
-./build.sh nuttx/boards/risc-v/esp32p4/esp32p4-function-ev-board/configs/nsh/ --cmake -j8
+./build.sh esp32p4-function-ev-board:nsh --cmake -j8
     │
     ├─ build.sh（工作区根，symlink → nuttx/tools/build.sh）
     │     └─ source build/envsetup.sh        # 提供 lunch / m / mm / mgrep
@@ -368,15 +368,16 @@ nuttx/                          ← ★ 主战场之二
 HAL（esp-hal-3rdparty，钉定 8d0a8989100，通过 patch 适配 openvela）
 ```
 
-**交付形态**：不是 patch 文件，而是**真实文件树** `board/esp32p4_vela/{nuttx,apps,ai_agent}`
-+ manifest 的 **324 条 `<copyfile>`**，`repo sync` 时自动铺回工作区（评审零手工拷贝）。
+**交付形态**：不是 patch 文件，而是**真实文件树** —— 仓根 `nuttx/`、`board/esp32p4/`、
+`app/apps/`、`app/ai_agent/` 四棵，配 manifest 的 **326 条 `<copyfile>`**，`repo sync` 时自动铺回
+工作区（评审零手工拷贝，且**无部署脚本步骤**：移植不删除任何上游文件）。
 
 **开发闭环**：
 
 ```
-工作区改代码 → build.sh 编译验证 → board/esp32p4_vela/export.sh（工作区 → 文件树）
-            → 作品仓 commit → lock-revision.sh（锁 manifest revision）
-反向：评审 repo sync → board/esp32p4_vela/deploy.sh（文件树 → 工作区）→ 构建
+工作区改代码 → build.sh 编译验证 → tools/export.py --apply --manifest（工作区 → 文件树）
+            → 作品仓 commit → tools/lock-revision.sh（锁 manifest revision）
+反向：评审 repo sync（copyfile 自动落位）→ 直接 build.sh（不需要任何 deploy/rsync 步骤）
 ```
 
 ---
@@ -393,7 +394,7 @@ HAL（esp-hal-3rdparty，钉定 8d0a8989100，通过 patch 适配 openvela）
 | 改摄像头底层（CSI/ISP） | `arch/risc-v/src/common/espressif/esp_csi.c`、`drivers/video/sc2336.c` |
 | 改 AI Agent | `packages/ai_agent/src/{core,infra,channels,tools,llm}/` |
 | 加一个 NSH 命令 | 在对应 `CMakeLists.txt` 里 `nuttx_add_application(NAME …)` |
-| 构建 | `./build.sh <board>/configs/nsh/ --cmake -j8` |
+| 构建 | `./build.sh <board-name>:<config-name> --cmake -j8`（本板：`esp32p4-function-ev-board:nsh`）|
 | 构建报"配置没生效" | `rm -rf cmake_out`（`lunch` 不重建已有构建目录） |
 
 ---

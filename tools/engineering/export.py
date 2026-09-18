@@ -85,8 +85,8 @@ def find_workspace_root(start):
 
 
 def repo_root():
-    """作品仓根目录（本脚本位于 <repo>/tools/）。"""
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    """作品仓根目录（本脚本位于 <repo>/tools/engineering/）。"""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def collect(repo_path):

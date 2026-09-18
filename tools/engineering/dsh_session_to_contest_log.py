@@ -35,7 +35,7 @@ import sys
 from datetime import datetime, timezone
 
 DSH_HOME = os.environ.get("DSH_HOME") or os.path.expanduser("~/.dsh")
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 TEAM_ID = "contest2026-342"
 GITHUB_LOGIN = "ez-xu"

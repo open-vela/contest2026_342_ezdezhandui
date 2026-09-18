@@ -31,7 +31,7 @@ import os
 import re
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 # 作品仓内目录 -> openvela 工作区目标前缀
 GROUPS = [

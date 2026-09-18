@@ -67,16 +67,21 @@ def redact(text):
 
 
 def find_session(session_id, workdir=None):
-    """在 DSH_HOME 下按 id 找会话目录。"""
+    """在 DSH_HOME 下按 id 找会话目录。
+
+    兼容两种目录命名：新格式 `session-<id>` 与旧格式裸 `<id>`。
+    """
     base = os.path.join(DSH_HOME, "sessions")
     for mangled in os.listdir(base):
-        d = os.path.join(base, mangled, f"session-{session_id}")
-        if os.path.isdir(d):
+        if workdir and workdir not in mangled:
+            continue
+        for name in (f"session-{session_id}", session_id):
+            d = os.path.join(base, mangled, name)
+            if not os.path.isdir(d):
+                continue
             for fn in ("session.jsonl", "session.jsonl.zstd"):
                 p = os.path.join(d, fn)
                 if os.path.isfile(p):
-                    if workdir and workdir not in mangled:
-                        continue
                     return p
     return None
 

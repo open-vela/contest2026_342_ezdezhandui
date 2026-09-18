@@ -35,7 +35,7 @@ if [ -f /tmp/agent_ready.txt ]; then
     tail -c 1200 /tmp/agent_ready.txt
     echo ""
     echo "--- 关键标记检查 ---"
-    for m in "READY" "vela>" "36 tools" "10 skills"; do
+    for m in "READY" "vela>" "36 tools" "12 skills"; do
         grep -q "$m" /tmp/agent_ready.txt && echo "  ✓ 含 '$m'" || echo "  - 未含 '$m'(视固件输出而定)"
     done
 fi

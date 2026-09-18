@@ -8,10 +8,14 @@
   -->
   <include name="openvela.xml"/>
 
+  <!-- AI 开发技能集（本队 fork 的 openvela AI Skills）：检出到工作区 .agents/，
+       供评审直接阅读本项目的 AI Coding 开发资产（含 contest-log-collector 等） -->
+  <remote fetch="https://github.com/ez-xu/" name="ezxu"/>
+
   <!-- revision 节点锁定（SHA）: 固定到含 copyfile 重定向的提交, 避免 repo sync
        按 default(dev-ai-contest-2026) 退回无 copyfile 旧版。更新: rev-parse fix-clic-interrupt -->
   <project path="contest2026_342_ezdezhandui" name="contest2026_342_ezdezhandui"
-         revision="17dce895d2c7378ee2c0c1ac46996a5e6c6333a6">
+         revision="56e41d82bfe523e83d79d8b044469da49552b59a">
     <copyfile src="app/apps/crypto/mbedtls/CMakeLists.txt" dest="apps/crypto/mbedtls/CMakeLists.txt"/>
     <copyfile src="app/apps/crypto/mbedtls/Kconfig" dest="apps/crypto/mbedtls/Kconfig"/>
     <copyfile src="app/apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h" dest="apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h"/>
@@ -338,4 +342,8 @@
     <copyfile src="board/esp32p4/esp32p4-tab5/src/esp32p4_reset.c" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5/src/esp32p4_reset.c"/>
     <copyfile src="board/esp32p4/esp32p4-tab5/src/esp32p4_touch.c" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5/src/esp32p4_touch.c"/>
   </project>
+
+  <!-- AI 技能集仓库：挂到工作区 .agents/（评审可读本项目使用的 AI Skills 源码） -->
+  <project path=".agents" name="openvela-skills" remote="ezxu"
+         revision="203b8e645a2a2af4330ba4518dbdfd5fe62f13e4"/>
 </manifest>

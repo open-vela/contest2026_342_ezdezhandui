@@ -31,6 +31,7 @@ docs/                      # 规划 + 框架 + 测试 + 复盘 + 状态 + 踩坑
   ├── 03_工程框架开发.md           # 工程形态 / manifest 机制 / 日常开发循环
   ├── 04_框架模块设计.md           # 本项目的模块设计
   ├── 05_功能闭环测试.md           # 五层测试体系与真机结果
+  ├── 07_作品介绍.md               # ★ 作品介绍（做什么 / 输出什么 / 问题与解法，诚实记录）
   ├── STATUS.md                   # ★ 当前状态 / 逐项证据 / 已知限制（最常看）
   └── 踩坑笔记_01~07               # 环境 / 移植 / 烧录 / MCUboot+XIP / 显示 / 触摸 / 摄像头
 logs/                      # AI Coding 日志（28 会话 / 35,831 事件，提交前持续导出）
@@ -157,7 +158,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | 文档 | `docs/` + `README.md` + `tools/README.md` | 规划 / 框架 / 测试 / 复盘 / 状态 / 踩坑笔记 |
 | AI 开发技能资产 | manifest → 工作区 `.agents/` | `openvela-skills`（19 个 skills），`repo sync` 自动拉取 |
 | 专属仓地址 | `https://github.com/open-vela/contest2026_342_ezdezhandui` | 大赛仅在 GitHub，提交经 fork + PR（当前 #12） |
-| 《作品介绍》（docx/pdf） | **随组委会提交渠道另行交付** | 素材源：`docs/01` §三、`docs/06`、`docs/STATUS.md` |
+| 《作品介绍》 | `docs/07_作品介绍.md` | 源稿已入仓（做了什么 / 输出什么 / 问题与解法，含未完成项如实记录）；docx/pdf 由本稿导出 |
 
 **评分对照**（评分规则 30/20/20/10/10/10，详见 `docs/01` §四）：
 

@@ -50,7 +50,11 @@ if [ "$NEW_SHA" = "$OLD_SHA" ]; then
 fi
 
 echo "更新 revision 锁定: $OLD_SHA -> $NEW_SHA"
-sed -i "s/revision=\"[0-9a-f]\{40\}\"/revision=\"$NEW_SHA\"/" "$XML"
+# ⚠️ 只替换**第一个** revision（self-ref project 的那条）。
+# manifest 里还可能存在其它被锁 SHA 的 project（如 .agents → openvela-skills），
+# 全量替换会把它们的 revision 也改成作品仓的 SHA，评审 repo sync 时报
+# "revision <sha> in manifests not found"。2026-09-18 实测踩到并修复。
+sed -i "0,/revision=\"[0-9a-f]\{40\}\"/s//revision=\"$NEW_SHA\"/" "$XML"
 
 # --- 2. 提交作品仓 -----------------------------------------------------------
 git add contest2026_342_ezdezhandui.xml

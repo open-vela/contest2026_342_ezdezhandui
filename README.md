@@ -80,7 +80,10 @@ cd <openvela 工作区根>
 ./build.sh vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh --cmake -j8
 #   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  ← 应用（MCUboot 签名，1,835,008 B）
 #   nuttx/mcuboot-esp32p4.bin                         ← MCUboot 二级引导（24,672 B）
-#   干净树实测：约 11 分钟（含 HAL clone + MCUboot ExternalProject + 2400+ 编译步）
+#   耗时实测（2026-09-18 干净树，本机）：
+#     · 依赖首次拉取占大头：esp-hal-3rdparty ≈594MB + MCUboot 及其子模块 ≈1.6GB，视网络 30~60 分钟
+#     · 依赖就绪后的 cmake/ninja 编译（2,426 步）：**06:32 (mm:ss)**
+#   （旧文档写的"约 11 分钟"是依赖已缓存时的增量构建，不代表评审首次构建）
 
 # 3. 烧录（⚠️ MCUboot 两镜像；旧的"单镜像写 0x2000"已失效）
 cd contest2026_342_ezdezhandui
@@ -97,7 +100,7 @@ python3 tools/board.py run "free" "ai_agent"
 
 | 功能 | 实现 | 赛题点 |
 |---|---|---|
-| openvela 移植 ESP32-P4X-C5 | 板级+芯片移植（MCUboot 二级引导 + flash XIP，SRAM 460KB→83KB）→ console/ETH/PSRAM | 适配赛道核心 |
+| openvela 移植 ESP32-P4X-C5 | 板级+芯片移植（MCUboot 二级引导 + flash XIP：text+rodata 迁入 flash，**SRAM 静态占用 460KB → 120.3KB**/512KB）→ console/ETH/PSRAM | 适配赛道核心 |
 | LLM 对话 | ai_agent + MiMo（`llm_router` 多后端）；**端到端已实测**：WS 28789 → 消息 → LLM → 真实回答 | ① Agent 上硬件 |
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
 | 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |

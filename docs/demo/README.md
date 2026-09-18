@@ -39,7 +39,7 @@ NuttShell (NSH)
 nsh>
 ```
 > `Mapped IROM ... paddr=0x30000` 即 16MB flash 的 XIP 映射 —— 这是 SRAM 占用
-> 从 460KB 降到 83KB、从而解锁 LVGL/摄像头等大功能的关键。
+> 静态占用从约 460KB 降到 83KB（9/11 首测；9/17 复测 120.3KB）—— 从而解锁 LVGL/摄像头等大功能的关键。
 
 ### 2. 自定义 Skill ×2（赛题②）
 

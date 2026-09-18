@@ -13,7 +13,7 @@
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
 | ESP32-P4X 平台移植 | ✅ | 4 棵文件树 + **325 条 `<copyfile>`** 自动落位（不删除任何上游文件），编译通过 |
-| **MCUboot 二级引导 + flash XIP** | ✅ | 引导 24,672 B；text+rodata 迁入 flash XIP，**SRAM 460KB→83KB**；一次 `build.sh` 产出双镜像 |
+| **MCUboot 二级引导 + flash XIP** | ✅ | 引导 24,672 B；text+rodata 迁入 flash XIP，**`sram_seg` 静态占用 120.3 KB / 512 KB（23.5%）**（9/17 干净树重建实测；9/11 首测为 83 KB）；一次 `build.sh` 产出双镜像 |
 | 烧录链路 | ✅ | `tools/usb_stable.sh` 两镜像：`0x2000` 引导 + `0x20000` 应用，均 hash 校验 |
 | console（UART0/CP2102） | ✅ | **`/dev/ttyUSB0`**（须 assert DTR/RTS）；`/dev/ttyACM0` 仅烧录 |
 | eth0 RJ45 联网 | ✅ | DHCP `192.168.1.105` RUNNING（主机同网段 192.168.1.119，ICMP 通）|

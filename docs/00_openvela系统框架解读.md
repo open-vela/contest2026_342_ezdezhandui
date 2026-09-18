@@ -324,7 +324,8 @@ nuttx_add_application(NAME ai_agent SRCS … STACKSIZE … PRIORITY …)
 | PSRAM | 32 MB | NuttX 堆（`free` → `Umem total 33,985,952`） |
 
 **改造效果**：`SIMPLE_BOOT`（整镜像 memcpy 进 SRAM）→ `MCUboot + XIP`（只搬数据段，代码留 flash），
-SRAM 占用从 ~451 KB 降到 ~83 KB。
+SRAM 占用从 ~451 KB 降到 ~83 KB（9/11 首测）；此后又编入 LVGL / GT911 / 摄像头 / WebSocket 等，
+2026-09-17 干净树重建实测为 **120.3 KB / 512 KB（23.5%）**。
 
 ### 6.2 Flash 布局（MCUboot 视角）
 

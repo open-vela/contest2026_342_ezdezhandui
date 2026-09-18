@@ -183,7 +183,7 @@
 
 - **关键点**：这些都挂在 **`PATCH_COMMAND`** 上而不是手工改源码 ——
   `ExternalProject` 每次 update 都会重置 checkout，手工改动会被静默还原（这是**最坑**的一点）。
-- 产物：`nuttx/mcuboot-esp32p4.bin`（24,640 B）。
+- 产物：`nuttx/mcuboot-esp32p4.bin`（24,640 B；后续把 TCM(LP_IRAM) 校验放行做成补丁后为 **24,672 B**）。
 
 ---
 
@@ -198,7 +198,7 @@
    → `Bootloader.cmake` 显式传 `-GNinja -DCMAKE_MAKE_PROGRAM=<ninja 绝对路径>`。
 
 **回归验证**：`rm -rf cmake_out` 后单条
-`./build.sh esp32p4-function-ev-board:nsh --cmake -j8`
+`./build.sh vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh --cmake -j8`
 应同时产出 `cmake_out/.../nuttx.bin` 与 `nuttx/mcuboot-esp32p4.bin`（干净树约 9–11 分钟）。
 
 ---

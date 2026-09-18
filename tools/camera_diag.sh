@@ -13,7 +13,7 @@
 #   寄存器级探针默认关闭，需打开后重编：
 #     sed -i 's/#define ESP_CSI_CAPTURE_DIAG 0/#define ESP_CSI_CAPTURE_DIAG 1/' \
 #         nuttx/arch/risc-v/src/common/espressif/esp_csi.c
-#     ./build.sh esp32p4-function-ev-board:nsh --cmake -j8
+#     ./build.sh vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh --cmake -j8
 #     (验证完记得改回 0 并重编 —— 探针会在每次 start_capture 多花约 1.2s 并刷屏)
 #
 # 用法

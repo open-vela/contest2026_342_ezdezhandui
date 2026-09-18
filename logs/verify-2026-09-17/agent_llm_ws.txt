@@ -1,6 +1,6 @@
 # ai_agent 端到端对话（WebSocket → LLM → 回答）真机实录（2026-09-17 晚）
 # 板子: ESP32-P4X-C5-Function-EV-Board 192.168.1.105，固件含本轮三处修复
-# 客户端: /tmp/ws_demo.py（无依赖的极简 WS 客户端），服务端: ai_agent ws_server 28789
+# 客户端: tools/ws_demo.py（无依赖的极简 WS 客户端，随本仓交付），服务端: ai_agent ws_server 28789
 
 [ws] connected to ws://192.168.1.105:28789/
 [ws] -> {"type": "message", "content": "只回复：你好"}

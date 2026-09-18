@@ -1,0 +1,91 @@
+nsh>
+nsh>
+=== $ uname -a
+uname -a
+NuttX  0.0.0 f6bd046ae6d-dirty Sep 11 2026 20:02:40 risc-v 
+nsh>
+nsh>
+=== $ free
+free
+      total       used       free    maxused    maxfree  nused  nfree name
+   33986336    2631504   31354832    2631880   30962360     89      4 Umem
+nsh>
+nsh>
+=== $ ifconfig eth0
+ifconfig eth0
+eth0	Link encap:Ethernet HWaddr e8:f6:0a:e3:a6:a5 at RUNNING mtu 576
+	inet addr:10.0.0.2 DRaddr:10.0.0.1 Mask:255.255.255.0
+nsh>
+nsh>
+nsh>
+nsh>
+=== $ uname -a
+uname -a
+NuttX  0.0.0 f6bd046ae6d-dirty Sep 11 2026 20:02:40 risc-v 
+nsh>
+nsh>
+=== $ free
+free
+      total       used       free    maxused    maxfree  nused  nfree name
+   33986336    2631504   31354832    2631880   30962360     89      4 Umem
+nsh>
+nsh>
+=== $ ls /dev
+ls /dev
+/dev:
+ console
+ input0
+ null
+ random
+ ttyS0
+ video0
+ zero
+nsh>
+nsh>
+=== $ ls /data
+ls /data
+nsh: ls: stat failed: 2
+nsh>
+nsh>
+=== $ ls /data/ai_agent
+ls /data/ai_agent
+nsh: ls: stat failed: 2
+nsh>
+nsh>
+=== $ ping -c 2 10.0.0.1
+ping -c 2 10.0.0.1
+nsh: ping: command not found
+nsh>
+nsh>
+=== $ ifconfig
+ifconfig
+eth0	Link encap:Ethernet HWaddr e8:f6:0a:e3:a6:a5 at RUNNING mtu 576
+	inet addr:10.0.0.2 DRaddr:10.0.0.1 Mask:255.255.255.0
+nsh>
+nsh>
+nsh>
+nsh>
+=== $ lvgldemo
+lvgldemo
+GT911: power on (module rail, no host control)
+nsh>
+nsh>
+=== $ df
+df
+  Block    Number
+  Size     Blocks       Used   Available Mounted on
+     0          0          0           0 /proc
+   512          1          1           0 /tmp
+nsh>
+nsh>
+=== $ mount
+mount
+  /proc type procfs
+  /tmp type tmpfs
+nsh>
+nsh>
+=== $ uptime
+uptime
+00:01:17 up  0:01, load average: 0.00, 0.00, 0.00
+nsh>
+nsh>

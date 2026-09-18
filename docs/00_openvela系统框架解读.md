@@ -243,7 +243,7 @@ grep -n "CONFIG_BUILD_FLAT\|CONFIG_NETDB_DNSCLIENT" cmake_out/<build-dir>/.confi
 ## 四、构建系统：`build.sh` → `envsetup.sh` → CMake/Ninja
 
 ```
-./build.sh esp32p4-function-ev-board:nsh --cmake -j8
+./build.sh vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh --cmake -j8
     │
     ├─ build.sh（工作区根，symlink → nuttx/tools/build.sh）
     │     └─ source build/envsetup.sh        # 提供 lunch / m / mm / mgrep
@@ -330,7 +330,7 @@ SRAM 占用从 ~451 KB 降到 ~83 KB。
 
 ```
 0x000000 – 0x002000  ROM
-0x002000 – 0x020000  MCUboot 引导（mcuboot-esp32p4.bin，24,640 B）
+0x002000 – 0x020000  MCUboot 引导（mcuboot-esp32p4.bin，24,672 B）
 0x020000 – 0x1E0000  OTA_0 主槽（应用镜像，填充到槽大小 1,835,008 B）
 0x1E0000 – 0x3A0000  OTA_1 副槽
 0x3A0000 – 0x3E0000  scratch（256 KB）
@@ -369,7 +369,7 @@ HAL（esp-hal-3rdparty，钉定 8d0a8989100，通过 patch 适配 openvela）
 ```
 
 **交付形态**：不是 patch 文件，而是**真实文件树** —— 仓根 `nuttx/`、`board/esp32p4/`、
-`app/apps/`、`app/ai_agent/` 四棵，配 manifest 的 **326 条 `<copyfile>`**，`repo sync` 时自动铺回
+`app/apps/`、`app/ai_agent/` 四棵，配 manifest 的 **325 条 `<copyfile>`**，`repo sync` 时自动铺回
 工作区（评审零手工拷贝，且**无部署脚本步骤**：移植不删除任何上游文件）。
 
 **开发闭环**：
@@ -394,7 +394,7 @@ HAL（esp-hal-3rdparty，钉定 8d0a8989100，通过 patch 适配 openvela）
 | 改摄像头底层（CSI/ISP） | `arch/risc-v/src/common/espressif/esp_csi.c`、`drivers/video/sc2336.c` |
 | 改 AI Agent | `packages/ai_agent/src/{core,infra,channels,tools,llm}/` |
 | 加一个 NSH 命令 | 在对应 `CMakeLists.txt` 里 `nuttx_add_application(NAME …)` |
-| 构建 | `./build.sh <board-name>:<config-name> --cmake -j8`（本板：`esp32p4-function-ev-board:nsh`）|
+| 构建 | `./build.sh <config-dir> --cmake -j8`（本板：`vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh`；⚠️ **必须传配置目录路径**，短名 `esp32p4-function-ev-board:nsh` 会报 `No config file found`）|
 | 构建报"配置没生效" | `rm -rf cmake_out`（`lunch` 不重建已有构建目录） |
 
 ---
@@ -456,4 +456,4 @@ grep -E "Mapped IROM|start=0x|NuttShell" /tmp/boot.log
 > 相关文档：`docs/04_框架模块设计.md`（本项目的模块设计）、
 > `docs/05_功能闭环测试.md`（五层测试体系与真机结果）、
 > `docs/踩坑笔记_04_MCUboot与FlashXIP.md`（RAM 执行 → Flash XIP 迁移的 10 个坑）、
-> `board/esp32p4_vela/README.md`（移植代码地图与复现步骤）。
+> 移植代码地图与复现步骤见根 `README.md` §四 与 `docs/03_工程框架开发.md`。

@@ -3,7 +3,7 @@
 #
 # ⚠️ 2026-09-11 起烧录流程变更：板子已切到 **MCUboot 二级引导 + flash XIP**
 #    必须烧两个镜像，旧的"单镜像写 0x2000"方式已失效：
-#      0x02000  MCUboot 引导      nuttx/mcuboot-esp32p4.bin   (24,640 B)
+#      0x02000  MCUboot 引导      nuttx/mcuboot-esp32p4.bin   (24,672 B)
 #      0x20000  OTA_0 应用主槽    <build>/nuttx.bin
 #
 # 端口拓扑（实测）：

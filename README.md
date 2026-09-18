@@ -24,8 +24,9 @@ app/ai_agent/              # 移植文件树④：ai_agent 应用（含自定义
 tools/                     # 同步与真机工具（export / manifest 校验 / revision 锁定 / 烧录 / console）
 docs/                      # 开发规划 + 框架解读 + 复盘/测试 + 项目状态 + 踩坑笔记 #01~#07
   ├── 00_openvela系统框架解读.md   # ★ openvela 整体架构（repo/分层/配置/构建/启动）
-  ├── 03_框架模块设计.md           # 本项目的模块设计
-  ├── 04_功能闭环测试.md           # 五层测试体系与真机结果
+  ├── 03_工程框架开发.md           # 工程形态 / manifest 机制 / 日常开发循环
+  ├── 04_框架模块设计.md           # 本项目的模块设计
+  ├── 05_功能闭环测试.md           # 五层测试体系与真机结果
   ├── 踩坑笔记_04_MCUboot与FlashXIP.md  # ★ RAM 执行 → flash XIP 迁移全过程
   └── 踩坑笔记_05~07               # 显示 / 触摸 GT911 / 摄像头 MIPI-CSI
 logs/                      # AI Coding 日志（提交前持续导出）
@@ -34,7 +35,7 @@ logs/                      # AI Coding 日志（提交前持续导出）
 ## 四、运行方式
 
 交付形态是**文件树 + repo manifest copyfile 自动映射**，评审侧**零手工步骤**：
-仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **324 条 `<copyfile>`**
+仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **325 条 `<copyfile>`**
 在 `repo sync` 时把它们自动覆盖到工作区对应位置 ——
 
 | 作品仓 | 工作区 |
@@ -72,7 +73,11 @@ python3 contest2026_342_ezdezhandui/tools/gen_manifest_copyfiles.py --check
 
 # 2. 构建（**一条命令即产出两个镜像**；引导构建已挂进默认构建图）
 cd <openvela 工作区根>
-./build.sh esp32p4-function-ev-board:nsh --cmake -j8
+#   ⚠️ 参数必须是「配置目录的路径」，**不能**用 `esp32p4-function-ev-board:nsh` 这种短名：
+#   短名要求板级目录位于 nuttx/boards/*/*/ 之下，而本移植按 openvela vendor 风格把板级
+#   放在 vendor/espressif/boards/esp32p4/ 下（manifest 不含 <linkfile>，repo sync 不会生成软链）；
+#   用短名会停在 `CMake Error: No config file found at`（2026-09-17 干净树实测）。
+./build.sh vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh --cmake -j8
 #   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  ← 应用（MCUboot 签名，1,835,008 B）
 #   nuttx/mcuboot-esp32p4.bin                         ← MCUboot 二级引导（24,672 B）
 #   干净树实测：约 11 分钟（含 HAL clone + MCUboot ExternalProject + 2400+ 编译步）
@@ -93,27 +98,26 @@ python3 tools/board.py run "free" "ai_agent"
 | 功能 | 实现 | 赛题点 |
 |---|---|---|
 | openvela 移植 ESP32-P4X-C5 | 板级+芯片移植（MCUboot 二级引导 + flash XIP，SRAM 460KB→83KB）→ console/ETH/PSRAM | 适配赛道核心 |
-| LLM 对话 | ai_agent + MiMo（`llm_router` 多后端；链路已验证，**key 需有效额度**） | ① Agent 上硬件 |
+| LLM 对话 | ai_agent + MiMo（`llm_router` 多后端）；**端到端已实测**：WS 28789 → 消息 → LLM → 真实回答 | ① Agent 上硬件 |
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
 | 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |
-| 事件主动（摄像头） | MIPI-CSI + SC2336 → 视觉检测 → 主动问候/告警 | ③ |
-| LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸 | ① + 加分 |
+| LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实 | ① + 加分 |
+| 事件主动（摄像头）| 🔶 **驱动链路已打通**（SC2336 识别 / CSI 2 lane + DMA 武装 / 零错误），但 MIPI 数据 lane 物理通路无数据（模组或排线），主动场景待硬件修复后闭环 —— 复测一条命令：`tools/camera_diag.sh` | ③ |
 
 ## 六、AI 开发记录
 
 - 全流程 AI Coding，日志导出至 `logs/`（contest-log-collector）
-- 沉淀：openvela 官方 17 个开发技能（.claude/skills/）+ 本仓文档（docs/）
+- 开发过程使用 openvela 官方 AI 开发技能集（17 个，位于**工作区** `.claude/skills/`，属上游资产、不入本仓）；本项目自身的沉淀在 `docs/`
 
-## 七、状态（2026-09-11 夜 复验更新）
+## 七、状态（2026-09-17 晚 复验更新）
 
-- ✅ esp32p4 移植编译通过；**MCUboot 二级引导 + flash XIP 打通**（SRAM 占用 460KB→83KB）
-- ✅ 干净树一次 `build.sh` 产出**双镜像**（本轮修复 `bootloader` 目标未入 `all` + 内层 ninja 生成器丢失）
-- ✅ 真机闭环：`tools/usb_stable.sh`（两镜像烧录）→ MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
-- ✅ 真机验证：eth0 10.0.0.2（主机 ping 0% 丢包）、PSRAM 33.9MB、cron 真实启动、12 skills
-- ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）
-- 🔶 摄像头：SC2336 识别通过（`chip ID: 0xcb3a` → `/dev/video0`），出帧待接 ISP（`VIDIOC_S_FMT` EINVAL）
-- ❌ 显示：EK79007 无应答 → **无 `/dev/fb0`**（I2C0 上 SC2336 正常，疑模组供电/FPC/J1→J6 跳线）
-- ❌ DNS 不可用（无 `/etc/resolv.conf`）；WebSocket 28789 板端已监听、主机侧未打通（非同一 L2）
+- ✅ **移植与引导**：`repo sync` 即得完整工作树（325 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
+- ✅ **真机闭环**：`tools/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
+- ✅ **联网**：eth0 DHCP `192.168.1.105` RUNNING（主机同网段，ICMP 通）；DNS 可用
+- ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/验证截图_LVGL界面_1024x600.png`
+- ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `logs/verify-2026-09-17/agent_llm_ws.txt`）；「启动后整机失聪」已定位并修复（根因见 `docs/06` §26.7）
+- ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
+- 🔶 **摄像头**：驱动与软件链路零错误（SC2336 识别 `0xcb3a`、CSI 2 lane + DMA 武装），但 MIPI 数据 lane 物理通路无数据（模组/排线），出帧待硬件修复 —— 复测一条命令 `tools/camera_diag.sh`
 - ⏳ 演示视频 + 《作品介绍》随提交材料
-- 📌 详细状态与差距见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
+- 📌 详细状态与逐项证据见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
 

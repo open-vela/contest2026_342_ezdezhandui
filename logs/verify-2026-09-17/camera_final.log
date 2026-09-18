@@ -1,0 +1,57 @@
+# camera 3  —— 最终固件（无诊断开关）真机串口实录（2026-09-17 14:33）
+# 采集: Tabby 串口会话 a4694c2d（/dev/ttyUSB0 115200）
+# 说明: 三帧都没等到数据 -> 应用阻塞在 DQBUF，永远不会自己退出（Ctrl+C 不可用：CONFIG_TTY_SIGINT=n）
+
+nsh> camera 3
+NOTE: capture_initialize() rc=-22 errno=2 (device already registesp_csi_data_start_capture: CSI: ctlr start rc=0 (DMA+bridge enabled)
+SC2336: start_capture(0) enteered by the board, continuing)
+NOTE: skipping STILL_CAPTURE/JPEG (not supported by SC2336)
+SC2336: reg 0100 = 00 (ret=0)
+SC2336: reg 36e9 = 53 (ret=0)
+SC2336: reg 37f9 = 53 (ret=0)
+SC2336: reg 320c = 08 (ret=0)
+SC2336: reg 320d = ca (ret=0)
+SC2336: reg 320e = 04 (ret=0)
+SC2336: reg 320f = b0 (ret=0)
+SC2336: reg 4509 = 38 (ret=0)
+SC2336: reg 0103 = 00 (ret=0)
+SC2336: reg 301f = 02 (ret=0)
+SC2336: reg 3018 = 32 (ret=0)
+SC2336: reg 3031 = 0a (ret=0)
+SC2336: reg 4500 = 08 (ret=0)
+SC2336: reg 4501 = c4 (ret=0)
+SC2336: reg 4502 = 04 (ret=0)
+SC2336: reg 4503 = 20 (ret=0)
+SC2336: reg 4504 = 00 (ret=0)
+SC2336: reg 4505 = 00 (ret=0)
+SC2336: reg 4506 = 00 (ret=0)
+SC2336: reg 4507 = 00 (ret=0)
+SC2336: reg 4508 = 00 (ret=0)
+SC2336: reg 450a = 80 (ret=0)
+SC2336: reg 450b = 00 (ret=0)
+SC2336: reg 450c = 00 (ret=0)
+SC2336: reg 450d = 1a (ret=0)
+SC2336: reg 450e = 00 (ret=0)
+SC2336: reg 450f = 00 (ret=0)
+SC2336: reg 4600 = 01 (ret=0)
+SC2336: reg 4601 = 00 (ret=0)
+SC2336: reg 4602 = 00 (ret=0)
+SC2336: reg 4603 = 00 (ret=0)
+SC2336: reg 4818 = 00 (ret=0)
+SC2336: reg 4819 = 06 (ret=0)
+SC2336: reg 481a = 00 (ret=0)
+SC2336: reg 481b = 03 (ret=0)
+SC2336: reg 481c = 00 (ret=0)
+SC2336: reg 481d = 0b (ret=0)
+SC2336: reg 3e00 = 00 (ret=0)
+SC2336: reg 3e01 = 37 (ret=0)
+SC2336: reg 3e02 = e0 (ret=0)
+SC2336: start_capture -> 0x0100=0x01, read back 0x01 (ret=0)
+Take 3 pictures as RGB file in /mnt/spif after 5 seconds.
+ After finishing taking pictures, this app will be finished after 10 seconds.
+SC2336 chip ID: 0xcb3a
+esp_csi_data_init: CSI: 1920x1080, 2 lane(s) @ 405 Mbps, fb=2592000 bytes (align 64), color 1096237394->1096237394
+SC2336 chip ID: 0xcb3a
+esp_csi_data_init: CSI: 1920x1080, 2 lane(s) @ 405 Mbps, fb=2592000 bytes (align 64), color 1096237394->1096237394
+SC2336 chip ID: 0xcb3a
+esp_csi_data_init: CSI: 1920x1080, 2 lane(s) @ 405 Mbps, fb=2592000 bytes (align 64), color 1096237394->1096237394

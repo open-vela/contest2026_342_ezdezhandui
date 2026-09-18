@@ -12,8 +12,8 @@
 
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
-| ESP32-P4X 平台移植 | ✅ | 文件树 + 8 删除收拢作品仓，编译通过 |
-| **MCUboot 二级引导 + flash XIP** | ✅ | 引导 24,640 B；text+rodata 迁入 flash XIP，**SRAM 460KB→83KB**；一次 `build.sh` 产出双镜像 |
+| ESP32-P4X 平台移植 | ✅ | 4 棵文件树 + **325 条 `<copyfile>`** 自动落位（不删除任何上游文件），编译通过 |
+| **MCUboot 二级引导 + flash XIP** | ✅ | 引导 24,672 B；text+rodata 迁入 flash XIP，**SRAM 460KB→83KB**；一次 `build.sh` 产出双镜像 |
 | 烧录链路 | ✅ | `tools/usb_stable.sh` 两镜像：`0x2000` 引导 + `0x20000` 应用，均 hash 校验 |
 | console（UART0/CP2102） | ✅ | **`/dev/ttyUSB0`**（须 assert DTR/RTS）；`/dev/ttyACM0` 仅烧录 |
 | eth0 RJ45 联网 | ✅ | DHCP `192.168.1.105` RUNNING（主机同网段 192.168.1.119，ICMP 通）|
@@ -24,14 +24,14 @@
 | 摄像头驱动链路 | ⚠️ 有帧→无 | 传感器 I2C/寄存器/stream-on ✅、CSI 2 lane + RAW10 + DMA 武装 ✅、零错误；但桥 FIFO 零字节（数据未跨 MIPI 物理链路），最终固件复测同结论，**一条命令可复测**：`tools/camera_diag.sh` |
 | **自定义 Skill ×2（赛题②）** | ✅ | `center-assistant` / `quick-note`；`Skills system ready (12 built-in)` |
 | **cron 定时主动（赛题③）** | ✅ | `cron_service`/`tool_cron` 真实编入，`[cron] Cron started` |
-| AI Coding 日志 | ✅ | 18 会话 / 11,074 事件；`validate-log.py` → ALL OK |
+| AI Coding 日志 | ✅ | **19 会话 / 18,022 事件**（`logs/ez-xu/`，汇总见 `logs/ez-xu/manifest.json`；claude-code 18 + dsh 1）|
 
 ## 二、当前交付
 
 - **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **325 条 copyfile** 自动映射（清单由 `tools/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
 - **复现路径**：根 `README.md` §四（init → sync → build → **两镜像烧录** → console，**无部署步骤**；copyfile 在 `repo sync` 时自动落位，且移植不删除任何上游文件）
 - **闭环工具**：`tools/board.py`（串口 harness/断言）、`tools/usb_stable.sh`（两镜像烧录）、`tools/verify_aiagent.sh`（ai_agent 启动里程碑断言）、`tools/camera_diag.sh`（摄像头链路一次性判定）、`tools/fb2png.py`（JTAG 帧缓冲→PNG 截图）、`tools/wedge_diag.sh`（agent 失聪现场 JTAG 取证）
-- **真机证据存档**：`logs/verify-2026-09-17/`（`lvgl_demo.png` / `lvgl_demo_final.png` 帧缓冲截图、`camera_final.log` 摄像头实录、`wedge_jtag.txt` 失聪现场）
+- **真机证据存档**：`docs/验证截图_LVGL界面_1024x600.png`（LVGL 帧缓冲首采）与 `logs/verify-2026-09-17/`（`lvgl_demo_final.png` 最终固件复采、`camera_final.log` 摄像头实录、`wedge_jtag.txt` 失聪现场、`wedge_fix.txt` 修复前后、`agent_llm_ws.txt` 端到端对话）
 
 ## 三、演示脚本
 

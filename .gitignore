@@ -23,6 +23,10 @@ out/
 *.log
 nohup.out
 
+# ⚠️ 例外：文档里被当作**证据**引用的日志必须提交（否则评审点开是 404）
+!docs/demo/*.log
+!logs/verify-*/*.log
+
 
 # Secrets / credentials（防误提交；与上游 packages/ai_agent/.gitignore 一致）
 *secrets*

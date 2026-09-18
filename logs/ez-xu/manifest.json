@@ -3,7 +3,7 @@
   "team_id": "contest2026-342",
   "github_login": "ez-xu",
   "generator": "dsh-exporter@1.0",
-  "updated_at": "2026-09-18T03:28:03.872036+00:00",
+  "updated_at": "2026-09-18T05:50:20.095248+00:00",
   "sessions": [
     {
       "session_id": "020c57b8-625e-4b12-8239-f389b6dcac77",
@@ -274,6 +274,61 @@
       "event_count": 11321,
       "raw_event_count": 36146,
       "file_path": "logs/ez-xu/2026-08-21/dsh__3aa75204-ae2e-449a-86ee-6296bfb032d8.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "0166d562-b40a-4f9d-8fa0-98b0a722c9b1",
+      "tool": "dsh",
+      "started_at": "2026-09-11T07:13:00.182000Z",
+      "last_event_at": "2026-09-11T07:25:24.062000Z",
+      "event_count": 202,
+      "raw_event_count": 1058,
+      "file_path": "logs/ez-xu/2026-09-11/dsh__0166d562-b40a-4f9d-8fa0-98b0a722c9b1.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "4ce7c608-c96d-499b-8cd9-b7c8927941dc",
+      "tool": "dsh",
+      "started_at": "2026-09-11T08:26:44.528000Z",
+      "last_event_at": "2026-09-11T09:22:51.344000Z",
+      "event_count": 820,
+      "raw_event_count": 4435,
+      "file_path": "logs/ez-xu/2026-09-11/dsh__4ce7c608-c96d-499b-8cd9-b7c8927941dc.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "77370d69-b89e-494c-a775-4bf9ddceb0ed",
+      "tool": "dsh",
+      "started_at": "2026-09-11T07:13:00.103000Z",
+      "last_event_at": "2026-09-11T07:23:47.067000Z",
+      "event_count": 163,
+      "raw_event_count": 1255,
+      "file_path": "logs/ez-xu/2026-09-11/dsh__77370d69-b89e-494c-a775-4bf9ddceb0ed.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "9e279525-2f38-4423-99bf-1686731a1177",
+      "tool": "dsh",
+      "started_at": "2026-09-11T08:31:30.334000Z",
+      "last_event_at": "2026-09-11T08:48:35.263000Z",
+      "event_count": 178,
+      "raw_event_count": 1791,
+      "file_path": "logs/ez-xu/2026-09-11/dsh__9e279525-2f38-4423-99bf-1686731a1177.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "b0a13e8b-58ec-423a-93d5-7de8c00b40c8",
+      "tool": "dsh",
+      "started_at": "2026-09-11T08:26:30.421000Z",
+      "last_event_at": "2026-09-11T09:32:57.851000Z",
+      "event_count": 523,
+      "raw_event_count": 3086,
+      "file_path": "logs/ez-xu/2026-09-11/dsh__b0a13e8b-58ec-423a-93d5-7de8c00b40c8.jsonl",
       "collection_mode": "cli",
       "health": "ok"
     }

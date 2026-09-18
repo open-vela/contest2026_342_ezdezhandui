@@ -158,7 +158,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | 文档 | `docs/` + `README.md` + `tools/README.md` | 规划 / 框架 / 测试 / 复盘 / 状态 / 踩坑笔记 |
 | AI 开发技能资产 | manifest → 工作区 `.agents/` | `openvela-skills`（19 个 skills），`repo sync` 自动拉取 |
 | 专属仓地址 | `https://github.com/open-vela/contest2026_342_ezdezhandui` | 大赛仅在 GitHub，提交经 fork + PR（当前 #12） |
-| 《作品介绍》 | `docs/07_作品介绍.md` | 源稿已入仓（做了什么 / 输出什么 / 问题与解法，含未完成项如实记录）；docx/pdf 由本稿导出 |
+| 《作品介绍》 | `docs/07_作品介绍.md`（源稿）+ `提交材料/作品介绍_桌伴DeskMate.docx/.pdf` | 源稿已入仓（做了什么 / 输出什么 / 问题与解法，含未完成项如实记录）；docx/pdf 已从源稿导出随提交 |
 
 **评分对照**（评分规则 30/20/20/10/10/10，详见 `docs/01` §四）：
 

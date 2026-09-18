@@ -118,6 +118,18 @@ def collect(repo_path):
         if any(path.startswith(p) for p in SKIP_PREFIXES):
             continue
 
+        # 目录条目 = 嵌套 git 仓（构建期 clone 的依赖，如 arch/…/esp32p4/esp-hal-3rdparty、
+        # arch/…/espressif/bootloader）。git 把整棵树当**一个** untracked 条目报出来，
+        # 而它有几 GB、manifest <copyfile> 也只能表达文件 —— 绝不能导出。
+        # 正常情况这些目录被移植自带的 .gitignore 挡住；这里再兜一层，
+        # 避免"ignore 规则被 repo 清掉 / 新依赖没加规则"时把整棵依赖树灌进作品仓。
+        # （2026-09-18 实测踩过：旧布局把 5 个 .gitignore 当 copyfile 投递，9/17 重构丢弃后
+        #  repo 的 copy-link-files.json 在 repo sync 时把它们从工作区删掉，2GB 依赖树随即
+        #  变成"未跟踪改动"。恢复规则 + 本守卫双保险。）
+        if os.path.isdir(os.path.join(repo_path, path)):
+            print(f"    ⏭  跳过目录条目（疑似嵌套仓/依赖树，不导出）: {path}")
+            continue
+
         if xy == "??":
             changed.append((path, "add"))
         elif "D" in xy:

@@ -59,7 +59,8 @@ python3 tools/board.py run "free" "ps"    # 任意 NSH 命令并断言
 2. **console 输出突发会被截断** —— `esp_lowputc_send_byte()` 原先未等 TX FIFO 空间即写，
    超长突发丢字节（启动日志常见 ~1.5KB 丢失）。已在 `esp_lowputc.c` 修复（等待 FIFO 空间）
    并将 `CONFIG_UART0_TXBUFSIZE` 提到 2048。
-3. **MiMo API key 无效（HTTP 401 Invalid API Key）** —— LLM 真实对话需有效 key/额度。
+3. ~~**MiMo API key 无效（HTTP 401）**~~ —— **2026-09-17 晚更正**：key 本身有效，401 是**端点错了**（key 属于 Token Plan 网关 `token-plan-cn.xiaomimimo.com`，默认的 `api.xiaomimimo.com` 会拒绝）。改端点后 **LLM 端到端对话已真机实测成功**（WS 28789 → 消息 → 真实回答；证据 `logs/verify-2026-09-17/agent_llm_ws.txt`，链路三处修复见 `docs/06` §27）。
+   ⚠️ **但该 key 已随 AI 日志公开泄露过一次（见 §六），必须轮换**；轮换后 key 是编译期注入的，需重新构建烧录。
 4. **屏 ✅ / 摄像头 ⚠️（2026-09-17 定论，最终固件复测）**：显示（DSI EK79007 + LVGL）、
    触摸（GT911）已真机闭环；**摄像头结论是「驱动链路通、物理链路无数据」**：最终固件
    `camera 3` 实测 —— `esp_csi_data_start_capture: ctlr start rc=0 (DMA+bridge enabled)`、
@@ -80,6 +81,12 @@ python3 tools/board.py run "free" "ps"    # 任意 NSH 命令并断言
    问题 `config fail`；已改为"应用前 `git reset --hard` 钉定版本 + 幂等 apply + 固定顺序
    0002→0001"，并删除补丁中两段过时 hunk（详见 `docs/05_功能闭环测试.md` §八.3）。
 
+8. **本地 manifest 仓副本与官方 gitee 分叉** —— `.repo/manifests` 本地领先 36 / 落后 28（非快进），
+   直接 `repo sync` 会停在 `manifests rebase … 冲突`。绕开方式：`repo sync --no-manifest-update`（`--nmu`）。
+   已同时修正 `tools/lock-revision.sh`：它原来只 `sed revision`，会让 `.repo/manifests` 副本在其它条目上
+   悄悄漂移（2026-09-18 实测副本仍是 326 条 + 两个废弃条目）。详见 `docs/03` §3.2。
+   评审侧不受影响：评审是全新 clone，`.repo/manifests` 直接来自所 init 的分支。
+
 ## 五、硬件外设进展（2026-09-16 更新；本节已按 9/14–9/15 的修复结果重写）
 
 > ⚠️ 9/14 那份"显示/触摸失败、疑似模组硬件问题"的判断**已被推翻**：
@@ -96,7 +103,14 @@ python3 tools/board.py run "free" "ps"    # 任意 NSH 命令并断言
 
 ## 六、安全提醒
 
-- ⚠️ MiMo API key 曾误入公开仓历史（commit 4d7f318）——**必须轮换**；
-  新 key 一律经本地 `ai_agent/include/agent_secrets.h`（.gitignore 忽略）注入。
+- ⚠️ **MiMo API key 两次误入公开仓历史 —— 必须轮换、且只当它已作废**：
+  1) 早先一次：commit `4d7f318`；
+  2) **2026-09-18 发现**：导出的 AI Coding 日志把会话里贴过的 key 原样带出，
+     `logs/ez-xu/2026-09-11/dsh__96802734-….jsonl` 里有 4 处完整 key（该文件由 commit `85c17a6` 引入）。
+     已于 commit `5663907` 全部脱敏为 `tp-***REDACTED…***`（JSONL 结构校验通过：6948 行可解析）。
+  **仅从仓库改写/删除不能使其失效** —— 它已经在公开仓出现并被 fork/缓存，唯一处置是**在平台侧吊销/轮换**。
+  根因是导出链路对流式会话的凭据掩码不完整（同一条日志里有的位置被掩码、有的没有）→
+  **提交前必须对 `logs/` 做一次凭据扫描**（示例：`grep -rEo 'tp-[A-Za-z0-9]{40,}|sk-[A-Za-z0-9]{20,}' logs/`）。
+  新 key 一律经本地 `ai_agent/include/agent_secrets.h`（.gitignore 忽略）注入，不入仓。
 - ⚠️ 本地环境坑：`openocd` 运行期间占用 USB，用完务必 `pkill -x openocd`；
   `pkill -f openocd` 会连自己的 shell 一起杀掉（模式自匹配）。

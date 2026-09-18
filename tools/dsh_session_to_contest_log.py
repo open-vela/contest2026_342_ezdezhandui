@@ -50,6 +50,7 @@ KEEP = {
 
 # 默认脱敏（与赛事 collector 一致，另加 DSH 常见项）
 REDACT = [
+    (re.compile(r"tp-[A-Za-z0-9]{20,}"), "tp-<REDACTED>"),  # 小米 MiMo Token Plan key（曾两次泄漏）
     (re.compile(r"sk-[A-Za-z0-9_-]{16,}"), "sk-<REDACTED>"),
     (re.compile(r"ghp_[A-Za-z0-9]{20,}"), "ghp_<REDACTED>"),
     (re.compile(r"gho_[A-Za-z0-9]{20,}"), "gho_<REDACTED>"),

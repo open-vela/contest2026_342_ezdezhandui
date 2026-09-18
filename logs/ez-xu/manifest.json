@@ -3,7 +3,7 @@
   "team_id": "contest2026-342",
   "github_login": "ez-xu",
   "generator": "dsh-exporter@1.0",
-  "updated_at": "2026-09-17T05:38:49.949385+00:00",
+  "updated_at": "2026-09-18T03:28:03.872036+00:00",
   "sessions": [
     {
       "session_id": "020c57b8-625e-4b12-8239-f389b6dcac77",
@@ -230,6 +230,50 @@
       "event_count": 6948,
       "raw_event_count": 66732,
       "file_path": "logs/ez-xu/2026-09-11/dsh__96802734-455a-4fa8-9928-e1b4dcf50987.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "e333ec92-a944-4493-90c9-ec9e7c2d10a1",
+      "tool": "dsh",
+      "started_at": "2026-09-11T01:21:36.014000Z",
+      "last_event_at": "2026-09-17T11:58:01.012000Z",
+      "event_count": 3528,
+      "raw_event_count": 29130,
+      "file_path": "logs/ez-xu/2026-09-11/dsh__e333ec92-a944-4493-90c9-ec9e7c2d10a1.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "d31c5f58-f70a-4102-84ce-3a3c0332fcfc",
+      "tool": "dsh",
+      "started_at": "2026-09-17T15:49:03.256000Z",
+      "last_event_at": "2026-09-17T16:09:35.245000Z",
+      "event_count": 380,
+      "raw_event_count": 3977,
+      "file_path": "logs/ez-xu/2026-09-17/dsh__d31c5f58-f70a-4102-84ce-3a3c0332fcfc.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "d009f7fc-9818-48ab-acb5-3f4a22368bc0",
+      "tool": "dsh",
+      "started_at": "2026-09-07T02:51:17.325000Z",
+      "last_event_at": "2026-09-10T03:48:33.571000Z",
+      "event_count": 694,
+      "raw_event_count": 8239,
+      "file_path": "logs/ez-xu/2026-09-07/dsh__d009f7fc-9818-48ab-acb5-3f4a22368bc0.jsonl",
+      "collection_mode": "cli",
+      "health": "ok"
+    },
+    {
+      "session_id": "3aa75204-ae2e-449a-86ee-6296bfb032d8",
+      "tool": "dsh",
+      "started_at": "2026-08-21T05:48:16.423000Z",
+      "last_event_at": "2026-09-02T12:43:58.896000Z",
+      "event_count": 11321,
+      "raw_event_count": 36146,
+      "file_path": "logs/ez-xu/2026-08-21/dsh__3aa75204-ae2e-449a-86ee-6296bfb032d8.jsonl",
       "collection_mode": "cli",
       "health": "ok"
     }

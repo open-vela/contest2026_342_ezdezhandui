@@ -11,7 +11,9 @@
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FW="${1:-/home/ez/share/openvela/cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin}"
+# 工作区根 = 作品仓的上一级（作品仓在 <workspace>/contest2026_342_ezdezhandui/）
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FW="${1:-$WORKSPACE_ROOT/cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin}"
 
 echo "════════════════════════════════════════════"
 echo "  桌伴 DeskMate · 一键演示"

@@ -20,7 +20,11 @@
 #       开发板 USB-JTAG 口空闲（别同时跑 gdb/其它 openocd）
 set -u
 
-OCD="${OCD:-/home/ez/tools/openocd-esp32/bin/openocd}"
+# openocd 查找顺序：$OCD 环境变量 → PATH → 本机已知路径（换机器时用 OCD= 覆盖）
+if [ -z "${OCD:-}" ]; then
+    if command -v openocd >/dev/null 2>&1; then OCD="$(command -v openocd)"
+    else OCD="/home/ez/tools/openocd-esp32/bin/openocd"; fi
+fi
 CFG="${CFG:-board/esp32p4-builtin.cfg}"
 MODE="${1:-wedge}"
 

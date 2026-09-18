@@ -65,7 +65,8 @@ logs/                      # AI Coding 日志（提交前持续导出）
 
 ```bash
 # 1. 拉取（repo sync 自动应用全部改动）
-repo init -u https://gitee.com/open-vela/contest2026_342_ezdezhandui.git \
+#    ⚠️ 必须用 **GitHub** 官方仓：大赛仅在 GitHub 进行，Gitee 镜像停在旧版（无本作品改动）。
+repo init -u https://github.com/open-vela/contest2026_342_ezdezhandui.git \
   -b dev-ai-contest-2026 -m contest2026_342_ezdezhandui.xml
 repo sync -c -j8
 # 可选自检：清单与文件树一致性（应输出"✅ 清单与文件树一致"）

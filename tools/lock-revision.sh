@@ -57,7 +57,12 @@ git add contest2026_342_ezdezhandui.xml
 git commit -m "chore(manifest): revision 锁定更新至 $NEW_SHORT(最新 HEAD)"
 
 # --- 3. 同步官方 manifest 工作树副本 ------------------------------------------
-sed -i "s/revision=\"[0-9a-f]\{40\}\"/revision=\"$NEW_SHA\"/" "$MANIFESTS_XML"
+# 必须**整份覆盖**：只 sed revision 会让副本在其它条目上悄悄漂移。
+# 2026-09-18 实测踩到：.repo/manifests 副本还留着 326 条、且含两个早已废弃的条目
+# （`common/Make.dep` / `common/board`），于是本地 repo sync 打印
+# `error: Cannot copy file …/Make.dep`，并把作品仓 checkout 回旧 revision。
+# 副本与交付物同源同内容，才谈得上"评审拿到的就是作者拿到的"。
+cp "$XML" "$MANIFESTS_XML"
 
 # --- 4. 提交 .repo/manifests --------------------------------------------------
 git -C "$REPO_ROOT/.repo/manifests" add contest2026_342_ezdezhandui.xml

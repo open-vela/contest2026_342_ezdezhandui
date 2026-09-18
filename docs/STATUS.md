@@ -1,11 +1,14 @@
 # 项目状态（STATUS）
 
-> 最后更新：**2026-09-17（晚）** · **「agent 一启动整机失聪」已定位并修复**：`riscv_doirq()` 的早期引导保护
+> 最后更新：**2026-09-18（提交前）** · **「agent 一启动整机失聪」已定位并修复**：`riscv_doirq()` 的早期引导保护
 > 吞掉了 `up_exit()` 的 `SYS_restore_context` ECALL（任何任务退出都会死机），修复后 agent 启动完成
 > 板子照常在线（ping/TCP 28789 均通）—— 根因、证据、验证见 `docs/06` §26.7 与 `logs/verify-2026-09-17/wedge_fix.txt`；
 > §四.4 摄像头按最终固件复测写入定论；LVGL 截图在最终固件上复采（同一工具 `tools/fb2png.py`）；
 > §二/§三 收拢到**无部署步骤**的交付路径（manifest 325 条 copyfile，见 `docs/06` §24）。
 > §五 外设状态仍按 9/14–9/15 的**平台级驱动修复**（显示/触摸/DNS 已打通，见 `docs/06` §22/§23）；
+> 9/18 提交前：**演示视频（`提交材料/6360b48….mp4`，27.7s）+ 9/18 真机复现证据日志 5 份**入 `提交材料/`，
+> AI 日志补导至 **28 会话 / 35,831 事件**（含 9/7、9/11 旧命名、9/17、9/18 缺口，
+> 工具 `tools/dsh_session_to_contest_log.py` 兼容旧目录命名）；
 > 逐项结果见 `docs/05_功能闭环测试.md` §七；收尾计划见 `docs/01_开发规划文档.md` §十。
 
 ## 一、主线达成状态（真机闭环验证）
@@ -24,7 +27,7 @@
 | 摄像头驱动链路 | ⚠️ 有帧→无 | 传感器 I2C/寄存器/stream-on ✅、CSI 2 lane + RAW10 + DMA 武装 ✅、零错误；但桥 FIFO 零字节（数据未跨 MIPI 物理链路），最终固件复测同结论，**一条命令可复测**：`tools/camera_diag.sh` |
 | **自定义 Skill ×2（赛题②）** | ✅ | `center-assistant` / `quick-note`；`Skills system ready (12 built-in)` |
 | **cron 定时主动（赛题③）** | ✅ | `cron_service`/`tool_cron` 真实编入，`[cron] Cron started` |
-| AI Coding 日志 | ✅ | **19 会话 / 18,022 事件**（`logs/ez-xu/`，汇总见 `logs/ez-xu/manifest.json`；claude-code 18 + dsh 1）|
+| AI Coding 日志 | ✅ | **28 会话 / 35,831 事件**（`logs/ez-xu/`，汇总见 `logs/ez-xu/manifest.json`；claude-code 18 + dsh 10，覆盖 8/21–9/17）|
 
 ## 二、当前交付
 
@@ -32,6 +35,7 @@
 - **复现路径**：根 `README.md` §四（init → sync → build → **两镜像烧录** → console，**无部署步骤**；copyfile 在 `repo sync` 时自动落位，且移植不删除任何上游文件）
 - **闭环工具**：`tools/board.py`（串口 harness/断言）、`tools/usb_stable.sh`（两镜像烧录）、`tools/verify_aiagent.sh`（ai_agent 启动里程碑断言）、`tools/camera_diag.sh`（摄像头链路一次性判定）、`tools/fb2png.py`（JTAG 帧缓冲→PNG 截图）、`tools/wedge_diag.sh`（agent 失聪现场 JTAG 取证）
 - **真机证据存档**：`docs/验证截图_LVGL界面_1024x600.png`（LVGL 帧缓冲首采）与 `logs/verify-2026-09-17/`（`lvgl_demo_final.png` 最终固件复采、`camera_final.log` 摄像头实录、`wedge_jtag.txt` 失聪现场、`wedge_fix.txt` 修复前后、`agent_llm_ws.txt` 端到端对话）
+- **随提交材料**：`提交材料/` —— 演示视频 `6360b48….mp4`（27.7s）+ 9/18 真机复现证据日志 5 份（`boot_nsh.log` / `aiagent_milestones.log` / `aiagent_live.log` / `lvgldemo.log` / `ws_llm_endtoend.log`）；AI Coding 日志 **28 会话 / 35,831 事件**（`logs/ez-xu/manifest.json`）
 
 ## 三、演示脚本
 

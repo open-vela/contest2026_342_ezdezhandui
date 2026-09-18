@@ -113,7 +113,7 @@ python3 tools/board.py run "free" "ai_agent"
 - 全流程 AI Coding，日志导出至 `logs/`（contest-log-collector）
 - 开发过程使用 openvela 官方 AI 开发技能集（17 个，位于**工作区** `.claude/skills/`，属上游资产、不入本仓）；本项目自身的沉淀在 `docs/`
 
-## 七、状态（2026-09-17 晚 复验更新）
+## 七、状态（2026-09-18 提交前 复验更新）
 
 - ✅ **移植与引导**：`repo sync` 即得完整工作树（325 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
 - ✅ **真机闭环**：`tools/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
@@ -122,6 +122,6 @@ python3 tools/board.py run "free" "ai_agent"
 - ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `logs/verify-2026-09-17/agent_llm_ws.txt`）；「启动后整机失聪」已定位并修复（根因见 `docs/06` §26.7）
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
 - 🔶 **摄像头**：驱动与软件链路零错误（SC2336 识别 `0xcb3a`、CSI 2 lane + DMA 武装），但 MIPI 数据 lane 物理通路无数据（模组/排线），出帧待硬件修复 —— 复测一条命令 `tools/camera_diag.sh`
-- ⏳ 演示视频 + 《作品介绍》随提交材料
+- ✅ **随提交材料**（`提交材料/`）：演示视频（`6360b48….mp4`，27.7s）+ 9/18 真机复现证据日志 5 份（boot_nsh / aiagent_milestones / aiagent_live / lvgldemo / ws_llm_endtoend）；专属仓 `contest2026_342_ezdezhandui`
 - 📌 详细状态与逐项证据见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
 

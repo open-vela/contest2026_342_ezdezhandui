@@ -1,0 +1,5 @@
+[ws] connected to ws://192.168.1.105:28789/
+[ws] -> {"type": "message", "content": "只回复：你好"}
+[ws] <- op=1 {"type":"response","content":"让我查一下...","chat_id":"ws_4"}
+[ws] <- op=1 {"type":"response","content":"你好","chat_id":"ws_4"}
+[ws] done: 2 frames in 280.2s

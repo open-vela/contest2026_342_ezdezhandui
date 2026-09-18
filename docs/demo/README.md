@@ -1,7 +1,7 @@
 # 演示证据包（真机实测，2026-09-11 夜 · 本轮重编译固件）
 
 > 本目录是**真机串口原始日志**，可直接作为演示与评审证据。
-> 采集方式：`tools/board.py`（console = `/dev/ttyUSB0` @115200，已 assert DTR/RTS）。
+> 采集方式：`tools/test/board.py`（console = `/dev/ttyUSB0` @115200，已 assert DTR/RTS）。
 >
 > ⚠️ 本包是 **2026-09-11** 的快照（当时显示/触摸尚未打通，eth0 为静态 10.0.0.2）。
 > **9/14–9/17 的最新结果与证据**见 `logs/verify-2026-09-17/`（LVGL 帧缓冲截图、
@@ -19,10 +19,10 @@
 
 ```bash
 cd contest2026_342_ezdezhandui
-tools/usb_stable.sh                                  # 烧录（0x2000 引导 + 0x20000 应用）
-python3 tools/board.py reset --save docs/demo/01_boot_mcuboot.log
-tools/verify_aiagent.sh | tee docs/demo/02_verify.log
-python3 tools/board.py run "uname -a" "free" "ls /dev" "ifconfig eth0" \
+tools/build_flash/usb_stable.sh                                  # 烧录（0x2000 引导 + 0x20000 应用）
+python3 tools/test/board.py reset --save docs/demo/01_boot_mcuboot.log
+tools/test/verify_aiagent.sh | tee docs/demo/02_verify.log
+python3 tools/test/board.py run "uname -a" "free" "ls /dev" "ifconfig eth0" \
         --save docs/demo/03_runtime.log
 ```
 
@@ -80,6 +80,6 @@ eth0  HWaddr e8:f6:0a:e3:a6:a5 at RUNNING mtu 576
 
 开发机是 VMware 虚拟机 + USB-CP2102，串口在**日志突发期会丢失字节**（约每秒千字节级输出时），
 表现为个别行缺失或行内字符被 ANSI 片段劈开（如 `Cron start[ed`）。
-`tools/verify_aiagent.sh` 已针对该现象做归一化处理，并把位于突发中段的里程碑降级为 WARN。
+`tools/test/verify_aiagent.sh` 已针对该现象做归一化处理，并把位于突发中段的里程碑降级为 WARN。
 **这是采集链路的限制，不是固件行为**：同一现象在多轮采集中出现位置随机，且固件自身的
 里程碑计数与工具输出一致。

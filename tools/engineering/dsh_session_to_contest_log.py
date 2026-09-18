@@ -20,8 +20,8 @@ tool 字段
     真实来源另记在每条事件的 metadata.source_tool 里。
 
 用法
-    tools/dsh_session_to_contest_log.py --session <session-id> [--tool dsh]
-    tools/dsh_session_to_contest_log.py --session <id> --workdir <工作区> --confirm
+    tools/engineering/dsh_session_to_contest_log.py --session <session-id> [--tool dsh]
+    tools/engineering/dsh_session_to_contest_log.py --session <id> --workdir <工作区> --confirm
 """
 
 from __future__ import annotations

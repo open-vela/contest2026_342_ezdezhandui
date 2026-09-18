@@ -29,11 +29,11 @@
 
 用法
 ----
-    tools/repo_baseline_reset.py                    # 预览（dry-run）
-    tools/repo_baseline_reset.py --apply            # 真正执行
-    tools/repo_baseline_reset.py --only nuttx apps  # 只处理指定 project path
-    tools/repo_baseline_reset.py --only-dirty       # 只处理有本地提交或脏改动的仓库
-    tools/repo_baseline_reset.py --apply --restore refs/backup/pre-baseline-reset-20260916T120000Z
+    tools/engineering/repo_baseline_reset.py                    # 预览（dry-run）
+    tools/engineering/repo_baseline_reset.py --apply            # 真正执行
+    tools/engineering/repo_baseline_reset.py --only nuttx apps  # 只处理指定 project path
+    tools/engineering/repo_baseline_reset.py --only-dirty       # 只处理有本地提交或脏改动的仓库
+    tools/engineering/repo_baseline_reset.py --apply --restore refs/backup/pre-baseline-reset-20260916T120000Z
 
 节点来源
 --------

@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # ⚠️ 已废弃（legacy）：旧布局 board/esp32p4_vela/{nuttx,apps,ai_agent} 专用。
-#    当前请用 tools/export.py（映射到仓根 nuttx/ board/esp32p4/ app/apps/ app/ai_agent/，
+#    当前请用 tools/engineering/export.py（映射到仓根 nuttx/ board/esp32p4/ app/apps/ app/ai_agent/，
 #    并且不再产生 .deleted-files —— 交付物必须能被 manifest <copyfile> 完整表达）。
 #
 # export.sh —— 把 openvela 工作区 nuttx/、apps/、packages/ai_agent 的

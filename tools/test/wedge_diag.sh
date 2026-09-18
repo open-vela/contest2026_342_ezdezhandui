@@ -13,8 +13,8 @@
 #   * PC 落在哪里                → WFI 空闲 还是 trap 进出路径（中断风暴）
 #
 # 用法:
-#   tools/wedge_diag.sh              # 采集两次（间隔 4s）并打印判读
-#   tools/wedge_diag.sh healthy      # 只采一次（对照组：复位后、未启 ai_agent）
+#   tools/test/wedge_diag.sh              # 采集两次（间隔 4s）并打印判读
+#   tools/test/wedge_diag.sh healthy      # 只采一次（对照组：复位后、未启 ai_agent）
 #
 # 依赖: openocd-esp32（默认 /home/ez/tools/openocd-esp32/bin/openocd，可用 OCD= 覆盖）
 #       开发板 USB-JTAG 口空闲（别同时跑 gdb/其它 openocd）

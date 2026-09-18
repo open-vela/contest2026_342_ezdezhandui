@@ -4,13 +4,13 @@
 # 端口（2026-09-11 实测修正）：
 #   /dev/ttyUSB0  CP2102        -> **NuttX console（UART0）**  ← 必须在这个口读输出
 #   /dev/ttyACM0  USB-Serial/JTAG -> 仅用于烧录/复位（读不到 NSH 输出）
-#   打开串口必须 assert DTR/RTS，否则读到 0 字节（tools/board.py 已内置）
+#   打开串口必须 assert DTR/RTS，否则读到 0 字节（tools/test/board.py 已内置）
 #
 # 关于重试：本机是 VMware 虚拟机，USB-CP2102 在日志突发时偶发丢字节
 # （表现为个别行缺失或两行交错）。因此本脚本对同一组里程碑做多轮采集，
 # 任一轮看到即算通过；这样既保留严格断言，又不会被丢包误判为失败。
 #
-# 用法: tools/verify_aiagent.sh [轮数]
+# 用法: tools/test/verify_aiagent.sh [轮数]
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -48,7 +48,7 @@ round=1
 while [ "$round" -le "$ROUNDS" ]; do
     echo "── 第 $round/$ROUNDS 轮 ──"
     echo "   复位..."
-    bash "$SCRIPT_DIR/usb_stable.sh" "" "" reset >/dev/null 2>&1 || true
+    bash "$SCRIPT_DIR/../build_flash/usb_stable.sh" "" "" reset >/dev/null 2>&1 || true
     OUT="$OUTDIR/round$round.txt"
     python3 "$SCRIPT_DIR/board.py" run "ai_agent" --timeout 45 --no-idle \
             --save "$OUT" --quiet

@@ -12,10 +12,10 @@
 #                                              读串口必须 assert DTR/RTS，否则 0 字节
 #
 # 用法:
-#   tools/usb_stable.sh                        # 默认路径烧录两镜像
-#   tools/usb_stable.sh <app.bin>              # 指定应用镜像（引导用默认路径）
-#   tools/usb_stable.sh <app.bin> <boot.bin>
-#   tools/usb_stable.sh "" "" {chip_id|reset}
+#   tools/build_flash/usb_stable.sh                        # 默认路径烧录两镜像
+#   tools/build_flash/usb_stable.sh <app.bin>              # 指定应用镜像（引导用默认路径）
+#   tools/build_flash/usb_stable.sh <app.bin> <boot.bin>
+#   tools/build_flash/usb_stable.sh "" "" {chip_id|reset}
 #
 # 环境变量:
 #   OPENVELA_ROOT  工作区根（默认从脚本位置推导，可显式覆盖）
@@ -27,7 +27,7 @@ CONSOLE_PORT=/dev/ttyUSB0
 ESPTOOL=${ESPTOOL:-$HOME/.local/bin/esptool.py}
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT=${OPENVELA_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+ROOT=${OPENVELA_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
 
 BUILD_DIR="$ROOT/cmake_out/esp32p4-function-ev-board_nsh"
 DEFAULT_FW="$BUILD_DIR/nuttx.bin"

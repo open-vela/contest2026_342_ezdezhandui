@@ -45,7 +45,7 @@ logs/                      # AI Coding 日志（提交前持续导出）
 | `app/apps/**` | `apps/**` |
 | `app/ai_agent/**` | `packages/ai_agent/**` |
 
-清单与文件树的**严格一一对应**由 `tools/gen_manifest_copyfiles.py` 保证
+清单与文件树的**严格一一对应**由 `tools/engineering/gen_manifest_copyfiles.py` 保证
 （`--check` 校验，直接运行则再生）。校验会**直接拒绝**两类"manifest 表达不了、
 只能靠部署脚本补"的东西：需要删除的上游文件清单、指向目录的软链。
 
@@ -70,7 +70,7 @@ repo init -u https://github.com/open-vela/contest2026_342_ezdezhandui.git \
   -b dev-ai-contest-2026 -m contest2026_342_ezdezhandui.xml
 repo sync -c -j8
 # 可选自检：清单与文件树一致性（应输出"✅ 清单与文件树一致"）
-python3 contest2026_342_ezdezhandui/tools/gen_manifest_copyfiles.py --check
+python3 contest2026_342_ezdezhandui/tools/engineering/gen_manifest_copyfiles.py --check
 
 # 2. 构建（**一条命令即产出两个镜像**；引导构建已挂进默认构建图）
 cd <openvela 工作区根>
@@ -88,12 +88,12 @@ cd <openvela 工作区根>
 
 # 3. 烧录（⚠️ MCUboot 两镜像；旧的"单镜像写 0x2000"已失效）
 cd contest2026_342_ezdezhandui
-tools/usb_stable.sh
+tools/build_flash/usb_stable.sh
 #   0x2000  ← MCUboot 引导；0x20000 ← 应用（OTA_0 主槽）；两镜像均做 hash 校验
 
 # 4. 看 console：/dev/ttyUSB0（CP2102，115200；打开时须 assert DTR/RTS）→ 出现 nsh>
-python3 tools/board.py reset                 # 复位并抓启动日志
-python3 tools/board.py run "free" "ai_agent"
+python3 tools/test/board.py reset                 # 复位并抓启动日志
+python3 tools/test/board.py run "free" "ai_agent"
 ```
 
 
@@ -106,7 +106,7 @@ python3 tools/board.py run "free" "ai_agent"
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
 | 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |
 | LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实 | ① + 加分 |
-| 事件主动（摄像头）| 🔶 **驱动链路已打通**（SC2336 识别 / CSI 2 lane + DMA 武装 / 零错误），但 MIPI 数据 lane 物理通路无数据（模组或排线），主动场景待硬件修复后闭环 —— 复测一条命令：`tools/camera_diag.sh` | ③ |
+| 事件主动（摄像头）| 🔶 **驱动链路已打通**（SC2336 识别 / CSI 2 lane + DMA 武装 / 零错误），但 MIPI 数据 lane 物理通路无数据（模组或排线），主动场景待硬件修复后闭环 —— 复测一条命令：`tools/test/camera_diag.sh` | ③ |
 
 ## 六、AI 开发记录
 
@@ -116,12 +116,12 @@ python3 tools/board.py run "free" "ai_agent"
 ## 七、状态（2026-09-18 提交前 复验更新）
 
 - ✅ **移植与引导**：`repo sync` 即得完整工作树（325 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
-- ✅ **真机闭环**：`tools/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
+- ✅ **真机闭环**：`tools/build_flash/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
 - ✅ **联网**：eth0 DHCP `192.168.1.105` RUNNING（主机同网段，ICMP 通）；DNS 可用
 - ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/验证截图_LVGL界面_1024x600.png`
 - ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `logs/verify-2026-09-17/agent_llm_ws.txt`）；「启动后整机失聪」已定位并修复（根因见 `docs/06` §26.7）
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
-- 🔶 **摄像头**：驱动与软件链路零错误（SC2336 识别 `0xcb3a`、CSI 2 lane + DMA 武装），但 MIPI 数据 lane 物理通路无数据（模组/排线），出帧待硬件修复 —— 复测一条命令 `tools/camera_diag.sh`
+- 🔶 **摄像头**：驱动与软件链路零错误（SC2336 识别 `0xcb3a`、CSI 2 lane + DMA 武装），但 MIPI 数据 lane 物理通路无数据（模组/排线），出帧待硬件修复 —— 复测一条命令 `tools/test/camera_diag.sh`
 - ✅ **随提交材料**（`提交材料/`）：演示视频（`6360b48….mp4`，27.7s）+ 9/18 真机复现证据日志 5 份（boot_nsh / aiagent_milestones / aiagent_live / lvgldemo / ws_llm_endtoend）；专属仓 `contest2026_342_ezdezhandui`
 - 📌 详细状态与逐项证据见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
 

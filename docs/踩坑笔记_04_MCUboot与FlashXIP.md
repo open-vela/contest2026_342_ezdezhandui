@@ -58,7 +58,7 @@
 | load header 生成器（新增） | `nuttx/tools/espressif/mcuboot_mkloadhdr.py` |
 | MCUboot 构建兼容 + XIP 映射补丁（新增） | `nuttx/tools/espressif/mcuboot_p4_fixup.sh`、`mcuboot_p4_loader_patch.py` |
 | 引导构建进默认构建图 | `arch/risc-v/src/common/espressif/{Bootloader.cmake,CMakeLists.txt}`（见坑 6） |
-| 烧录改双镜像 | 项目侧 `tools/usb_stable.sh` |
+| 烧录改双镜像 | 项目侧 `tools/build_flash/usb_stable.sh` |
 
 ---
 
@@ -72,7 +72,7 @@
 | 4. 跳转即崩 | MCUboot 校验通过、跳转后立刻 fault | MCUboot 只 memcpy IRAM/DRAM，**从不映射 flash**（坑 4） | `mcuboot_p4_loader_patch.py`：跳转前 `mmu_hal_map_region()` + `cache_hal_invalidate_addr()` |
 | 5. 引导编不出来 | MCUboot 在 p4 上编译失败（5 类问题） | 锁定版无 p4 端口 / 子模块改名 / ABI 冲突 / HAL 门禁 / clang 风格参数（坑 5） | 全部收进幂等 `mcuboot_p4_fixup.sh`（挂 `PATCH_COMMAND`，避免被 update 步骤还原） |
 | 6. 只产出应用镜像 | 文档里的构建命令产不出 `mcuboot-esp32p4.bin` | `bootloader` 目标不在 `all`；且内层 configure 拿不到 `CMAKE_MAKE_PROGRAM`（坑 6） | `add_dependencies(nuttx_context bootloader)` + 显式 `-GNinja -DCMAKE_MAKE_PROGRAM=<ninja>` |
-| 7. 烧录流程失效 | 旧的"单镜像写 0x2000"起不来 | 现在是**双镜像**（`0x2000` 引导 + `0x20000` 应用）（坑 7） | `tools/usb_stable.sh` 两镜像 + 两次 hash 校验断言 |
+| 7. 烧录流程失效 | 旧的"单镜像写 0x2000"起不来 | 现在是**双镜像**（`0x2000` 引导 + `0x20000` 应用）（坑 7） | `tools/build_flash/usb_stable.sh` 两镜像 + 两次 hash 校验断言 |
 | 8. 升级被拒 | `Cannot upgrade: more sectors than allowed` | `MCUBOOT_MAX_IMG_SECTORS=512`（esp 端口定义）< 3MB/4KB = 768 扇区（坑 8） | 走 `CONFIG_ESP_BOOT_UPGRADE_ONLY=1`（或调大该宏 / 缩小槽） |
 
 ---
@@ -216,7 +216,7 @@
   表现为"烧录返回成功、应用槽只写了一半"，随后 MCUboot 报
   `Image in the primary slot is not valid!`。正确做法：**先落盘日志，进程结束后再校验**，
   并要求日志里出现**两次** hash 校验。
-- 项目侧脚本：`tools/usb_stable.sh`（两镜像 + 断言 + 重试）。
+- 项目侧脚本：`tools/build_flash/usb_stable.sh`（两镜像 + 断言 + 重试）。
 
 ---
 
@@ -278,7 +278,7 @@ python3 -m esptool --chip esp32p4 image_info cmake_out/esp32p4-function-ev-board
 grep -A3 "load header" <构建日志>
 
 # 4) 真机：引导→映射→跳转→NSH 四连
-python3 contest2026_342_ezdezhandui/tools/board.py reset --save /tmp/boot.log
+python3 contest2026_342_ezdezhandui/tools/test/board.py reset --save /tmp/boot.log
 grep -E "Loading image 0|IRAM segment|Mapped IROM|start=0x|NuttShell" /tmp/boot.log
 ```
 
@@ -289,7 +289,7 @@ grep -E "Loading image 0|IRAM segment|Mapped IROM|start=0x|NuttShell" /tmp/boot.
 - [ ] `rm -rf cmake_out` 后单条 `build.sh --cmake -j8` 成功，且**双镜像**都在
 - [ ] `size` 检查：`.flash.text` 在 `0x40000000`、`.iram0.text` 在 `0x4ff40000`
 - [ ] 构建日志出现 `load header: ...` 且 XIP 段 `slot_off=0x10000`
-- [ ] `tools/usb_stable.sh` 两镜像烧录，两次 hash 校验
+- [ ] `tools/build_flash/usb_stable.sh` 两镜像烧录，两次 hash 校验
 - [ ] 串口出现 `Mapped IROM: vaddr=0x40000000 ...`（**这行是 XIP 生效的唯一凭据**）
 - [ ] 进到 `nsh>`，`free` / `ifconfig eth0` 正常
 - [ ] MCUboot 无 `Cannot upgrade: more sectors than allowed`

@@ -376,8 +376,8 @@ HAL（esp-hal-3rdparty，钉定 8d0a8989100，通过 patch 适配 openvela）
 **开发闭环**：
 
 ```
-工作区改代码 → build.sh 编译验证 → tools/export.py --apply --manifest（工作区 → 文件树）
-            → 作品仓 commit → tools/lock-revision.sh（锁 manifest revision）
+工作区改代码 → build.sh 编译验证 → tools/engineering/export.py --apply --manifest（工作区 → 文件树）
+            → 作品仓 commit → tools/engineering/lock-revision.sh（锁 manifest revision）
 反向：评审 repo sync（copyfile 自动落位）→ 直接 build.sh（不需要任何 deploy/rsync 步骤）
 ```
 
@@ -427,7 +427,7 @@ grep -n "nuttx_add_application" packages/ai_agent/CMakeLists.txt
 grep -o "LINK_LIBRARIES = .*" cmake_out/esp32p4-function-ev-board_nsh/build.ninja | head -1
 
 # 6) 启动链（板子起来后）
-python3 contest2026_342_ezdezhandui/tools/board.py reset --save /tmp/boot.log
+python3 contest2026_342_ezdezhandui/tools/test/board.py reset --save /tmp/boot.log
 grep -E "Mapped IROM|start=0x|NuttShell" /tmp/boot.log
 ```
 

@@ -3,16 +3,16 @@
 # 叙事: 烧录最新固件 → 复位稳定 → 启动 ai_agent → 展示 READY + 核心功能输出
 #
 # 用法:
-#   tools/demo_aiagent.sh                 # 用默认最新固件
-#   tools/demo_aiagent.sh <firmware.bin>  # 指定固件
+#   tools/build_flash/demo_aiagent.sh                 # 用默认最新固件
+#   tools/build_flash/demo_aiagent.sh <firmware.bin>  # 指定固件
 #
-# 依赖: tools/usb_stable.sh(稳定复位) + tools/verify_aiagent.sh(启动验证)
+# 依赖: tools/build_flash/usb_stable.sh(稳定复位) + tools/test/verify_aiagent.sh(启动验证)
 # 前置: USB 已连(esptool 可用), /dev/ttyACM0 存在
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # 工作区根 = 作品仓的上一级（作品仓在 <workspace>/contest2026_342_ezdezhandui/）
-WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 FW="${1:-$WORKSPACE_ROOT/cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin}"
 
 echo "════════════════════════════════════════════"
@@ -26,7 +26,7 @@ bash "$SCRIPT_DIR/usb_stable.sh" "$FW" flash || { echo "✗ 烧录失败"; exit 
 
 # 2. 启动验证 ai_agent(最多 4 次尝试)
 echo "[2/4] 启动 ai_agent 并验证..."
-bash "$SCRIPT_DIR/verify_aiagent.sh" "$FW" || { echo "✗ ai_agent 未 READY"; exit 1; }
+bash "$SCRIPT_DIR/../test/verify_aiagent.sh" "$FW" || { echo "✗ ai_agent 未 READY"; exit 1; }
 
 # 3. 展示关键输出
 echo "[3/4] 演示输出摘要:"

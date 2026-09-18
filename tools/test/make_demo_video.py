@@ -19,7 +19,7 @@ def find_ffmpeg():
 
 FFMPEG = find_ffmpeg()
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(ROOT, "提交材料", "演示视频_桌伴DeskMate_v1.mp4")
 TMP = "/tmp/deskmate_video"
 os.makedirs(TMP, exist_ok=True)
@@ -151,7 +151,7 @@ def scene_llm():
     draw_header(d, "③ LLM 端到端对话（真机实测）", "WebSocket 28789 → 消息 → 小米 MiMo → 真实回答")
     chat = open(os.path.join(ROOT, "logs/verify-2026-09-17/agent_llm_ws.txt"), encoding="utf-8", errors="replace").read().splitlines()
     keys = [ln for ln in chat if ln.startswith("[ws]")][:6]
-    draw_logbox(d, keys, title="tools/ws_demo.py 客户端实录（2026-09-17 晚）")
+    draw_logbox(d, keys, title="tools/test/ws_demo.py 客户端实录（2026-09-17 晚）")
     yy = 190 + 6 * 38 + 20
     for s in ["★ 发出「你好」 → 板端调度 → LLM 返回「你好」",
               "修复链路：① Token Plan 端点 401 → ② NET_TCPBACKLOG RST → ③ TLS 改时钟吞答案",
@@ -179,7 +179,7 @@ def scene_camera():
     cam = open(os.path.join(ROOT, "logs/verify-2026-09-17/camera_final.log"), encoding="utf-8", errors="replace").read().splitlines()
     keys = [ln for ln in cam if any(k in ln for k in
             ["chip ID", "CSI:", "ctlr start", "start_capture", "DQBUF", "buf"])][:10]
-    draw_logbox(d, keys, title="tools/camera_diag.sh 实录")
+    draw_logbox(d, keys, title="tools/test/camera_diag.sh 实录")
     yy = 190 + 10 * 38 + 20
     for s in ["✓ SCCB 通信 / 传感器表 149/149 / stream-on 成功",
               "✓ CSI 2 lane @405Mbps + DW-GDMA 武装 rc=0",
@@ -197,8 +197,8 @@ def scene_repro():
         "  -b dev-ai-contest-2026 -m contest2026_342_ezdezhandui.xml",
         "repo sync -c -j8            # 325 条 copyfile 自动落位",
         "./build.sh vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh --cmake -j8",
-        "tools/usb_stable.sh         # 0x2000 引导 + 0x20000 应用（双镜像 hash 校验）",
-        "python3 tools/board.py reset  # → nsh>",
+        "tools/build_flash/usb_stable.sh         # 0x2000 引导 + 0x20000 应用（双镜像 hash 校验）",
+        "python3 tools/test/board.py reset  # → nsh>",
     ]
     draw_logbox(d, cmds, title="build.sh 一条命令 → 双镜像 → 真机 NSH")
     yy = 190 + 6 * 38 + 20

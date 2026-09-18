@@ -11,7 +11,7 @@
   2. **untracked (`??`) 文件被直接跳过** —— 而新增的驱动/源文件恰恰都是 untracked，
      于是"新增文件导不出去"。
 
-现在（在执行过 `tools/repo_baseline_reset.py` 之后）所有仓库的 HEAD 都停在
+现在（在执行过 `tools/engineering/repo_baseline_reset.py` 之后）所有仓库的 HEAD 都停在
 manifest 固定节点，本地提交与未提交修改**统一成未提交修改**，因此只需要一条路径：
 
     git status --porcelain --untracked-files=all
@@ -27,9 +27,9 @@ untracked 文件 = 相对基线**新增**的文件，必须导出。
 
 用法
 ----
-    tools/export.py                 # 预览（dry-run）
-    tools/export.py --apply         # 真正写入作品仓文件树
-    tools/export.py --apply --manifest   # 同时刷新 manifest 的 copyfile 条目
+    tools/engineering/export.py                 # 预览（dry-run）
+    tools/engineering/export.py --apply         # 真正写入作品仓文件树
+    tools/engineering/export.py --apply --manifest   # 同时刷新 manifest 的 copyfile 条目
 """
 
 from __future__ import annotations
@@ -286,13 +286,13 @@ def main():
     print("\n✅ 导出完成")
 
     if args.manifest:
-        gen = os.path.join(root, "tools", "gen_manifest_copyfiles.py")
+        gen = os.path.join(root, "tools", "engineering", "gen_manifest_copyfiles.py")
         if os.path.isfile(gen):
             print("\n刷新 manifest copyfile 条目 ...")
             rc, out, err = run([sys.executable, gen], cwd=root, check=False)
             print(out.strip() or err.strip())
         else:
-            print("⚠️  未找到 tools/gen_manifest_copyfiles.py")
+            print("⚠️  未找到 tools/engineering/gen_manifest_copyfiles.py")
 
     print("\n➡ 提交作品仓：")
     print(f"   cd {root} && git add -A && git commit -m '...'")

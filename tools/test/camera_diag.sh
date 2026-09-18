@@ -17,8 +17,8 @@
 #     (验证完记得改回 0 并重编 —— 探针会在每次 start_capture 多花约 1.2s 并刷屏)
 #
 # 用法
-#   tools/camera_diag.sh            # 复位 → 跑 camera 应用 → 抓 CAMDIAG → 给判读
-#   tools/camera_diag.sh 60         # 自定义采集秒数
+#   tools/test/camera_diag.sh            # 复位 → 跑 camera 应用 → 抓 CAMDIAG → 给判读
+#   tools/test/camera_diag.sh 60         # 自定义采集秒数
 #
 # 判读（脚本最后会打印同样的表）
 #   RESULT 行出现 "MOVING"                     → 帧在进内存，驱动链路 OK
@@ -30,7 +30,7 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SECS="${1:-35}"
 LOG="/tmp/camera_diag_$$.log"
 
@@ -38,12 +38,12 @@ echo "── 摄像头链路验证（采集 ${SECS}s）────────�
 echo "   console: /dev/ttyUSB0 (115200)   repo: $REPO"
 
 cd "$REPO"
-python3 tools/board.py reset --timeout 22 > /tmp/camera_diag_boot.log 2>&1 || true
+python3 tools/test/board.py reset --timeout 22 > /tmp/camera_diag_boot.log 2>&1 || true
 
 BOOT_HITS=$(grep -acE "SC2336 chip ID|video0" /tmp/camera_diag_boot.log || true)
 echo "   启动：SC2336/video0 相关行 = ${BOOT_HITS}"
 
-python3 tools/board.py run "camera" --timeout "$SECS" --no-idle > "$LOG" 2>&1 || true
+python3 tools/test/board.py run "camera" --timeout "$SECS" --no-idle > "$LOG" 2>&1 || true
 
 echo
 echo "── 传感器控制面 ────────────────────────────────────────────"

@@ -10,13 +10,13 @@
         app/apps/<rel>        -> apps/<rel>
         app/ai_agent/<rel>    -> packages/ai_agent/<rel>
 
-    文件树由 tools/export.py 维护，本脚本保证清单与文件树**严格一一对应**：
+    文件树由 tools/engineering/export.py 维护，本脚本保证清单与文件树**严格一一对应**：
     新增文件自动补条目、已删除文件自动移除条目、原清单中的"树外条目"（例如
     CSI_INTEGRATOR_HANDOFF.md）原样保留。
 
 用法
-    python3 tools/gen_manifest_copyfiles.py            # 就地更新 xml
-    python3 tools/gen_manifest_copyfiles.py --check    # 只校验，不写入（差异即非零退出）
+    python3 tools/engineering/gen_manifest_copyfiles.py            # 就地更新 xml
+    python3 tools/engineering/gen_manifest_copyfiles.py --check    # 只校验，不写入（差异即非零退出）
 
 校验项
     1. 树中每个文件都有 copyfile 条目（除 .deleted-files；含 .gitignore 等点文件）

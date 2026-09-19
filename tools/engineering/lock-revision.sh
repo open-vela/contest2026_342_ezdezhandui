@@ -10,7 +10,7 @@
 #
 # 用法
 #   cd /home/ez/share/openvela/contest2026_342_ezdezhandui
-#   tools/lock-revision.sh
+#   tools/engineering/lock-revision.sh
 #
 # 效果(全部原子、可重复)
 #   1. 作品仓  contest2026_342_ezdezhandui.xml  revision -> $(git rev-parse HEAD)
@@ -25,9 +25,9 @@
 # =============================================================================
 set -euo pipefail
 
-# 脚本位于 <作品仓>/tools/lock-revision.sh（WORKTREE=作品仓根, REPO_ROOT=工作区根）
-# 作品仓根 = 脚本所在目录上一级;repo 根 = 作品仓根上一级（即 /home/ez/share/openvela）
-WORKTREE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 脚本位于 <作品仓>/tools/engineering/lock-revision.sh（WORKTREE=作品仓根, REPO_ROOT=工作区根）
+# 作品仓根 = 脚本所在目录上溯两级(tools/engineering -> tools -> 仓根);repo 根 = 作品仓根上一级
+WORKTREE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO_ROOT="$(cd "$WORKTREE/.." && pwd)"
 XML="$WORKTREE/contest2026_342_ezdezhandui.xml"
 MANIFESTS_XML="$REPO_ROOT/.repo/manifests/contest2026_342_ezdezhandui.xml"

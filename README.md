@@ -144,7 +144,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 - ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`）；「启动后整机失聪」已定位并修复（根因见 `docs/06` §26.7）
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
 - ✅ **摄像头出帧**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定抓帧 —— `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15、连跑两轮一致（`--preview` 可见真实画面）；根因是 CSI bridge 与 ISP 共享而 openvela 未初始化 ISP 输入模块，修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`
-- ✅ **提交与仓库**：全部提交经 fork 汇入 **PR #12**（https://github.com/open-vela/contest2026_342_ezdezhandui/pull/12 ，MERGEABLE）；提交材料清单见 §八
+- ✅ **提交与仓库**：全部提交经 fork 汇入 **PR #15（摄像头出帧修复 + 工程整理）** 与 **PR #16（manifest revision 重锁）**，历史提交见 PR #12（均已合并）；提交材料清单见 §八
 - 📌 详细状态与逐项证据见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
 
 ## 八、提交材料

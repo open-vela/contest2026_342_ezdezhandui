@@ -65,6 +65,11 @@
 #include "hal/mipi_csi_brg_ll.h"
 #include "soc/dw_gdma_struct.h"
 #include "hal/mipi_csi_phy_ll.h"
+#include "esp_clk_tree.h"
+#include "esp_private/esp_clk_tree_common.h"
+#include "esp_private/periph_ctrl.h"
+#include "hal/isp_ll.h"
+#include "esp_private/mipi_csi_share_hw_ctrl.h"
 
 #ifdef CONFIG_ESPRESSIF_MIPI_CSI
 
@@ -418,6 +423,128 @@ static int esp_csi_data_init(FAR struct imgdata_s *data)
   priv->framebuffer_size =
     (priv->framebuffer_size + align - 1) & ~(size_t)(align - 1);
 
+  return OK;
+}
+
+/* The ISP input module only needs to be brought up once per boot. */
+
+static bool g_esp_csi_isp_ready;
+
+/****************************************************************************
+ * Name: esp_csi_isp_bypass_init
+ *
+ * Description:
+ *   The MIPI CSI bridge is shared between the CSI controller and the ISP
+ *   (SOC_ISP_SHARE_CSI_BRG).  The reference esp_video stack always creates an
+ *   ISP processor for the CSI video device, even when it runs in bypass mode
+ *   for RAW8, so its input module is clocked and its frame size programmed.
+ *   openvela used to leave the ISP completely untouched; this reproduces the
+ *   reference's minimum configuration (input source = CSI, bypass enabled).
+ *
+ ****************************************************************************/
+
+static void esp_csi_isp_bypass_init(uint32_t h_res, uint32_t v_res,
+                                     uint32_t bpp)
+{
+  FAR isp_dev_t *isp = ISP_LL_GET_HW(0);
+  hal_utils_clk_div_t div = { 0 };
+  hal_utils_clk_info_t info;
+  uint32_t src_hz = 0;
+  uint32_t h_words = (h_res * bpp + 31u) / 32u;
+  int brg_id = 0;
+  int ret;
+
+  /* The ISP keeps running once configured (as in esp_video, whose ISP
+   * processor outlives a single capture), so only claim/init it once.
+   */
+
+  if (g_esp_csi_isp_ready)
+    {
+      return;
+    }
+
+  ret = mipi_csi_brg_claim(MIPI_CSI_BRG_USER_SHARE, &brg_id);
+  if (ret != 0)
+    {
+      _err("ERROR: ISP bypass: csi bridge claim failed: %d\n", ret);
+      return;
+    }
+
+  (void)esp_clk_tree_src_get_freq_hz((soc_module_clk_t)ISP_CLK_SRC_DEFAULT,
+                                     ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED,
+                                     &src_hz);
+  if (src_hz == 0)
+    {
+      src_hz = 160000000;
+    }
+
+  info.src_freq_hz = src_hz;
+  info.exp_freq_hz = 80000000;
+  info.max_integ    = ISP_LL_TX_MAX_CLK_INT_DIV;
+  info.min_integ    = 1;
+  info.round_opt    = HAL_DIV_ROUND;
+  (void)hal_utils_calc_clk_div_integer(&info, &div.integer);
+  if (div.integer == 0)
+    {
+      div.integer = 1;
+    }
+
+  PERIPH_RCC_ATOMIC()
+    {
+      isp_ll_enable_module_clock(isp, true);
+      isp_ll_reset_module_clock(isp);
+      isp_ll_select_clk_source(isp, ISP_CLK_SRC_DEFAULT);
+      isp_ll_set_clock_div(isp, &div);
+    }
+
+  (void)esp_clk_tree_enable_src((soc_module_clk_t)ISP_CLK_SRC_DEFAULT, true);
+
+  isp_ll_init(isp);
+  isp_ll_clk_enable(isp, true);
+  isp_ll_set_input_data_source(isp, ISP_INPUT_DATA_SOURCE_CSI);
+  isp_ll_enable_line_start_packet_exist(isp, false);
+  isp_ll_enable_line_end_packet_exist(isp, false);
+  isp_ll_set_intput_data_h_pixel_num(isp, h_words);
+  isp_ll_set_intput_data_v_row_num(isp, v_res);
+
+  /* Bypass: the ISP pipeline itself stays disabled, only the CSI input module
+   * is clocked and sized, exactly like esp_video does for RAW8.
+   */
+
+  isp->cntl.isp_en        = 0;
+  isp->frame_cfg.hadr_num = h_words - 1;
+  isp->frame_cfg.vadr_num = v_res - 1;
+
+  g_esp_csi_isp_ready = true;
+
+  _info("CSI: ISP bypass init: src=%" PRIu32 " Hz div=%" PRIu32
+        " h_words=%" PRIu32 " v=%" PRIu32 "\n",
+        src_hz, (uint32_t)div.integer, h_words, v_res);
+}
+
+/****************************************************************************
+ * Name: esp_csi_ctlr_create
+ *
+ * Description:
+ *   Create, wire and enable the MIPI CSI controller.  Deferred to
+ *   VIDIOC_STREAMON on purpose: the reference esp_video stack also creates
+ *   the controller at stream start, so the D-PHY is not touched before the
+ *   sensor mode table has been applied.
+ *
+ ****************************************************************************/
+
+static int esp_csi_ctlr_create(FAR struct esp_csi_priv_s *priv)
+{
+  esp_cam_ctlr_csi_config_t csi_config;
+  esp_cam_ctlr_evt_cbs_t cbs;
+  esp_err_t err;
+  int ret;
+
+  if (priv->ctlr_created)
+    {
+      return OK;
+    }
+
   memset(&csi_config, 0, sizeof(csi_config));
 
   csi_config.ctlr_id                = 0;
@@ -441,7 +568,7 @@ static int esp_csi_data_init(FAR struct imgdata_s *data)
     {
       _err("ERROR: esp_cam_new_csi_ctlr failed: %d\n", (int)err);
       ret = -EIO;
-      goto errout_ldo;
+      goto errout;
     }
 
   priv->ctlr_created = true;
@@ -474,6 +601,15 @@ static int esp_csi_data_init(FAR struct imgdata_s *data)
         priv->framebuffer_align, priv->config.input_color,
         priv->config.output_color);
 
+
+  /* Mirror esp_video: bring up the ISP input module (bypass) for the shared
+   * CSI bridge before the CSI DMA is started.
+   */
+
+  esp_csi_isp_bypass_init(priv->config.h_res, priv->config.v_res,
+                          priv->config.input_color == CAM_CTLR_COLOR_RAW10 ? 10u :
+                          priv->config.input_color == CAM_CTLR_COLOR_RAW12 ? 12u : 8u);
+
   return OK;
 
 errout_ctlr:
@@ -481,15 +617,10 @@ errout_ctlr:
   priv->ctlr = NULL;
   priv->ctlr_created = false;
 
-errout_ldo:
-  if (priv->ldo_acquired)
-    {
-      esp_ldo_channel_release(&priv->ldo);
-      priv->ldo_acquired = false;
-    }
-
+errout:
   return ret;
 }
+
 
 /****************************************************************************
  * Name: esp_csi_data_uninit
@@ -737,7 +868,7 @@ static int esp_csi_data_start_capture(FAR struct imgdata_s *data,
 
   if (!priv->ctlr_created)
     {
-      ret = esp_csi_data_init(data);
+      ret = esp_csi_ctlr_create(priv);
       if (ret < 0)
         {
           return ret;
@@ -766,6 +897,15 @@ static int esp_csi_data_start_capture(FAR struct imgdata_s *data,
 
   _info("CSI: ctlr start rc=%d (%s)\n", (int)csi_start_err,
         csi_start_err == ESP_OK ? "DMA+bridge enabled" : "FAILED");
+
+  syslog(LOG_INFO,
+         "CSIDMA: gcfg=%08" PRIx32 " chen0=%08" PRIx32 " sar=%08" PRIx32
+         " dar=%08" PRIx32 " ts=%08" PRIx32 " ctl0=%08" PRIx32
+         " cfg0=%08" PRIx32 "\n",
+         (uint32_t)DW_GDMA.cfg0.val, (uint32_t)DW_GDMA.chen0.val,
+         (uint32_t)DW_GDMA.ch[0].sar0.val, (uint32_t)DW_GDMA.ch[0].dar0.val,
+         (uint32_t)DW_GDMA.ch[0].block_ts0.val,
+         (uint32_t)DW_GDMA.ch[0].ctl0.val, (uint32_t)DW_GDMA.ch[0].cfg0.val);
 
   if (csi_start_err != ESP_OK)
     {
@@ -892,8 +1032,8 @@ void esp_csi_get_default_config(FAR struct esp_csi_config_s *config)
    * bring-up captures the raw sensor stream.
    */
 
-  config->input_color         = CAM_CTLR_COLOR_RAW10;
-  config->output_color        = CAM_CTLR_COLOR_RAW10;
+  config->input_color         = CAM_CTLR_COLOR_RAW8;
+  config->output_color        = CAM_CTLR_COLOR_RAW8;
 
   config->byte_swap_en        = false;
   config->input_8bit_swap_en  = false;

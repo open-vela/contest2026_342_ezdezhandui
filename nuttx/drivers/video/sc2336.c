@@ -36,7 +36,9 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/clock.h>
+#include <nuttx/mutex.h>
 #include <nuttx/signal.h>
+#include <nuttx/wqueue.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/video/video.h>
 #include <nuttx/video/imgsensor.h>
@@ -83,9 +85,19 @@
 
 /* Frame timing of the 1080p30 mode. */
 
-#define SC2336_HTS               2250
-#define SC2336_VTS               1200
+#define SC2336_HTS               2240
+#define SC2336_VTS               1500
 #define SC2336_FPS               30
+
+/* Settling time after stream-on: the first frames after leaving sleep are not
+ * valid, so the capture path waits a few frame periods before the first
+ * buffer is expected to be complete.
+ */
+
+#define SC2336_STREAM_SETTLE_MS  100
+
+/* Settle time between the mode table (MIPI PLL enable) and stream-on. */
+#define SC2336_PLL_SETTLE_MS     50
 
 /* Exposure limits: the integrated exposure is expressed in lines and has to
  * stay below the frame length.  The vendor driver uses VTS - 6 as maximum
@@ -96,12 +108,15 @@
 #define SC2336_EXPOSURE_MAX      (SC2336_VTS - 6)
 #define SC2336_EXPOSURE_DEFAULT  0x37e
 
-/* Table terminators.  The vendor tables reserve two magic registers: 0xffff
- * ends the table and 0xfffe delays for the number of milliseconds stored in
- * the value field.
+/* Tables are applied with an explicit length (SC2336_NREGS_1080P), not a sentinel.
+ * The old 0xffff terminator was forgotten once already, which made the writer
+ * walk past the end of the array and issue wild SCCB writes; a length cannot
+ * be forgotten without the compiler noticing the array is empty.
+ *
+ * A 0xfffe entry delays for the number of milliseconds stored in val instead
+ * of writing a register.
  */
 
-#define SC2336_REG_END           0xffff
 #define SC2336_REG_DELAY         0xfffe
 
 /****************************************************************************
@@ -114,10 +129,12 @@ struct sc2336_reg_s
   uint8_t  val;
 };
 
-struct sc2336_framesize_s
+struct sc2336_mode_s
 {
   uint16_t width;
   uint16_t height;
+  FAR const struct sc2336_reg_s *table;
+  size_t   nentries;
 };
 
 struct sc2336_dev_s
@@ -126,11 +143,26 @@ struct sc2336_dev_s
   FAR struct i2c_master_s *i2c;
   uint8_t addr;
 
+  /* Serialises SCCB access and the streaming state machine.  Created by
+   * sc2336_initialize(); the instance is a singleton, so the mutex lives as
+   * long as the driver.
+   */
+
+  mutex_t  lock;
+  bool     lock_ready;
+
   /* Values written by start_capture() and reported through get_value(). */
 
   uint32_t exposure;
   bool     hflip;
   bool     vflip;
+
+  /* Mode table currently programmed into the sensor.  The table is applied
+   * at VIDIOC_S_FMT time, before the CSI controller is created/started, so
+   * the D-PHY is initialised with a stable sensor clock (as esp_video does).
+   */
+
+  FAR const struct sc2336_mode_s *applied_mode;
 
   bool     streaming;
   bool     detected;
@@ -154,186 +186,92 @@ struct sc2336_dev_s
  * PLL while the table is being applied, 0x53 locks it again at the end).
  */
 
-static const struct sc2336_reg_s g_sc2336_1080p30_raw10[] =
-{
-  {0x0103, 0x01}, /* Soft reset */
+/* 1280x720 @ 30 fps, 2 MIPI data lanes, RAW8, 336 Mbps.
+ *
+ * This is the mode the factory ESP-IDF firmware runs on this board; it was
+ * verified against the reference capture_stream example together with a CSI
+ * host/bridge register snapshot.  Source of the table: esp-video-components,
+ *   sc2336_mipi_2lane_24Minput_1280x720_raw8_30fps.h
+ */
 
-  /* The soft reset has to complete before the register file accepts further
-   * writes: the sensor is busy re-initialising itself and silently drops
-   * anything sent in that window.  Without this pause the whole table below --
-   * including every PLL/MIPI register (0x36e9/0x37f9/0x36xx) and the closing
-   * "lock the PLL" writes -- is lost, which leaves the sensor with no MIPI
-   * output clock at all.  The visible symptom is not a bus error: I2C works,
-   * 0x0100 reads back 1 after "stream on", the CSI controller, bridge and
-   * DW-GDMA all report configured and enabled, and yet not one byte ever
-   * reaches memory because the CSI PHY can never lock to a clock that is not
-   * being generated.
+static const struct sc2336_reg_s g_sc2336_720p30_raw8[] =
+{
+  /* The soft reset (0x0103) is issued by sc2336_probe() with its 5 ms
+   * settling delay, exactly like the reference esp_cam_sensor driver, whose
+   * write trace contains a single 0x0103 followed by a settle gap.  Issuing
+   * it a second time here and continuing immediately would restart the
+   * sensor's internal state machine while the PLL/analogue blocks are being
+   * programmed.
    */
 
-  {SC2336_REG_DELAY, 10}, /* ms: let the soft reset settle */
-
-  {0x0100, 0x00}, /* Stay in sleep */
-  {0x36e9, 0x80},
-  {0x37f9, 0x80},
-  {0x301f, 0x02},
-  {0x3106, 0x05},
-  {0x320c, 0x08},
-  {0x320d, 0xca}, /* HTS = 2250 */
-  {0x320e, 0x04},
-  {0x320f, 0xb0}, /* VTS = 1200 */
-  {0x3248, 0x04},
-  {0x3249, 0x0b},
-  {0x3253, 0x08},
-  {0x3301, 0x09},
-  {0x3302, 0xff},
-  {0x3303, 0x10},
-  {0x3306, 0x60},
-  {0x3307, 0x02},
-  {0x330a, 0x01},
-  {0x330b, 0x10},
-  {0x330c, 0x16},
-  {0x330d, 0xff},
-  {0x3318, 0x02},
-  {0x3321, 0x0a},
-  {0x3327, 0x0e},
-  {0x332b, 0x12},
-  {0x3333, 0x10},
-  {0x3334, 0x40},
-  {0x335e, 0x06},
-  {0x335f, 0x0a},
-  {0x3364, 0x1f},
-  {0x337c, 0x02},
-  {0x337d, 0x0e},
-  {0x3390, 0x09},
-  {0x3391, 0x0f},
-  {0x3392, 0x1f},
-  {0x3393, 0x20},
-  {0x3394, 0x20},
-  {0x3395, 0xff},
-  {0x33a2, 0x04},
-  {0x33b1, 0x80},
-  {0x33b2, 0x68},
-  {0x33b3, 0x42},
-  {0x33f9, 0x70},
-  {0x33fb, 0xd0},
-  {0x33fc, 0x0f},
-  {0x33fd, 0x1f},
-  {0x349f, 0x03},
-  {0x34a6, 0x0f},
-  {0x34a7, 0x1f},
-  {0x34a8, 0x42},
-  {0x34a9, 0x06},
-  {0x34aa, 0x01},
-  {0x34ab, 0x23},
-  {0x34ac, 0x01},
-  {0x34ad, 0x84},
-  {0x3630, 0xf4},
-  {0x3633, 0x22},
-  {0x3639, 0xf4},
-  {0x363c, 0x47},
-  {0x3670, 0x09},
-  {0x3674, 0xf4},
-  {0x3675, 0xfb},
-  {0x3676, 0xed},
-  {0x367c, 0x09},
-  {0x367d, 0x0f},
-  {0x3690, 0x33},
-  {0x3691, 0x33},
-  {0x3692, 0x43},
-  {0x3698, 0x89},
-  {0x3699, 0x96},
-  {0x369a, 0xd0},
-  {0x369b, 0xd0},
-  {0x369c, 0x09},
-  {0x369d, 0x0f},
-  {0x36a2, 0x09},
-  {0x36a3, 0x0f},
-  {0x36a4, 0x1f},
-  {0x36d0, 0x01},
-  {0x36ea, 0x09},
-  {0x36eb, 0x0c},
-  {0x36ec, 0x1c},
-  {0x36ed, 0x28},
-  {0x3722, 0xe1},
-  {0x3724, 0x41},
-  {0x3725, 0xc1},
-  {0x3728, 0x20},
-  {0x37fa, 0x09},
-  {0x37fb, 0x32},
-  {0x37fc, 0x11},
-  {0x37fd, 0x37},
-  {0x3900, 0x0d},
-  {0x3905, 0x98},
-  {0x391b, 0x81},
-  {0x391c, 0x10},
-  {0x3933, 0x81},
-  {0x3934, 0xc5},
-  {0x3940, 0x68},
-  {0x3941, 0x00},
-  {0x3942, 0x01},
-  {0x3943, 0xc6},
-  {0x3952, 0x02},
-  {0x3953, 0x0f},
-  {0x3e01, 0x37},
-  {0x3e02, 0xe0}, /* Exposure = 0x37e */
-  {0x3e08, 0x1f},
-  {0x3e1b, 0x14},
-  {0x440e, 0x02},
-  {0x4509, 0x38},
-  {0x4819, 0x06},
-  {0x481b, 0x03},
-  {0x481d, 0x0b},
-  {0x481f, 0x03},
-  {0x4821, 0x08},
-  {0x4823, 0x03},
-  {0x4825, 0x03},
-  {0x4827, 0x03},
-  {0x4829, 0x05},
-  {0x5799, 0x06},
-  {0x5ae0, 0xfe},
-  {0x5ae1, 0x40},
-  {0x5ae2, 0x30},
-  {0x5ae3, 0x28},
-  {0x5ae4, 0x20},
-  {0x5ae5, 0x30},
-  {0x5ae6, 0x28},
-  {0x5ae7, 0x20},
-  {0x5ae8, 0x3c},
-  {0x5ae9, 0x30},
-  {0x5aea, 0x28},
-  {0x5aeb, 0x3c},
-  {0x5aec, 0x30},
-  {0x5aed, 0x28},
-  {0x5aee, 0xfe},
-  {0x5aef, 0x40},
-  {0x5af4, 0x30},
-  {0x5af5, 0x28},
-  {0x5af6, 0x20},
-  {0x5af7, 0x30},
-  {0x5af8, 0x28},
-  {0x5af9, 0x20},
-  {0x5afa, 0x3c},
-  {0x5afb, 0x30},
-  {0x5afc, 0x28},
-  {0x5afd, 0x3c},
-  {0x5afe, 0x30},
-  {0x5aff, 0x28},
-  {0x36e9, 0x53},
-  {0x37f9, 0x53}, /* Lock the PLL */
+  {0x0100, 0x00}, {0x36e9, 0x80}, {0x37f9, 0x80}, {0x301f, 0x8e}, {0x3031, 0x08},
+  {0x3037, 0x00}, {0x3106, 0x05}, {0x3200, 0x01}, {0x3201, 0x34}, {0x3202, 0x00}, {0x3203, 0xb4},
+  {0x3204, 0x06}, {0x3205, 0x53}, {0x3206, 0x03}, {0x3207, 0x8b}, {0x3208, 0x05}, {0x3209, 0x00},
+  {0x320a, 0x02}, {0x320b, 0xd0}, {0x320c, 0x08}, {0x320d, 0xc0}, {0x320e, 0x04}, {0x320f, 0xe2},
+  {0x3210, 0x00}, {0x3211, 0x10}, {0x3212, 0x00}, {0x3213, 0x04}, {0x3248, 0x04}, {0x3249, 0x0b},
+  {0x3253, 0x08}, {0x3301, 0x09}, {0x3302, 0xff}, {0x3303, 0x10}, {0x3306, 0x68}, {0x3307, 0x02},
+  {0x330a, 0x01}, {0x330b, 0x18}, {0x330c, 0x16}, {0x330d, 0xd3}, {0x3318, 0x02}, {0x3321, 0x0a},
+  {0x3327, 0x0e}, {0x332b, 0x12}, {0x3333, 0x10}, {0x3334, 0x40}, {0x335e, 0x06}, {0x335f, 0x0a},
+  {0x3364, 0x1f}, {0x337c, 0x02}, {0x337d, 0x0e}, {0x3390, 0x09}, {0x3391, 0x0f}, {0x3392, 0x1f},
+  {0x3393, 0x20}, {0x3394, 0x20}, {0x3395, 0xff}, {0x33a2, 0x04}, {0x33b1, 0x80}, {0x33b2, 0x68},
+  {0x33b3, 0x42}, {0x33f9, 0x78}, {0x33fb, 0xe0}, {0x33fc, 0x0f}, {0x33fd, 0x1f}, {0x349f, 0x03},
+  {0x34a6, 0x0f}, {0x34a7, 0x1f}, {0x34a8, 0x42}, {0x34a9, 0x06}, {0x34aa, 0x01}, {0x34ab, 0x28},
+  {0x34ac, 0x01}, {0x34ad, 0x90}, {0x3630, 0xf4}, {0x3633, 0x22}, {0x3639, 0xf4}, {0x363c, 0x47},
+  {0x3670, 0x09}, {0x3674, 0xf4}, {0x3675, 0xfb}, {0x3676, 0xed}, {0x367c, 0x09}, {0x367d, 0x0f},
+  {0x3690, 0x22}, {0x3691, 0x22}, {0x3692, 0x22}, {0x3698, 0x89}, {0x3699, 0x96}, {0x369a, 0xd0},
+  {0x369b, 0xd0}, {0x369c, 0x09}, {0x369d, 0x0f}, {0x36a2, 0x09}, {0x36a3, 0x0f}, {0x36a4, 0x1f},
+  {0x36d0, 0x01}, {0x36ea, 0x0e}, {0x36eb, 0x0a}, {0x36ec, 0x1a}, {0x36ed, 0x18}, {0x3722, 0xe1},
+  {0x3724, 0x41}, {0x3725, 0xc1}, {0x3728, 0x20}, {0x37fa, 0x15}, {0x37fb, 0x32}, {0x37fc, 0x11},
+  {0x37fd, 0x17}, {0x3900, 0x0d}, {0x3905, 0x98}, {0x391b, 0x81}, {0x391c, 0x10}, {0x3933, 0x81},
+  {0x3934, 0xc5}, {0x3940, 0x68}, {0x3941, 0x00}, {0x3942, 0x01}, {0x3943, 0xc6}, {0x3952, 0x02},
+  {0x3953, 0x0f}, {0x3e01, 0x37}, {0x3e02, 0xe0}, {0x3e08, 0x1f}, {0x3e1b, 0x14}, {0x4509, 0x38},
+  {0x4819, 0x06}, {0x481b, 0x04}, {0x481d, 0x0c}, {0x481f, 0x03}, {0x4821, 0x0a}, {0x4823, 0x03},
+  {0x4825, 0x03}, {0x4827, 0x03}, {0x4829, 0x05}, {0x5799, 0x06}, {0x5ae0, 0xfe}, {0x5ae1, 0x40},
+  {0x5ae2, 0x30}, {0x5ae3, 0x28}, {0x5ae4, 0x20}, {0x5ae5, 0x30}, {0x5ae6, 0x28}, {0x5ae7, 0x20},
+  {0x5ae8, 0x3c}, {0x5ae9, 0x30}, {0x5aea, 0x28}, {0x5aeb, 0x3c}, {0x5aec, 0x30}, {0x5aed, 0x28},
+  {0x5aee, 0xfe}, {0x5aef, 0x40}, {0x5af4, 0x30}, {0x5af5, 0x28}, {0x5af6, 0x20}, {0x5af7, 0x30},
+  {0x5af8, 0x28}, {0x5af9, 0x20}, {0x5afa, 0x3c}, {0x5afb, 0x30}, {0x5afc, 0x28}, {0x5afd, 0x3c},
+  {0x5afe, 0x30}, {0x5aff, 0x28}, {0x36e9, 0x54}, {0x37f9, 0x54},
 };
+
+#define SC2336_NREGS_720P_RAW8 (sizeof(g_sc2336_720p30_raw8) / \
+                                sizeof(g_sc2336_720p30_raw8[0]))
 
 /* Supported frame sizes.  Only the mode that has a verified register
  * table is listed; the SC2336 has further modes (720p, 800x800, 640x480,
  * 1080p25) that would only need another table here.
  */
 
-static const struct sc2336_framesize_s g_sc2336_framesizes[] =
+static const struct sc2336_mode_s g_sc2336_modes[] =
 {
-  {1920, 1080}
+  {1280, 720, g_sc2336_720p30_raw8, SC2336_NREGS_720P_RAW8},
 };
 
-#define SC2336_NFRAMESIZES \
-  (sizeof(g_sc2336_framesizes) / sizeof(g_sc2336_framesizes[0]))
+#define SC2336_NMODES (sizeof(g_sc2336_modes) / sizeof(g_sc2336_modes[0]))
+
+/* Frame sizes advertised through VIDIOC_ENUM_FRAMESIZES.  v4l2_cap.c takes
+ * these from imgsensor_s.frmsizes; without this array the V4L2 upper half
+ * falls back to a hard-coded QVGA and the enumeration does not describe the
+ * mode the driver actually programs.
+ */
+
+static const struct v4l2_frmsizeenum g_sc2336_frmsizes[] =
+{
+  {
+    .index        = 0,
+    .buf_type     = V4L2_BUF_TYPE_VIDEO_CAPTURE,
+    .pixel_format = V4L2_PIX_FMT_SBGGR8,
+    .type         = V4L2_FRMSIZE_TYPE_DISCRETE,
+    .discrete     =
+    {
+      .width  = 1280,
+      .height = 720
+    }
+  }
+};
+
+#define SC2336_NFRMSIZES \
+  (sizeof(g_sc2336_frmsizes) / sizeof(g_sc2336_frmsizes[0]))
 
 /* Advertised frame intervals.
  *
@@ -363,9 +301,9 @@ static const struct v4l2_frmivalenum g_sc2336_frmintervals[] =
   {
     .index        = 0,
     .buf_type     = V4L2_BUF_TYPE_VIDEO_CAPTURE,
-    .pixel_format = V4L2_PIX_FMT_SBGGR10,
-    .width        = 1920,
-    .height       = 1080,
+    .pixel_format = V4L2_PIX_FMT_SBGGR8,
+    .width        = 1280,
+    .height       = 720,
     .type         = V4L2_FRMIVAL_TYPE_DISCRETE,
     .discrete     =
     {
@@ -409,12 +347,25 @@ static int sc2336_set_value(FAR struct imgsensor_s *sensor, uint32_t id,
 
 /* Register helpers. */
 
+static void sc2336_lock(FAR struct sc2336_dev_s *priv);
+static void sc2336_unlock(FAR struct sc2336_dev_s *priv);
 static int sc2336_write_reg(FAR struct sc2336_dev_s *priv, uint16_t reg,
                             uint8_t val);
 static int sc2336_read_reg(FAR struct sc2336_dev_s *priv, uint16_t reg,
                            FAR uint8_t *val);
 static int sc2336_write_table(FAR struct sc2336_dev_s *priv,
-                              FAR const struct sc2336_reg_s *table);
+                              FAR const struct sc2336_reg_s *table,
+                              size_t nentries);
+static FAR const struct sc2336_mode_s *sc2336_find_mode(uint32_t width,
+                                                        uint32_t height);
+static int sc2336_apply_mode(FAR struct sc2336_dev_s *priv,
+                             FAR const struct sc2336_mode_s *mode);
+static bool sc2336_table_lookup(FAR const struct sc2336_reg_s *table,
+                                size_t nentries, uint16_t reg,
+                                FAR uint8_t *val);
+static int sc2336_verify_table(FAR struct sc2336_dev_s *priv,
+                               FAR const struct sc2336_mode_s *mode);
+static int sc2336_set_stream(FAR struct sc2336_dev_s *priv, bool on);
 static int sc2336_set_exposure(FAR struct sc2336_dev_s *priv,
                                uint32_t exposure);
 static int sc2336_set_flip(FAR struct sc2336_dev_s *priv, bool hflip,
@@ -448,8 +399,8 @@ static const struct v4l2_fmtdesc g_sc2336_fmtdescs[] =
     .index       = 0,
     .type        = V4L2_BUF_TYPE_VIDEO_CAPTURE,
     .flags       = 0,
-    .description = "RAW10 (BGGR)",
-    .pixelformat = V4L2_PIX_FMT_SBGGR10
+    .description = "RAW8 (BGGR)",
+    .pixelformat = V4L2_PIX_FMT_SBGGR8
   }
 };
 
@@ -535,36 +486,279 @@ static int sc2336_read_reg(FAR struct sc2336_dev_s *priv, uint16_t reg,
 }
 
 /****************************************************************************
+ * Name: sc2336_lock / sc2336_unlock
+ *
+ * Description:
+ *   Serialise SCCB transactions and streaming-state changes.  Before
+ *   sc2336_initialize() has created the mutex (lock_ready == false) the
+ *   helpers are no-ops, which is safe because no other context can hold a
+ *   reference to the sensor yet.
+ *
+ ****************************************************************************/
+
+static void sc2336_lock(FAR struct sc2336_dev_s *priv)
+{
+  if (priv->lock_ready)
+    {
+      nxmutex_lock(&priv->lock);
+    }
+}
+
+static void sc2336_unlock(FAR struct sc2336_dev_s *priv)
+{
+  if (priv->lock_ready)
+    {
+      nxmutex_unlock(&priv->lock);
+    }
+}
+
+/****************************************************************************
  * Name: sc2336_write_table
  *
  * Description:
- *   Apply a vendor register table in order.  0xffff terminates the table and
- *   0xfffe requests a delay of val milliseconds.
+ *   Apply a register table in order.  The length is explicit: this writer
+ *   deliberately does not look for a 0xffff sentinel, because a table that
+ *   forgot it made the writer read past the end of its array and write the
+ *   following .rodata words to the sensor over SCCB.
+ *
+ *   A 0xfffe entry delays for val milliseconds instead of writing.
  *
  ****************************************************************************/
 
 static int sc2336_write_table(FAR struct sc2336_dev_s *priv,
-                              FAR const struct sc2336_reg_s *table)
+                              FAR const struct sc2336_reg_s *table,
+                              size_t nentries)
 {
-  FAR const struct sc2336_reg_s *p;
+  size_t i;
   int ret;
 
-  for (p = table; p->reg != SC2336_REG_END; p++)
+  if (table == NULL || nentries == 0)
     {
-      if (p->reg == SC2336_REG_DELAY)
+      return -EINVAL;
+    }
+
+  for (i = 0; i < nentries; i++)
+    {
+      if (table[i].reg == SC2336_REG_DELAY)
         {
-          nxsig_usleep((useconds_t)p->val * 1000);
+          nxsig_usleep((useconds_t)table[i].val * 1000);
           continue;
         }
 
-      ret = sc2336_write_reg(priv, p->reg, p->val);
+      ret = sc2336_write_reg(priv, table[i].reg, table[i].val);
       if (ret < 0)
         {
-          _err("ERROR: SC2336: write %04x failed: %d\n", p->reg, ret);
+          _err("ERROR: SC2336: table[%u/%u] write %04x=%02x failed: %d\n",
+               (unsigned)i, (unsigned)nentries, table[i].reg, table[i].val,
+               ret);
           return ret;
         }
     }
 
+  return OK;
+}
+
+/****************************************************************************
+ * Name: sc2336_verify_table
+ *
+ * Description:
+ *   Read back a handful of registers the mode table is required to have
+ *   programmed.  This distinguishes "the writes landed" from "streaming is on
+ *   but the sensor never got configured", which look the same from the CSI
+ *   side.
+ *
+ *   Mismatches are logged but do not abort the capture: register values can
+ *   differ between sensor revisions, and refusing to stream on a diagnostic
+ *   mismatch would turn a capture problem into a probe failure.
+ *
+ ****************************************************************************/
+
+static bool sc2336_table_lookup(FAR const struct sc2336_reg_s *table,
+                                size_t nentries, uint16_t reg,
+                                FAR uint8_t *val)
+{
+  bool found = false;
+  size_t i;
+
+  for (i = 0; i < nentries; i++)
+    {
+      if (table[i].reg == reg)
+        {
+          /* Keep scanning: a table may write the same register twice (the
+           * PLL unlock/lock pair), and the last write is the final value.
+           */
+
+          *val = table[i].val;
+          found = true;
+        }
+    }
+
+  return found;
+}
+
+static int sc2336_verify_table(FAR struct sc2336_dev_s *priv,
+                               FAR const struct sc2336_mode_s *mode)
+{
+  static const uint16_t key[] =
+  {
+    0x36e9,           /* PLL lock control */
+    0x37f9,           /* PLL lock control */
+    0x4509,           /* MIPI output settings */
+    0x320c, 0x320d,   /* HTS */
+    0x320e, 0x320f,   /* VTS */
+  };
+
+  unsigned int i;
+  unsigned int checked = 0;
+  unsigned int bad = 0;
+
+  if (mode == NULL)
+    {
+      return -EINVAL;
+    }
+
+  for (i = 0; i < sizeof(key) / sizeof(key[0]); i++)
+    {
+      uint8_t want = 0;
+      uint8_t val  = 0;
+      int ret;
+
+      if (!sc2336_table_lookup(mode->table, mode->nentries, key[i], &want))
+        {
+          /* The 720p table does not carry every 1080p register. */
+
+          continue;
+        }
+
+      ret = sc2336_read_reg(priv, key[i], &val);
+      if (ret < 0)
+        {
+          _err("ERROR: SC2336: verify read %04x failed: %d\n", key[i], ret);
+          continue;
+        }
+
+      checked++;
+
+      if (val != want)
+        {
+          bad++;
+          _err("ERROR: SC2336: verify %04x = %02x, expected %02x\n",
+               key[i], val, want);
+        }
+    }
+
+  /* 0x0100 must still be 0 before stream-on, for every mode. */
+
+  {
+    uint8_t sleepval = 0xff;
+    int ret = sc2336_read_reg(priv, SC2336_REG_SLEEP_MODE, &sleepval);
+
+    if (ret >= 0)
+      {
+        checked++;
+        if (sleepval != 0x00)
+          {
+            bad++;
+            _err("ERROR: SC2336: verify 0100 = %02x, expected 00\n",
+                 sleepval);
+          }
+      }
+  }
+
+  syslog(LOG_INFO, "SC2336: %ux%u verify %u/%u match, %u mismatch\n",
+         mode->width, mode->height, checked - bad, checked, bad);
+
+  return bad == 0 ? OK : -EIO;
+}
+
+#ifdef CONFIG_SC2336_DEBUG
+/****************************************************************************
+ * Name: sc2336_dump_table_mismatches
+ *
+ * Description:
+ *   Read back every register the mode table wrote and report the ones whose
+ *   value does not stick.  Duplicate writes (the PLL unlock/lock pair) are
+ *   compared against the final value.
+ *
+ ****************************************************************************/
+
+static void sc2336_dump_table_mismatches(FAR struct sc2336_dev_s *priv,
+                                         FAR const struct sc2336_mode_s *mode)
+{
+  unsigned int bad = 0;
+  size_t i;
+
+  for (i = 0; i < mode->nentries; i++)
+    {
+      uint8_t val = 0;
+      uint8_t want = 0;
+      int ret;
+
+      if (mode->table[i].reg == SC2336_REG_DELAY)
+        {
+          continue;
+        }
+
+      (void)sc2336_table_lookup(mode->table, mode->nentries,
+                                mode->table[i].reg, &want);
+
+      ret = sc2336_read_reg(priv, mode->table[i].reg, &val);
+      if (ret < 0)
+        {
+          _err("ERROR: SC2336: readback %04x failed: %d\n",
+               mode->table[i].reg, ret);
+          continue;
+        }
+
+      if (val != want)
+        {
+          bad++;
+          if (bad <= 20)
+            {
+              syslog(LOG_ERR,
+                     "SC2336: readback %04x = %02x, wrote %02x\n",
+                     mode->table[i].reg, val, want);
+            }
+        }
+    }
+
+  syslog(LOG_INFO, "SC2336: full readback, %u mismatch(es)\n", bad);
+}
+#endif /* CONFIG_SC2336_DEBUG */
+
+/****************************************************************************
+ * Name: sc2336_set_stream
+ *
+ * Description:
+ *   Enter or leave streaming (0x0100 = 1/0) and update the cached state.
+ *
+ ****************************************************************************/
+
+static int sc2336_set_stream(FAR struct sc2336_dev_s *priv, bool on)
+{
+  int ret;
+
+  if (on)
+    {
+      /* The reference stack leaves a long gap between the mode table (which
+       * enables the MIPI PLL) and stream-on, because it also brings up the
+       * ISP and the CSI controller in between.  Starting the MIPI TX too
+       * soon leaves the data lanes parked in HS: the D-PHY reports activity
+       * but the host parses no packet at all.
+       */
+
+      nxsig_usleep(SC2336_PLL_SETTLE_MS * 1000);
+    }
+
+  ret = sc2336_write_reg(priv, SC2336_REG_SLEEP_MODE, on ? 0x01 : 0x00);
+  if (ret < 0)
+    {
+      _err("ERROR: SC2336: failed to %s streaming: %d\n",
+           on ? "start" : "stop", ret);
+      return ret;
+    }
+
+  priv->streaming = on;
   return OK;
 }
 
@@ -686,6 +880,19 @@ static bool sc2336_is_available(FAR struct imgsensor_s *sensor)
 
 /****************************************************************************
  * Name: sc2336_init
+ *
+ * Description:
+ *   Probe the sensor and put it into a known state.
+ *
+ *   Power-on sequence of this board (confirmed against the module):
+ *     1. The module has its own 24 MHz oscillator and its RESET line is hard
+ *        pulled to 3.3 V, so the host drives neither XCLK nor RESET.
+ *     2. Force the sensor into sleep (0x0100 = 0) so a previous run cannot
+ *        leave it streaming.
+ *     3. Read the identification registers; a mismatch fails the probe.
+ *   The mode table performs its own soft reset (0x0103 = 1) when a capture
+ *   starts, followed by the vendor-mandated settling delay.
+ *
  ****************************************************************************/
 
 static int sc2336_init(FAR struct imgsensor_s *sensor)
@@ -700,17 +907,36 @@ static int sc2336_init(FAR struct imgsensor_s *sensor)
       return -ENODEV;
     }
 
-  /* The module has its own 24 MHz oscillator and the sensor reset is hard
-   * pulled to 3.3 V, so there is no clock or reset line to sequence: only
-   * the identification registers have to be read back.
+  sc2336_lock(priv);
+
+  /* Mirror the reference driver's probe order: soft reset first, wait for
+   * it to settle, then leave the sensor asleep.  The reset is best effort;
+   * the identification read below is what decides whether the sensor is
+   * really there.
    */
+
+  ret = sc2336_write_reg(priv, 0x0103, 0x01);
+  if (ret < 0)
+    {
+      _err("ERROR: SC2336: soft reset at probe failed: %d\n", ret);
+    }
+
+  nxsig_usleep(5 * 1000);
+
+  ret = sc2336_write_reg(priv, SC2336_REG_SLEEP_MODE, 0x00);
+  if (ret < 0)
+    {
+      _err("ERROR: SC2336: cannot force sleep at probe: %d\n", ret);
+    }
+
+  priv->streaming = false;
 
   ret = sc2336_read_reg(priv, SC2336_REG_SENSOR_ID_H, &pid_h);
   if (ret < 0)
     {
       _err("ERROR: SC2336: cannot read the sensor ID: %d\n", ret);
       priv->detected = false;
-      return ret;
+      goto out;
     }
 
   ret = sc2336_read_reg(priv, SC2336_REG_SENSOR_ID_L, &pid_l);
@@ -718,7 +944,7 @@ static int sc2336_init(FAR struct imgsensor_s *sensor)
     {
       _err("ERROR: SC2336: cannot read the sensor ID: %d\n", ret);
       priv->detected = false;
-      return ret;
+      goto out;
     }
 
   if ((((uint16_t)pid_h << 8) | pid_l) != SC2336_PID)
@@ -726,28 +952,57 @@ static int sc2336_init(FAR struct imgsensor_s *sensor)
       _err("ERROR: SC2336: unexpected PID 0x%02x%02x (expected 0x%04x)\n",
            pid_h, pid_l, SC2336_PID);
       priv->detected = false;
-      return -ENODEV;
+      ret = -ENODEV;
+      goto out;
     }
 
-  priv->detected = true;
-  return OK;
+  priv->detected     = true;
+  priv->applied_mode = NULL;
+  priv->exposure     = SC2336_EXPOSURE_DEFAULT;
+  priv->hflip    = false;
+  priv->vflip    = false;
+  ret = OK;
+
+out:
+  sc2336_unlock(priv);
+  return ret;
 }
 
 /****************************************************************************
  * Name: sc2336_uninit
+ *
+ * Description:
+ *   Stop streaming and drop the "detected" state.  The caller holds no lock:
+ *   this function takes it itself and uses the internal stream helper rather
+ *   than the public stop_capture(), which would try to lock again.
+ *
  ****************************************************************************/
 
 static int sc2336_uninit(FAR struct imgsensor_s *sensor)
 {
   FAR struct sc2336_dev_s *priv = (FAR struct sc2336_dev_s *)sensor;
+  int ret;
+
+  sc2336_lock(priv);
 
   if (priv->streaming)
     {
-      sc2336_stop_capture(sensor, IMGSENSOR_STREAM_TYPE_VIDEO);
+      ret = sc2336_set_stream(priv, false);
+    }
+  else
+    {
+      /* Best effort: leave the sensor asleep even if the driver believed it
+       * was not streaming (for example after an aborted start).
+       */
+
+      ret = sc2336_write_reg(priv, SC2336_REG_SLEEP_MODE, 0x00);
     }
 
-  priv->detected = false;
-  return OK;
+  priv->detected     = false;
+  priv->applied_mode = NULL;
+  sc2336_unlock(priv);
+
+  return ret < 0 ? ret : OK;
 }
 
 /****************************************************************************
@@ -757,6 +1012,110 @@ static int sc2336_uninit(FAR struct imgsensor_s *sensor)
 static FAR const char *sc2336_get_driver_name(FAR struct imgsensor_s *sensor)
 {
   return "SC2336";
+}
+
+/****************************************************************************
+ * Name: sc2336_find_mode
+ *
+ * Description:
+ *   Map a requested frame size to the register table that produces it.
+ *
+ ****************************************************************************/
+
+static FAR const struct sc2336_mode_s *sc2336_find_mode(uint32_t width,
+                                                        uint32_t height)
+{
+  size_t i;
+
+  for (i = 0; i < SC2336_NMODES; i++)
+    {
+      if (g_sc2336_modes[i].width == width &&
+          g_sc2336_modes[i].height == height)
+        {
+          return &g_sc2336_modes[i];
+        }
+    }
+
+  return NULL;
+}
+
+/****************************************************************************
+ * Name: sc2336_apply_mode
+ *
+ * Description:
+ *   Program the mode table once per requested mode.  Called from
+ *   validate_frame_setting() (VIDIOC_S_FMT) and, as a fallback, from
+ *   start_capture().  The caller holds the driver lock.
+ *
+ ****************************************************************************/
+
+static int sc2336_apply_mode(FAR struct sc2336_dev_s *priv,
+                             FAR const struct sc2336_mode_s *mode)
+{
+  int ret;
+
+  if (priv->applied_mode == mode)
+    {
+      return OK;
+    }
+
+  syslog(LOG_INFO, "SC2336: apply mode %ux%u, %u table entries\n",
+         mode->width, mode->height, (unsigned)mode->nentries);
+
+  ret = sc2336_write_table(priv, mode->table, mode->nentries);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Always read back the key registers: cheap, and it makes "the table
+   * landed" visible in dmesg without a debug build.
+   */
+
+  (void)sc2336_verify_table(priv, mode);
+
+#ifdef CONFIG_SC2336_DEBUG
+  /* Full register dump for bring-up. */
+
+  {
+    static const uint16_t probe[] =
+    {
+      0x0100, 0x36e9, 0x37f9,   /* stream on/off, PLL lock regs */
+      0x320c, 0x320d,           /* HTS */
+      0x320e, 0x320f,           /* VTS */
+      0x4509,                   /* MIPI related */
+      0x0103,                   /* soft reset (reads back 0 when done) */
+      0x301f, 0x3018, 0x3031,   /* lane num / MIPI enable candidates */
+      0x4501, 0x4509, 0x4819, 0x481b, 0x481d,
+      0x3e00, 0x3e01, 0x3e02    /* exposure */
+    };
+
+    unsigned int i;
+
+    for (i = 0; i < sizeof(probe) / sizeof(probe[0]); i++)
+      {
+        uint8_t v = 0;
+        int r = sc2336_read_reg(priv, probe[i], &v);
+
+        syslog(LOG_INFO, "SC2336: reg %04x = %02x (ret=%d)\n",
+               probe[i], v, r);
+      }
+  }
+
+  sc2336_dump_table_mismatches(priv, mode);
+#endif /* CONFIG_SC2336_DEBUG */
+
+  priv->exposure   = SC2336_EXPOSURE_DEFAULT;
+  priv->hflip      = false;
+  priv->vflip      = false;
+  priv->applied_mode = mode;
+
+  /* Let the sensor PLL settle after the table's unlock/lock writes.  The
+   * reference stack has the S_FMT -> STREAMON application gap here.
+   */
+
+  nxsig_usleep(50 * 1000);
+  return OK;
 }
 
 /****************************************************************************
@@ -770,7 +1129,7 @@ static int sc2336_validate_frame_setting(FAR struct imgsensor_s *sensor,
                                          FAR imgsensor_interval_t *interval)
 {
   FAR struct sc2336_dev_s *priv = (FAR struct sc2336_dev_s *)sensor;
-  size_t i;
+  FAR const struct sc2336_mode_s *mode;
 
   if (!priv->detected)
     {
@@ -782,18 +1141,9 @@ static int sc2336_validate_frame_setting(FAR struct imgsensor_s *sensor,
       return -EINVAL;
     }
 
-  for (i = 0; i < SC2336_NFRAMESIZES; i++)
-    {
-      if (datafmts[IMGSENSOR_FMT_MAIN].width ==
-            g_sc2336_framesizes[i].width &&
-          datafmts[IMGSENSOR_FMT_MAIN].height ==
-            g_sc2336_framesizes[i].height)
-        {
-          break;
-        }
-    }
-
-  if (i == SC2336_NFRAMESIZES)
+  mode = sc2336_find_mode(datafmts[IMGSENSOR_FMT_MAIN].width,
+                          datafmts[IMGSENSOR_FMT_MAIN].height);
+  if (mode == NULL)
     {
       _err("ERROR: SC2336: %ux%u is not supported\n",
            datafmts[IMGSENSOR_FMT_MAIN].width,
@@ -812,11 +1162,50 @@ static int sc2336_validate_frame_setting(FAR struct imgsensor_s *sensor,
       return -EINVAL;
     }
 
-  return OK;
+  /* Program the mode table here (VIDIOC_S_FMT) instead of at STREAMON so the
+   * CSI controller is created and started only after the sensor output is
+   * configured, matching the reference esp_video ordering.
+   *
+   * No driver lock here: the V4L2 upper half serialises the ioctls with its
+   * own mutex, and start_capture() calls this function while already holding
+   * the driver lock (taking it again would deadlock).
+   */
+
+  return sc2336_apply_mode(priv, mode);
 }
+
+#ifdef CONFIG_SC2336_DEBUG
+/****************************************************************************
+ * Name: sc2336_delayed_stream_check
+ *
+ * Description:
+ *   Diagnostic: read 0x0100 two seconds after stream-on.  If the sensor has
+ *   silently left streaming, the MIPI transmitter state is a sensor-side
+ *   problem (reset/brown-out); if it still reads 1, the sensor is in stream
+ *   mode and the missing packets are a transmit/PHY issue.
+ *
+ ****************************************************************************/
+
+static struct work_s g_sc2336_check_work;
+
+static void sc2336_delayed_stream_check(FAR void *arg)
+{
+  FAR struct sc2336_dev_s *priv = (FAR struct sc2336_dev_s *)arg;
+  uint8_t val = 0;
+  int ret = sc2336_read_reg(priv, SC2336_REG_SLEEP_MODE, &val);
+
+  syslog(LOG_INFO, "SC2336: t+2s 0x0100=%02x (ret=%d)\n", val, ret);
+}
+#endif /* CONFIG_SC2336_DEBUG */
 
 /****************************************************************************
  * Name: sc2336_start_capture
+ *
+ * Description:
+ *   Apply the mode table and put the sensor into streaming.  The table starts
+ *   with a soft reset (0x0103 = 1) and a 10 ms delay, so the sensor is in
+ *   sleep when the table ends and has to be started explicitly.
+ *
  ****************************************************************************/
 
 static int sc2336_start_capture(FAR struct imgsensor_s *sensor,
@@ -826,148 +1215,87 @@ static int sc2336_start_capture(FAR struct imgsensor_s *sensor,
                                 FAR imgsensor_interval_t *interval)
 {
   FAR struct sc2336_dev_s *priv = (FAR struct sc2336_dev_s *)sensor;
+  FAR const struct sc2336_mode_s *mode;
+  uint8_t rb = 0;
+  int vret;
   int ret;
+
+  sc2336_lock(priv);
 
   syslog(LOG_INFO, "SC2336: start_capture(%d) entered\n", (int)type);
 
   if (!priv->detected)
     {
-      return -ENODEV;
+      ret = -ENODEV;
+      goto out;
     }
 
   if (priv->streaming)
     {
-      return OK;
+      ret = OK;
+      goto out;
     }
 
   ret = sc2336_validate_frame_setting(sensor, type, nr_datafmts, datafmts,
                                       interval);
   if (ret < 0)
     {
-      return ret;
+      goto out;
     }
 
-  /* Apply the mode table.  It starts with a soft reset, so the sensor is
-   * left in sleep mode afterwards and has to be started explicitly below.
+  /* The table is applied with an explicit length; there is no 0xffff
+   * terminator to get out of sync with the array.
    */
 
-  ret = sc2336_write_table(priv, g_sc2336_1080p30_raw10);
+  mode = sc2336_find_mode(datafmts[IMGSENSOR_FMT_MAIN].width,
+                          datafmts[IMGSENSOR_FMT_MAIN].height);
+  if (mode == NULL)
+    {
+      ret = -EINVAL;
+      goto out;
+    }
+
+  ret = sc2336_apply_mode(priv, mode);
   if (ret < 0)
     {
-      return ret;
+      goto out;
     }
 
-  /* Bring-up diagnostic: read back the registers the table is supposed to have
-   * programmed.  This is what separates "the table never landed" (soft reset
-   * still in progress, writes dropped) from "the table landed but the MIPI
-   * link never comes up" -- both look identical from the CSI side, where the
-   * controller, bridge and DW-GDMA all report configured and enabled yet not a
-   * single byte arrives.
-   */
-
-  {
-    static const uint16_t probe[] =
-    {
-      0x0100, 0x36e9, 0x37f9,   /* stream on/off, PLL lock regs */
-      0x320c, 0x320d,           /* HTS = 2250 */
-      0x320e, 0x320f,           /* VTS = 1200 */
-      0x4509,                   /* MIPI related */
-      0x0103,                   /* soft reset (reads back 0 when done) */
-
-      /* MIPI / output-enable candidates.  The PHY clock lane has been observed
-       * going active-high-speed exactly once while the frame counters stay at
-       * zero, so the sensor is configured but apparently not streaming.  These
-       * are the registers a SmartSens part typically uses to gate the MIPI
-       * output; reading them back shows which one is still off.
-       */
-
-      0x301f, 0x3018, 0x3031,   /* lane num / mipi enable candidates */
-      0x4500, 0x4501, 0x4502, 0x4503, 0x4504, 0x4505, 0x4506, 0x4507,
-      0x4508, 0x450a, 0x450b, 0x450c, 0x450d, 0x450e, 0x450f,
-      0x4600, 0x4601, 0x4602, 0x4603,
-      0x4818, 0x4819, 0x481a, 0x481b, 0x481c, 0x481d,
-      0x3e00, 0x3e01, 0x3e02    /* exposure */
-    };
-
-    unsigned int i;
-
-    for (i = 0; i < sizeof(probe) / sizeof(probe[0]); i++)
-      {
-        uint8_t v = 0;
-        int r = sc2336_read_reg(priv, probe[i], &v);
-
-        syslog(LOG_INFO, "SC2336: reg %04x = %02x (ret=%d)\n",
-               probe[i], v, r);
-      }
-  }
-
-  priv->exposure = SC2336_EXPOSURE_DEFAULT;
-  priv->hflip    = false;
-  priv->vflip    = false;
-
-  ret = sc2336_write_reg(priv, SC2336_REG_SLEEP_MODE, 0x01);
+  ret = sc2336_set_stream(priv, true);
   if (ret < 0)
     {
-      _err("ERROR: SC2336: failed to start streaming: %d\n", ret);
-      return ret;
+      goto out;
     }
 
-  /* Bring-up diagnostic: confirm the sensor really left sleep by reading the
-   * bit back.  Without this "the sensor produced no frames" cannot be told
-   * apart from "start_capture was never called" or "the write did not land".
+  /* Confirm the sensor really left sleep.  Without this "no frames" cannot be
+   * told apart from "the stream-on write never landed".
    */
 
-  {
-    uint8_t rb = 0;
-    int rret = sc2336_read_reg(priv, SC2336_REG_SLEEP_MODE, &rb);
+  vret = sc2336_read_reg(priv, SC2336_REG_SLEEP_MODE, &rb);
+  syslog(LOG_INFO, "SC2336: stream-on 0x0100 read back 0x%02x (ret=%d)\n",
+         rb, vret);
 
-    syslog(LOG_INFO,
-           "SC2336: start_capture -> 0x0100=0x01, read back 0x%02x (ret=%d)\n",
-           rb, rret);
-  }
+  if (vret >= 0 && rb != 0x01)
+    {
+      _err("ERROR: SC2336: sensor did not enter streaming (0x0100=0x%02x)\n",
+           rb);
+      (void)sc2336_set_stream(priv, false);
+      ret = -EIO;
+      goto out;
+    }
 
-  /* TEMP-CAMERA-DIAG: enable the sensor's internal colour-bar test pattern
-   * (0x4501 bit3, matching sc2336_set_test_pattern() in Espressif's driver).
-   *
-   * The pattern is generated inside the sensor, so it drives the MIPI
-   * transmit path, the CSI host, the bridge and DW-GDMA without depending on
-   * the pixel array or on light reaching the lens.  It therefore separates
-   * "the capture path is broken" from "the sensor never emits any packet".
-   * Set SC2336_TEST_PATTERN to 0 to return to normal capture.
-   */
-
-#ifndef SC2336_TEST_PATTERN
-#  define SC2336_TEST_PATTERN 0
+#ifdef CONFIG_SC2336_DEBUG
+  work_queue(LPWORK, &g_sc2336_check_work, sc2336_delayed_stream_check, priv,
+             MSEC2TICK(2000));
 #endif
 
-#if SC2336_TEST_PATTERN
-  {
-    uint8_t tp = 0;
-    int tret = sc2336_read_reg(priv, 0x4501, &tp);
+  nxsig_usleep(SC2336_STREAM_SETTLE_MS * 1000);
 
-    if (tret >= 0)
-      {
-        uint8_t want = (uint8_t)(tp | 0x08);
+  ret = OK;
 
-        tret = sc2336_write_reg(priv, 0x4501, want);
-        syslog(LOG_INFO, "SC2336: test pattern 0x4501 0x%02x -> 0x%02x "
-               "(ret=%d)\n", tp, want, tret);
-      }
-    else
-      {
-        syslog(LOG_ERR, "SC2336: test pattern read failed: %d\n", tret);
-      }
-  }
-#endif
-
-  /* The first frame after leaving sleep is not valid; the sensor needs a
-   * few frame times before the output is stable.
-   */
-
-  nxsig_usleep(100 * 1000);
-
-  priv->streaming = true;
-  return OK;
+out:
+  sc2336_unlock(priv);
+  return ret;
 }
 
 /****************************************************************************
@@ -980,20 +1308,19 @@ static int sc2336_stop_capture(FAR struct imgsensor_s *sensor,
   FAR struct sc2336_dev_s *priv = (FAR struct sc2336_dev_s *)sensor;
   int ret;
 
+  sc2336_lock(priv);
+
   if (!priv->streaming)
     {
-      return OK;
+      ret = OK;
+      goto out;
     }
 
-  ret = sc2336_write_reg(priv, SC2336_REG_SLEEP_MODE, 0x00);
-  if (ret < 0)
-    {
-      _err("ERROR: SC2336: failed to stop streaming: %d\n", ret);
-      return ret;
-    }
+  ret = sc2336_set_stream(priv, false);
 
-  priv->streaming = false;
-  return OK;
+out:
+  sc2336_unlock(priv);
+  return ret;
 }
 
 /****************************************************************************
@@ -1074,31 +1401,43 @@ static int sc2336_set_value(FAR struct imgsensor_s *sensor, uint32_t id,
                             uint32_t size, imgsensor_value_t value)
 {
   FAR struct sc2336_dev_s *priv = (FAR struct sc2336_dev_s *)sensor;
+  int ret;
 
   if (size != sizeof(int32_t))
     {
       return -EINVAL;
     }
 
+  sc2336_lock(priv);
+
   if (!priv->detected)
     {
-      return -ENODEV;
+      ret = -ENODEV;
+      goto out;
     }
 
   switch (id)
     {
       case IMGSENSOR_ID_HFLIP_VIDEO:
-        return sc2336_set_flip(priv, value.value32 != 0, priv->vflip);
+        ret = sc2336_set_flip(priv, value.value32 != 0, priv->vflip);
+        break;
 
       case IMGSENSOR_ID_VFLIP_VIDEO:
-        return sc2336_set_flip(priv, priv->hflip, value.value32 != 0);
+        ret = sc2336_set_flip(priv, priv->hflip, value.value32 != 0);
+        break;
 
       case IMGSENSOR_ID_EXPOSURE_ABSOLUTE:
-        return sc2336_set_exposure(priv, (uint32_t)value.value32);
+        ret = sc2336_set_exposure(priv, (uint32_t)value.value32);
+        break;
 
       default:
-        return -ENOTTY;
+        ret = -ENOTTY;
+        break;
     }
+
+out:
+  sc2336_unlock(priv);
+  return ret;
 }
 
 /****************************************************************************
@@ -1156,7 +1495,27 @@ FAR struct imgsensor_s *sc2336_initialize(FAR struct i2c_master_s *i2c,
       return NULL;
     }
 
+  /* Never wipe a live instance: it may be streaming and its mutex is in use.
+   * A second initialize() on a detected sensor is a caller bug, not a reason
+   * to corrupt the state of the running capture.
+   */
+
+  if (priv->lock_ready && priv->detected)
+    {
+      set_errno(EBUSY);
+      return NULL;
+    }
+
+  if (priv->lock_ready)
+    {
+      nxmutex_destroy(&priv->lock);
+      priv->lock_ready = false;
+    }
+
   memset(priv, 0, sizeof(*priv));
+
+  nxmutex_init(&priv->lock);
+  priv->lock_ready = true;
 
   priv->sensor.ops    = &g_sc2336_ops;
   priv->sensor.fmtdescs     = g_sc2336_fmtdescs;
@@ -1166,6 +1525,9 @@ FAR struct imgsensor_s *sc2336_initialize(FAR struct i2c_master_s *i2c,
   /* 必须声明支持的分辨率/帧率: v4l2_cap 用它们生成默认 frame setting,
    * 不声明就会退回 15 fps 的写死默认值 -> S_FMT 被本驱动自己的校验拒绝。
    */
+
+  priv->sensor.frmsizes         = g_sc2336_frmsizes;
+  priv->sensor.frmsizes_num     = SC2336_NFRMSIZES;
 
   priv->sensor.frmintervals     = g_sc2336_frmintervals;
   priv->sensor.frmintervals_num = SC2336_NFRMINTERVALS;
@@ -1205,6 +1567,12 @@ int sc2336_uninitialize(void)
   priv->i2c  = NULL;
   priv->addr = 0;
   priv->sensor.ops = NULL;
+
+  if (priv->lock_ready)
+    {
+      nxmutex_destroy(&priv->lock);
+      priv->lock_ready = false;
+    }
 
   return OK;
 }

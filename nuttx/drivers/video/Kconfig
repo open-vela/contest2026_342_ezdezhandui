@@ -300,8 +300,22 @@ config SC2336_DEBUG
 	bool "Register access debug output"
 	default n
 	---help---
-		Log every SCCB read/write performed by the driver.  Very
-		verbose; only useful during bring-up.
+		Log every SCCB read/write performed by the driver and dump the
+		registers the mode table is expected to have programmed after each
+		STREAMON.  Very verbose; only useful during bring-up.
+
+config SC2336_TEST_PATTERN
+	bool "Enable the sensor's internal colour-bar test pattern"
+	default n
+	---help---
+		Set 0x4501 bit 3 at STREAMON so the SC2336 generates its internal
+		colour-bar pattern instead of the pixel-array image.
+
+		The pattern is generated inside the sensor and therefore drives
+		MIPI TX, the CSI host, the bridge and DW-GDMA without depending on
+		the pixel array or on light reaching the lens.  It separates "the
+		capture path is broken" from "the sensor never emits a packet",
+		which is the first thing to check when no frame arrives.
 
 endif # VIDEO_SC2336
 

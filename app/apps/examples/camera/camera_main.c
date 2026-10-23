@@ -48,7 +48,7 @@
 #define IMAGE_RGB_SIZE     (320*240*2) /* QVGA RGB565 */
 
 /* Capture is exercised in the sensor's native RAW10 Bayer format (see the
- * V4L2_PIX_FMT_SBGGR10 request in camera_main), so the frame buffer has to be
+ * V4L2_PIX_FMT_SBGGR8 request in camera_main), so the frame buffer has to be
  * sized for that rather than for QVGA RGB565.  The CSI driver rejects anything
  * smaller than h_res * v_res * 10 / 8, which for the 1920x1080 SC2336 is
  * 2592000 bytes -- 17x IMAGE_RGB_SIZE.  Handing it IMAGE_RGB_SIZE made
@@ -57,9 +57,9 @@
  * 0x50081100 (the DW-GDMA channel-0 block).
  */
 
-#define IMAGE_RAW10_SIZE \
+#define IMAGE_RAW_SIZE \
   ((size_t)CONFIG_ESPRESSIF_MIPI_CSI_H_RES * \
-   (size_t)CONFIG_ESPRESSIF_MIPI_CSI_V_RES * 10u / 8u)
+   (size_t)CONFIG_ESPRESSIF_MIPI_CSI_V_RES)
 
 #define VIDEO_BUFNUM       (3)
 #define STILL_BUFNUM       (1)
@@ -487,8 +487,6 @@ int main(int argc, FAR char *argv[])
   struct v4l2_buffer v4l2_buf;
   FAR const char *save_dir;
   FAR const char *sensor;
-  uint16_t w;
-  uint16_t h;
   int is_eternal;
   int app_state;
 
@@ -536,8 +534,17 @@ int main(int argc, FAR char *argv[])
   ret = capture_initialize(CAMERA_DEV_PATH);
   if (ret != 0)
     {
-      printf("NOTE: capture_initialize() rc=%d errno=%d (device already "
-             "registered by the board, continuing)\n", ret, errno);
+      /* The board registers /dev/video0 directly from bring-up, so the
+       * framework's capture_initialize() has nothing left to register.
+       *
+       * Be precise about the errno here: -EINVAL means "capture_register()
+       * got a NULL imgdata", i.e. the board never called imgdata_register();
+       * it does NOT mean "the device is already registered" (-EBUSY/-EEXIST).
+       * The open() below is what decides whether a usable node exists.
+       */
+
+      printf("NOTE: capture_initialize() rc=%d errno=%d "
+             "(board owns the capture node, continuing)\n", ret, errno);
     }
 
   /* Open the device file. */
@@ -567,34 +574,14 @@ int main(int argc, FAR char *argv[])
 
   if (capture_num != 0)
     {
-      /* Determine image size from connected image sensor name,
-       * because video driver does not support VIDIOC_ENUM_FRAMESIZES
-       * for now.
-       */
-
-      sensor = get_imgsensor_name(v_fd);
-      if (strncmp(sensor, "ISX012", strlen("ISX012")) == 0)
-        {
-          w = VIDEO_HSIZE_FULLHD;
-          h = VIDEO_VSIZE_FULLHD;
-        }
-      else if (strncmp(sensor, "ISX019", strlen("ISX019")) == 0)
-        {
-          w = VIDEO_HSIZE_QUADVGA;
-          h = VIDEO_VSIZE_QUADVGA;
-        }
-      else
-        {
-          w = VIDEO_HSIZE_QUADVGA;
-          h = VIDEO_VSIZE_QUADVGA;
-        }
-
       /* openvela/ESP32-P4: the SC2336 driver exposes no STILL_CAPTURE /
        * JPEG path (there is no ISP in the pipeline yet), so skip it and use
        * the video-capture path only.
        */
 
-      printf("NOTE: skipping STILL_CAPTURE/JPEG (not supported by SC2336)\n");
+      sensor = get_imgsensor_name(v_fd);
+      printf("NOTE: image sensor %s: skipping STILL_CAPTURE/JPEG "
+             "(no ISP path)\n", sensor);
     }
 
   /* Prepare for VIDEO_CAPTURE stream.
@@ -617,10 +604,10 @@ int main(int argc, FAR char *argv[])
    */
 
   ret = camera_prepare(v_fd, V4L2_BUF_TYPE_VIDEO_CAPTURE,
-                       V4L2_BUF_MODE_RING, V4L2_PIX_FMT_SBGGR10,
+                       V4L2_BUF_MODE_RING, V4L2_PIX_FMT_SBGGR8,
                        CONFIG_ESPRESSIF_MIPI_CSI_H_RES,
                        CONFIG_ESPRESSIF_MIPI_CSI_V_RES,
-                       &buffers_video, VIDEO_BUFNUM, IMAGE_RAW10_SIZE);
+                       &buffers_video, VIDEO_BUFNUM, IMAGE_RAW_SIZE);
   if (ret != OK)
     {
       goto exit_this_app;
@@ -797,7 +784,6 @@ exit_this_app:
 exit_without_cleaning_buffer:
   capture_uninitialize(CAMERA_DEV_PATH);
 
-exit_without_cleaning_videodriver:
 #ifdef CONFIG_EXAMPLES_CAMERA_OUTPUT_LCD
   nximage_finalize();
 #endif

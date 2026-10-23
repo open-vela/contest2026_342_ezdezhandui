@@ -20,6 +20,10 @@
     <copyfile src="app/apps/crypto/mbedtls/Kconfig" dest="apps/crypto/mbedtls/Kconfig"/>
     <copyfile src="app/apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h" dest="apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h"/>
     <copyfile src="app/apps/examples/camera/camera_main.c" dest="apps/examples/camera/camera_main.c"/>
+    <copyfile src="app/apps/system/v4l2ctl/CMakeLists.txt" dest="apps/system/v4l2ctl/CMakeLists.txt"/>
+    <copyfile src="app/apps/system/v4l2ctl/Kconfig" dest="apps/system/v4l2ctl/Kconfig"/>
+    <copyfile src="app/apps/system/v4l2ctl/Makefile" dest="apps/system/v4l2ctl/Makefile"/>
+    <copyfile src="app/apps/system/v4l2ctl/v4l2ctl.c" dest="apps/system/v4l2ctl/v4l2ctl.c"/>
     <copyfile src="app/apps/netutils/netinit/Kconfig" dest="apps/netutils/netinit/Kconfig"/>
     <copyfile src="app/apps/netutils/netinit/netinit.c" dest="apps/netutils/netinit/netinit.c"/>
     <copyfile src="nuttx/CMakeLists.txt" dest="nuttx/CMakeLists.txt"/>

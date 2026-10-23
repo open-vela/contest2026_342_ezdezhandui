@@ -34,7 +34,7 @@ docs/                      # 规划 + 框架 + 测试 + 复盘 + 状态 + 踩坑
   ├── 07_作品介绍.md               # ★ 作品介绍（做什么 / 输出什么 / 问题与解法，诚实记录）
   ├── STATUS.md                   # ★ 当前状态 / 逐项证据 / 已知限制（最常看）
   └── 踩坑笔记_01~07               # 环境 / 移植 / 烧录 / MCUboot+XIP / 显示 / 触摸 / 摄像头
-logs/                      # AI Coding 日志（28 会话 / 35,831 事件，提交前持续导出）
+logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提交前持续导出）
 提交材料/                  # 演示视频 + 真机证据日志（随作品提交）
 ```
 
@@ -44,7 +44,7 @@ logs/                      # AI Coding 日志（28 会话 / 35,831 事件，提�
 ## 四、运行方式
 
 交付形态是**文件树 + repo manifest copyfile 自动映射**，评审侧**零手工步骤**：
-仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **325 条 `<copyfile>`**
+仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **329 条 `<copyfile>`**
 在 `repo sync` 时把它们自动覆盖到工作区对应位置 ——
 
 | 作品仓 | 工作区 |
@@ -120,14 +120,14 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
 | 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |
 | LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实（证据 `docs/验证截图_LVGL界面_1024x600.png`） | ① + 加分 |
-| 事件主动（摄像头）| 🔶 **驱动链路已打通**（SC2336 识别 / CSI 2 lane + DMA 武装 / 零错误），但 MIPI 数据 lane 物理通路无数据（模组或排线），主动场景待硬件修复后闭环 —— 复测一条命令：`tools/test/camera_diag.sh` | ③ |
+| 事件主动（摄像头）| ✅ **openvela 下可用**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 抓帧稳定（`camera_verify.sh` 13/13 断言通过，15/15 帧）。**根因**是 ESP32-P4 的 CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 从未初始化 ISP 输入模块 → 修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`（`esp_csi_isp_bypass_init()`）。复测：`tools/test/camera_verify.sh` | ③ |
 
 > 逐项真机证据与根因见 `docs/STATUS.md`；测试体系与结果见 `docs/05_功能闭环测试.md`。
 
 ## 六、AI 开发记录
 
 - **全流程 AI Coding**：本作品从移植到驱动调试再到文档，均由 AI 辅助完成，
-  对话日志导出至 `logs/`（claude-code + dsh 双工具，**28 会话 / 35,831 事件**，
+  对话日志导出至 `logs/`（claude-code + dsh 双工具，**29 会话 / 37,968 事件**，
   汇总见 `logs/ez-xu/manifest.json`）；DSH 会话经 `tools/engineering/dsh_session_to_contest_log.py`
   转换为赛事日志格式。
 - **AI 开发技能**：开发期使用 openvela 官方 AI 开发技能集（17 个，位于**工作区**
@@ -137,13 +137,13 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 
 ## 七、状态（2026-09-18 提交前 复验更新）
 
-- ✅ **移植与引导**：`repo sync` 即得完整工作树（325 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
+- ✅ **移植与引导**：`repo sync` 即得完整工作树（329 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
 - ✅ **真机闭环**：`tools/build_flash/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
 - ✅ **联网**：eth0 DHCP `192.168.1.105` RUNNING（主机同网段，ICMP 通）；DNS 可用
 - ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/验证截图_LVGL界面_1024x600.png`
 - ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`）；「启动后整机失聪」已定位并修复（根因见 `docs/06` §26.7）
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
-- 🔶 **摄像头**：驱动与软件链路零错误（SC2336 识别 `0xcb3a`、CSI 2 lane + DMA 武装），但 MIPI 数据 lane 物理通路无数据（模组/排线），出帧待硬件修复 —— 复测一条命令 `tools/test/camera_diag.sh`
+- ✅ **摄像头出帧**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定抓帧 —— `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15、连跑两轮一致（`--preview` 可见真实画面）；根因是 CSI bridge 与 ISP 共享而 openvela 未初始化 ISP 输入模块，修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`
 - ✅ **提交与仓库**：全部提交经 fork 汇入 **PR #12**（https://github.com/open-vela/contest2026_342_ezdezhandui/pull/12 ，MERGEABLE）；提交材料清单见 §八
 - 📌 详细状态与逐项证据见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
 
@@ -151,10 +151,10 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 
 | 交付项 | 位置 | 说明 |
 |---|---|---|
-| 作品代码 | 4 棵文件树 + manifest **325 条 copyfile** | 评审零手工步骤复现（§四） |
+| 作品代码 | 4 棵文件树 + manifest **329 条 copyfile** | 评审零手工步骤复现（§四） |
 | 演示视频 | `提交材料/6360b48f….mp4` | **27.7s · HEVC(H.265) · 720×1280 竖屏 · 含音轨**，板端真机演示录像（启动 / 对话 / 显示触控等实机画面） |
 | 真机证据日志 ×5 | `提交材料/*.log` | `boot_nsh` / `aiagent_milestones` / `aiagent_live` / `lvgldemo` / `ws_llm_endtoend` |
-| AI Coding 日志 | `logs/ez-xu/` | 28 会话 / 35,831 事件（claude-code + dsh） |
+| AI Coding 日志 | `logs/ez-xu/` | 29 会话 / 37,968 事件（claude-code + dsh） |
 | 文档 | `docs/` + `README.md` + `tools/README.md` | 规划 / 框架 / 测试 / 复盘 / 状态 / 踩坑笔记 |
 | AI 开发技能资产 | manifest → 工作区 `.agents/` | `openvela-skills`（19 个 skills），`repo sync` 自动拉取 |
 | 专属仓地址 | `https://github.com/open-vela/contest2026_342_ezdezhandui` | 大赛仅在 GitHub，提交经 fork + PR（当前 #12） |
@@ -167,15 +167,19 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | 技术难度 30 | ESP32-P4X 新平台移植 + MCUboot 二级引导 + flash XIP + **5 个平台级驱动缺陷修复**（板级 Kconfig 静默失效 / UART 丢字节 / GT911 / V4L2 / risc-v 任务退出失聪，见 `docs/06`） |
 | 产品创新性 20 | 桌伴「能主动、会执行」产品叙事：ai_agent + 自定义 Skill ×2 + cron 定时主动 |
 | 项目完整度 20 | 代码 + 可复现 Demo + 文档齐备（本表）；免部署复现路径；真机证据逐项归档 |
-| AI 开发 10 | 全流程 AI Coding，28 会话日志 + `.agents/` 技能资产 |
+| AI 开发 10 | 全流程 AI Coding，29 会话日志 + `.agents/` 技能资产 |
 | 商业潜力 10 | 桌面陪伴/中控真实场景；**离线可用**设计（断网仍有表情与本地响应） |
 | 展示效果 10 | 演示视频 + 《作品介绍》 + 答辩材料（§四复现路径可现场走一遍） |
 
 ## 九、已知限制与安全（诚实记录）
 
-1. **摄像头出帧**：驱动与软件链路零错误（SC2336 识别 / CSI 2 lane + DMA / 零错误），
-   但 MIPI 数据 lane **物理通路无数据**（模组或排线，JTAG 诊断定论，见 `docs/06` §25 与
-   `docs/STATUS.md` §四.4）。更换/重插模组后一条命令复测：`tools/test/camera_diag.sh`（输出 `MOVING` 即出帧）。
+1. ~~**摄像头出帧**~~ —— **2026-10-22 已修复**：早期"模组/排线硬件故障"的判断已**撤回**
+   （换用一块原厂 ESP-IDF 固件下相机正常的板子，烧同一 openvela 镜像仍 0 帧 → 故障在
+   openvela 的 CSI 接收集成）。真因是 **CSI bridge 与 ISP 共享**（`SOC_ISP_SHARE_CSI_BRG=1`）
+   而 openvela 从未初始化 ISP 输入模块（RAW8 走 bypass）；修复后稳定出帧。
+   复测：`tools/test/camera_verify.sh`（`RESULT: PASS` 即出帧）。
+   同批修掉 `sc2336.c` 寄存器表缺终止符导致的越界写缺陷。
+   逐段取证、三次结论修正与源码级比对见 `docs/STATUS.md` §四.4。
 2. **LLM 问答延迟**：一次端到端问答实测约 **261s**（推理模型 + 15KB 工具 schema 的固有开销），
    体验偏慢但非功能缺陷；已在 `docs/06` §27 如实记录。
 3. ⚠️ **MiMo API key 安全**：该 key 曾两次误入公开仓历史（commit `4d7f318`、日志文件），

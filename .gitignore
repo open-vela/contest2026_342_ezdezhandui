@@ -24,6 +24,9 @@ out/
 nohup.out
 
 # ⚠️ 例外：文档里被当作**证据**引用的日志必须提交（否则评审点开是 404）
+#   docs/*.log      — 如 STATUS §四.4 引用的原厂固件启动日志 ref_stock_boot_esp-idf_v5.5.2.log
+#   docs/demo/*.log — 01_boot_mcuboot / 02_verify / 03_runtime
+!docs/*.log
 !docs/demo/*.log
 !logs/verify-*/*.log
 !提交材料/*.log

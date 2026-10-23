@@ -1,0 +1,150 @@
+I (1596) esp_psram: SPI SRAM memory test OK
+I (1605) cpu_start: GPIO 38 and 37 are used as console UART I/O pins
+I (1606) cpu_start: Pro cpu start user code
+I (1606) cpu_start: cpu freq: 400000000 Hz
+I (1608) app_init: Application information:
+I (1612) app_init: Project name:     esp_brookesia_demo
+I (1617) app_init: App version:      1.2.0
+I (1621) app_init: Compile time:     Feb  3 2026 11:37:42
+I (1626) app_init: ELF file SHA256:  e47590d10...
+I (1630) app_init: ESP-IDF:          v5.5.2-710-gd8d422d6a7c-dirty
+I (1636) efuse_init: Min chip rev:     v3.1
+I (1640) efuse_init: Max chip rev:     v3.99 
+I (1644) efuse_init: Chip rev:         v3.2
+I (1648) heap_init: Initializing. RAM available for dynamic allocation:
+I (1654) heap_init: At 4FF65DA0 len 00055220 (340 KiB): RETENT_RAM
+I (1660) heap_init: At 4FFBAFC0 len 00004BF0 (18 KiB): RAM
+I (1665) heap_init: At 501080A0 len 00007F60 (31 KiB): RTCRAM
+I (1671) heap_init: At 30100198 len 00001E68 (7 KiB): TCM
+I (1676) esp_psram: Adding pool of 26816K of PSRAM memory to heap allocator
+I (1683) esp_psram: Adding pool of 42K of PSRAM memory gap generated due to end address alignment of irom to the heap allocator
+I (1694) esp_psram: Adding pool of 42K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
+W (1705) spi_flash: Detected GigaDevice flash chip but using generic driver. For optimal functionality, enable `SPI_FLASH_SUPPORT_GD_CHIP` in menuconfig
+I (1718) spi_flash: detected chip: generic
+I (1722) spi_flash: flash io: qio
+I (1725) host_init: ESP Hosted : Host chip_ip[18]
+I (1730) H_API: ESP-Hosted starting. Hosted_Tasks: prio:23, stack: 5120 RPC_task_stack: 5120
+I (1738) H_API: ** add_esp_wifi_remote_channels **
+I (1743) H_SDIO_DRV: sdio_data_to_rx_buf_task started
+I (1747) main_task: Started on CPU0
+I (1751) main_task: Calling app_main()
+I (1754) ESP32_P4_EV: LDO Channel 4 powered on at 3.3V
+I (1835) ESP32_P4_EV: Partition size: total: 3848081, used: 3217067
+I (1835) main: SPIFFS mount successfully
+W (1835) i2c.master: Please check pull-up resistances whether be connected properly. Otherwise unexpected behavior would happen. For more detailed information, please read docs
+W (1849) i2s_common: dma frame num is adjusted to 256 to align the dma buffer with 64, bufsize = 512
+W (1858) i2s_common: dma frame num is adjusted to 256 to align the dma buffer with 64, bufsize = 512
+I (1871) ES8311: Work in Slave mode
+I (1878) ES8311: Work in Slave mode
+I (1881) I2S_IF: channel mode 0 bits:16/16 channel:2 mask:3
+I (1881) I2S_IF: STD Mode 1 bits:16/16 channel:2 sample_rate:16000 mask:3
+I (1885) I2S_IF: channel mode 0 bits:16/16 channel:2 mask:3
+I (1891) I2S_IF: STD Mode 0 bits:16/16 channel:2 sample_rate:16000 mask:3
+I (1911) Adev_Codec: Open codec device OK
+I (1911) I2S_IF: channel mode 0 bits:16/16 channel:2 mask:3
+I (1911) I2S_IF: STD Mode 0 bits:16/16 channel:2 sample_rate:16000 mask:3
+I (1929) Adev_Codec: Open codec device OK
+I (1929) esp_lvgl:adapter: LVGL adapter initialized successfully
+W (1929) ledc: GPIO 26 is not usable, maybe conflict with others
+I (1933) ESP32_P4_EV: MIPI DSI PHY Powered on
+I (1938) ESP32_P4_EV: Install MIPI DSI LCD control panel
+I (1942) ESP32_P4_EV: Install EK79007 LCD control panel
+I (1947) ESP32_P4_EV: Display frame buffers: 3
+I (1951) ek79007: version: 1.0.4
+I (2121) ESP32_P4_EV: Display initialized
+I (2122) esp_lvgl:bridge_v8: Initializing hardware resources (v8)
+I (2122) esp_lvgl:bridge_v8: Hardware resources initialized (v8)
+I (2125) GT911: I2C address initialization procedure skipped - using default GT9xx setup
+I (2133) GT911: TouchPad_ID:0x39,0x31,0x31
+I (2136) GT911: TouchPad_Config_Version:89
+I (2140) esp_lvgl:touch: Touch input device registered successfully (IRQ mode: disabled)
+I (2148) esp_lvgl:bridge: Initializing hardware resources
+I (2153) esp_lvgl:bridge: Hardware resources initialized successfully
+I (2159) esp_lvgl:adapter: LVGL task started successfully
+I (2165) ESP32_P4_EV: Setting LCD backlight: 100%
+[WARN] [esp_brookesia_core.cpp:46](getDisplaySize): Display is not set, use default display
+[INFO] [esp_brookesia_core.cpp:204](beginCore): Library version: 0.4.1
+[WARN] [esp_brookesia_phone_manager.cpp:72](begin): No touch device is set, try to use default touch device
+[WARN] [esp_brookesia_phone_manager.cpp:76](begin): Using default touch device(@0x0x485c78d4)
+I (2262) file_iterator: File : Something.mp3
+I (2267) file_iterator: File : BGM 1.mp3
+I (2273) file_iterator: File : BGM 2.mp3
+I (2283) file_iterator: File : For Elise.mp3
+I (2289) file_iterator: File : Waka Waka.mp3
+I (2290) EUI_Setting: Load ble_en: 0
+I (2290) EUI_Setting: Load brightness: 20
+I (2290) EUI_Setting: Load volume: 60
+I (2292) EUI_Setting: Load wifi_en: 0
+I (2296) bsp_extra_board: Setting volume: 60
+I (2299) ESP32_P4_EV: Setting LCD backlight: 20%
+I (2305) transport: Attempt connection with slave: retry[0]
+W (2309) H_SDIO_DRV: Reset slave using GPIO[54]
+I (2313) os_wrapper_esp: GPIO [54] configured
+I (2384) file_iterator: File : weak.mp3
+I (2385) file_iterator: File : excellent.mp3
+I (2385) file_iterator: File : good.mp3
+I (2386) file_iterator: File : normal.mp3
+I (2388) Game2048: Load score: 556
+I (2393) sc2336: Detected Camera sensor PID=0xcb3a
+I (2469) app_video: version: 1.4.1
+I (2470) app_video: driver:  MIPI-CSI
+I (2470) app_video: card:    MIPI-CSI
+I (2470) app_video: bus:     esp32p4:MIPI-CSI
+I (2472) app_video: width=1280 height=720
+I (2486) app_camera_pipeline: new elements[0]:0x4905cd84, internal:1
+I (2496) app_camera_pipeline: new elements[1]:0x49224d88, internal:1
+I (2505) app_camera_pipeline: new elements[2]:0x493ecd8c, internal:1
+I (2515) app_camera_pipeline: new elements[3]:0x495b4d90, internal:1
+I (2515) app_camera_pipeline: new pipeline 0x485ca7e8, elem_num:4
+I (2516) app_camera_pipeline: new elements[0]:0x485ca8f8, internal:1
+I (2522) app_camera_pipeline: new elements[1]:0x485ca94c, internal:1
+I (2528) app_camera_pipeline: new elements[2]:0x485ca9a0, internal:1
+I (2534) app_camera_pipeline: new elements[3]:0x485ca9f4, internal:1
+I (2540) app_camera_pipeline: new pipeline 0x485ca870, elem_num:4
+I (2547) main_task: Returned from app_main()
+I (3837) sdio_wrapper: SDIO master: Slot 1, Data-Lines: 4-bit Freq(KHz)[40000 KHz]
+I (3837) sdio_wrapper: GPIOs: CLK[18] CMD[19] D0[14] D1[15] D2[16] D3[17] Slave_Reset[54]
+I (3841) sdio_wrapper: Queues: Tx[20] Rx[20] SDIO-Rx-Mode[1]
+I (3880) sdio_wrapper: Function 0 Blocksize: 512
+I (3880) sdio_wrapper: Function 1 Blocksize: 512
+I (3980) H_SDIO_DRV: Card init success, TRANSPORT_RX_ACTIVE
+I (3980) transport: set_transport_state: 1
+I (3980) transport: Waiting for esp_hosted slave to be ready
+I (4043) H_SDIO_DRV: SDIO Host operating in STREAMING MODE
+I (4043) H_SDIO_DRV: Open data path at slave
+I (4043) H_SDIO_DRV: Starting SDIO process rx task
+I (4048) H_SDIO_DRV: Received ESP_PRIV_IF type message
+I (4050) transport: Received INIT event from ESP32 peripheral
+I (4055) transport: EVENT: 12
+I (4058) transport: Identified slave [esp32c6]
+I (4062) transport: EVENT: 11
+I (4065) transport: capabilities: 0xd
+I (4068) transport: Features supported are:
+I (4072) transport: 	 * WLAN
+I (4075) transport: 	   - HCI over SDIO
+I (4078) transport: 	   - BLE only
+I (4082) transport: EVENT: 13
+W (4084) transport: Version mismatch: Host [2.11.0] > Co-proc [0.0.0] ==> Upgrade co-proc to avoid RPC timeouts
+I (4094) transport: ESP board type is : 13 
+
+I (4098) transport: Base transport is set-up, TRANSPORT_TX_ACTIVE
+I (4104) H_API: Transport active
+I (4107) transport: Slave chip Id[12]
+I (4110) transport: raw_tp_dir[-], flow_ctrl: low[60] high[80]
+I (4116) transport: transport_delayed_init
+I (4120) esp_cli: Registering command: crash
+I (4124) esp_cli: Registering command: reboot
+I (4128) esp_cli: Registering command: mem-dump
+I (4132) esp_cli: Registering command: task-dump
+I (4136) esp_cli: Registering command: cpu-dump
+I (4141) esp_cli: Registering command: heap-trace
+I (4145) esp_cli: Registering command: sock-dump
+I (4149) esp_cli: Registering command: host-power-save
+I (4154) hci_stub_drv: Host BT Support: Disabled
+I (4159) H_SDIO_DRV: Received INIT event
+I (4162) H_SDIO_DRV: Event type: 0x22
+I (4166) H_SDIO_DRV: Write thread started
+I (4743) RPC_WRAP: Coprocessor Boot-up
+I (4950) EUI_Setting: wifi_init done
+I (4957) RPC_WRAP: ESP Event: wifi station started
+W (5069) rpc_rsp: Hosted RPC_Resp [0x21a], uid [4], resp code [12298]

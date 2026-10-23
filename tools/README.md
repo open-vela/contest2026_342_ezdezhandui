@@ -12,7 +12,6 @@
 | `lock-revision.sh` | 锁定 manifest 中作品仓 self-ref 的 revision 到当前 HEAD（并整份同步 `.repo/manifests` 副本） |
 | `repo_baseline_reset.py` | 把所有 repo 仓库 HEAD 归位到 manifest 固定节点，统一"导出 diff"形态（默认 dry-run） |
 | `dsh_session_to_contest_log.py` | 把 DSH 会话日志转换为大赛 AI Coding 日志格式（`logs/` 目录用） |
-| `export-legacy.sh` | ⚠️ 已废弃：旧布局 `board/esp32p4_vela/` 专用，新开发请用 `export.py` |
 | `tabby_mcp.py` | Tabby MCP 服务：关闭占用串口的标签页，释放 USB 端口（配合真机调试） |
 
 ## 🔥 build_flash/ —— 构建烧录相关（评审复现路径）

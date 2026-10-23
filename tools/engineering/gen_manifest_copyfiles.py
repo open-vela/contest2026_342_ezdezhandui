@@ -11,8 +11,8 @@
         app/ai_agent/<rel>    -> packages/ai_agent/<rel>
 
     文件树由 tools/engineering/export.py 维护，本脚本保证清单与文件树**严格一一对应**：
-    新增文件自动补条目、已删除文件自动移除条目、原清单中的"树外条目"（例如
-    CSI_INTEGRATOR_HANDOFF.md）原样保留。
+    新增文件自动补条目、已删除文件自动移除条目、原清单中的"树外条目"（不落在 4 棵
+    文件树内的仓根/文档条目）原样保留。
 
 用法
     python3 tools/engineering/gen_manifest_copyfiles.py            # 就地更新 xml

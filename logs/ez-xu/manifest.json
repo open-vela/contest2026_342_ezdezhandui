@@ -3,7 +3,7 @@
   "team_id": "contest2026-342",
   "github_login": "ez-xu",
   "generator": "dsh-exporter@1.0",
-  "updated_at": "2026-09-18T05:50:20.095248+00:00",
+  "updated_at": "2026-10-23T07:28:16.526853+00:00",
   "sessions": [
     {
       "session_id": "020c57b8-625e-4b12-8239-f389b6dcac77",
@@ -331,6 +331,18 @@
       "file_path": "logs/ez-xu/2026-09-11/dsh__b0a13e8b-58ec-423a-93d5-7de8c00b40c8.jsonl",
       "collection_mode": "cli",
       "health": "ok"
+    },
+    {
+      "session_id": "9f197bbb-4d42-4c7a-b92a-ee4f80262c73",
+      "tool": "dsh",
+      "started_at": "2026-10-20T08:58:12.566000Z",
+      "last_event_at": "2026-10-23T07:28:16.017000Z",
+      "event_count": 2137,
+      "raw_event_count": 4743,
+      "file_path": "logs/ez-xu/2026-10-20/dsh__9f197bbb-4d42-4c7a-b92a-ee4f80262c73.jsonl",
+      "collection_mode": "cli",
+      "health": "ok",
+      "model": "deepseek/deepseek-v4-flash"
     }
   ]
 }

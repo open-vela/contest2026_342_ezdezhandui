@@ -79,10 +79,26 @@ def find_session(session_id, workdir=None):
             d = os.path.join(base, mangled, name)
             if not os.path.isdir(d):
                 continue
-            for fn in ("session.jsonl", "session.jsonl.zstd"):
-                p = os.path.join(d, fn)
-                if os.path.isfile(p):
-                    return p
+            # 文件名可能是 session.jsonl[.zstd]（v0），
+            # 也可能是版本化的 session.v<N>.jsonl[.zstd]（当前 DSH 用 v4）。
+            cands = []
+            for fn in os.listdir(d):
+                if not fn.startswith("session"):
+                    continue
+                if fn.endswith(".jsonl"):
+                    version, zstd = 0, False
+                elif fn.endswith(".jsonl.zstd"):
+                    version, zstd = 0, True
+                else:
+                    continue
+                m = re.match(r"session\.v(\d+)\.jsonl(\.zstd)?$", fn)
+                if m:
+                    version, zstd = int(m.group(1)), bool(m.group(2))
+                cands.append((version, zstd, os.path.join(d, fn)))
+            if cands:
+                # 版本号最高者优先；同版本优先未压缩文件
+                cands.sort(key=lambda c: (-c[0], c[1]))
+                return cands[0][2]
     return None
 
 
@@ -107,6 +123,28 @@ def text_of(msg):
             if isinstance(t, str):
                 out.append(t)
     return "\n".join(out).strip()
+
+
+def detect_model(raw_lines):
+    """会话使用的模型：v4 记录在 model/selection 与 request/header 事件里。"""
+    model = None
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        etype = rec.get("type")
+        data = rec.get("data") or {}
+        if etype == "model/selection" and data.get("model"):
+            model = data["model"]
+        elif etype == "request/header":
+            m = ((data.get("header") or {}).get("config") or {}).get("model")
+            if m:
+                model = m
+    return model
 
 
 def to_events(raw_lines, session_id, tool):
@@ -227,6 +265,8 @@ def main():
     if not events:
         raise SystemExit("没有可导出的事件")
 
+    model = detect_model(raw)
+
     date = args.date or (events[0]["ts"] or "")[:10] or \
         datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -263,7 +303,7 @@ def main():
     rel = os.path.relpath(outfile, REPO).replace(os.sep, "/")
     man["sessions"] = [s for s in man.get("sessions", [])
                        if s.get("session_id") != args.session]
-    man["sessions"].append({
+    entry = {
         "session_id": args.session,
         "tool": args.tool,
         "started_at": events[0]["ts"],
@@ -273,7 +313,10 @@ def main():
         "file_path": rel,
         "collection_mode": "cli",
         "health": "ok",
-    })
+    }
+    if model:
+        entry["model"] = model
+    man["sessions"].append(entry)
     with open(mpath, "w", encoding="utf-8") as fh:
         json.dump(man, fh, ensure_ascii=False, indent=2)
         fh.write("\n")

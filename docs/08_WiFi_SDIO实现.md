@@ -1368,3 +1368,49 @@ esp_sdmmc: FIFO reset did not complete (ctrl=00000002 ...)  ← FIFO 是随后�
 两个实验都没起作用，已把 `esp_sdmmc.c` **回退到上一轮提交的状态**
 （保留 FIFO 门控 + 时钟后重试），使驱动尽可能贴近 Espressif 的参考流程，
 避免在未验证的改动上继续叠加。
+
+## I.5 第 26 轮：**换一条路提交时钟 —— 成功**
+
+上轮把 `update_clk_reg` 命令这条路试尽了（字段、顺序全试过）。本轮改换做法：
+
+**用控制器复位来锁存时钟寄存器**，而不是发那条命令。理由：`CTRL.controller_reset`
+会把 `CLKDIV`/`CLKSRC`/`CLKENA` 从 BIU 重新采样进卡时钟域，而它**不需要 CIU 执行
+任何东西** —— 正是 `update_clk_reg` 该做、而本芯片上 CIU 做不到的事。
+
+真机结果（**这是本轮的关键证据**）：
+
+```
+esp_sdmmc: deferring FIFO reset until a card clock exists
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: probe 1/12 -> -110        ← 命令真的发出去了（此前恒为 -16）
+```
+
+**第一次探测从 `-16` 变成 `-110`** —— 在 `probe 2` 之前没有任何
+"clock update did not complete"，说明时钟提交这条路走通了。
+
+### 顺带修掉两个自己留下的问题
+
+1. `esp_sdmmc_clock()` 里替换掉那条命令之后，**留下了一个等待它的循环**，
+   会为一条从未发出的命令报超时 —— 已删；
+2. `esp_sdmmc_bus_reset()` 原本调用完整的 `esp_sdmmc_reset()`（含 FIFO 复位），
+   而 FIFO 复位在本芯片上不自清，等于**每次重试都把刚修好的状态毁掉**。
+   改为只复位控制器。
+
+### 仍然存在的问题（下一步）
+
+`probe 1` 之后 START 位不再自清：
+
+```
+esp_sdmmc: previous command still pending after 100 ticks
+           (cmd=a0018000 status=00000406 rintsts=00001000)
+esp_hosted_sdio: probe 2/12 -> -16
+```
+
+`cmd=a0018000` 的 bit31（`start_command`）仍为 1，说明**这条命令的 FSM 没有走完**。
+`rintsts=00001000`（第 12 位置起）应当就是原因所在，但我没能在
+`sdmmc_struct.h` 里找到该位的字段名（`bitpos: [12]` 只匹配到 CMD 寄存器的
+`send_auto_stop`），下次需要换一种方式查（例如按结构体顺序数位，或对照
+Linux `dw_mmc` 的 `SDMMC_INT_*` 定义）。
+
+**目前的净收益**：主机侧第一次能真正把命令发出去，且时钟提交不再依赖那条
+走不通的命令；剩下的问题从"一条命令都发不出"收窄到"命令发出后 FSM 不收尾"。

@@ -494,33 +494,45 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
      * wait_complete: the update finishes only once the CIU reports complete.
      */
 
-    upd.card_num       = priv->slot;
-    upd.use_hold_reg   = 1;
-    upd.wait_complete  = 1;
-    upd.update_clk_reg = 1;
-    upd.start_command  = 1;
-    sdmmc_ll_set_command(hw, upd);
+    /* Commit the clock by resetting the controller instead of by the
+     * update_clk_reg command.
+     *
+     * That command never completes on this part: it is written with correct
+     * fields (verified on hardware: card_num / wait_complete / use_hold_reg all
+     * checked) and yet CTRL.command.start_command never self-clears -- on a
+     * brand-new controller as much as on a freshly reset one -- and every later
+     * command then returns -EBUSY.
+     *
+     * A controller reset re-samples CLKDIV / CLKSRC / CLKENA from the BIU into
+     * the card-clock domain without needing the CIU to execute anything, which
+     * is exactly what the update command is for and what the CIU cannot do here.
+     * The reset bit is self-clearing and is polled below.
+     */
 
-    while (!sdmmc_ll_is_command_taken(hw))
-      {
-        /* Bounded: on a working controller this clears within a few cycles. */
+    sdmmc_ll_reset_controller(hw);
 
-        if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
-          {
-            /* Visible through syslog, not mcerr: under -DNDEBUG mcerr is
-             * compiled out, and this path decides whether every later command
-             * is able to run at all. Leaving START set here makes
-             * esp_sdmmc_ciu_sendcmd() return -EBUSY for the rest of time, which
-             * looks exactly like "the card is broken" when in fact the host
-             * never cleared its own command register.
-             */
+    {
+      clock_t cstart = clock_systime_ticks();
 
-            syslog(LOG_ERR, "esp_sdmmc: clock update did not complete "
-                            "(cmd=%08" PRIx32 ")\n", hw->cmd.val);
-            break;
-          }
-      }
+      while (!sdmmc_ll_is_controller_reset_done(hw))
+        {
+          if (clock_systime_ticks() - cstart > SDMMC_CMDTIMEOUT)
+            {
+              syslog(LOG_ERR, "%s: controller reset for the clock commit did "
+                              "not complete (ctrl=%08" PRIx32 ")\n",
+                     "esp_sdmmc", hw->ctrl.val);
+              break;
+            }
+        }
+    }
+
   }
+
+  /* There is deliberately no wait for a command here any more: the clock is
+   * committed by the controller reset above, not by the update_clk_reg command
+   * (a leftover wait loop for that command used to sit here and would report a
+   * timeout for a command that was never issued).
+   */
 
   /* Re-issue any reset that did not complete while there was no card clock.
    *
@@ -1421,7 +1433,30 @@ void esp_sdmmc_bus_reset(void)
       return;
     }
 
-  esp_sdmmc_reset(&g_sdmmc.dev);
+  /* Reset only the controller, deliberately not the FIFO.
+   *
+   * The full esp_sdmmc_reset() also resets the FIFO, and that reset does not
+   * complete here: its self-clearing bit stays set (CTRL.fifo_reset = 1) and
+   * while it is set the CIU cannot execute anything -- so the first retry would
+   * undo the very thing it is trying to recover, turning working commands back
+   * into -EBUSY. Between enumeration attempts the controller reset is all that
+   * is needed: it clears the command FSM and re-samples the clock registers.
+   */
+
+  sdmmc_ll_reset_controller(g_sdmmc.hw);
+
+  {
+    clock_t rstart = clock_systime_ticks();
+
+    while (!sdmmc_ll_is_controller_reset_done(g_sdmmc.hw))
+      {
+        if (clock_systime_ticks() - rstart > SDMMC_CMDTIMEOUT)
+          {
+            break;
+          }
+      }
+  }
+
   g_sdmmc.xfrmask   = 0;
   g_sdmmc.waitmask  = 0;
   g_sdmmc.enablewait = false;

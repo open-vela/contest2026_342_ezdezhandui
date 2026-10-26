@@ -548,3 +548,60 @@ esp-hosted 主机端口需要的 6 个操作，NuttX 的 `drivers/mmcsd/sdio.c` 
 - 第 2 层：protobuf RPC 编解码（`common/serializers`）+ 帧层
 - 第 3 层：把远端 WiFi 映射成 NuttX netdev
 - 前置：C6 进下载模式（需按板上 BOOT+RESET）→ 烧 SDIO 版从机固件
+
+## E.6 C6 的 SDIO 从机固件已构建完成（2026-10-26 晚）
+
+上游 `esp-hosted-mcu` 拉下来后，把从机固件**实际构建出来了**：
+
+```sh
+cd esp-hosted-mcu/examples/wifi/sta/cp
+idf.py set-target esp32c6          # ESP-IDF 5.5.6
+idf.py build
+```
+
+产物与配置（已在真机构建机上验证）：
+
+| 项 | 值 |
+|---|---|
+| 产物 | `build/eh_cp_wifi_sta.bin`（**1,094,464 B**）|
+| 目标 | `CONFIG_IDF_TARGET="esp32c6"` |
+| 传输 | `CONFIG_EH_TRANSPORT_CP_SDIO=y` |
+| 数据面模式 | `CONFIG_EH_TRANSPORT_CP_SDIO_MODE_SW_AGGR=y`（MCU 主机的默认）|
+| 构建完整性 | `Successfully created esp32c6 image` / `Project build complete` |
+
+**已随交付收录**（免去评审重跑 IDF 构建）：
+
+```
+tools/build_flash/c6_hosted/
+├── eh_cp_wifi_sta_esp32c6_sdio.bin   # 1,094,464 B，可直接烧
+├── sdkconfig.esp32c6.sdio            # 构建时的完整配置，便于核对/重建
+└── flash_c6.sh                       # 烧录脚本（含下载模式提示）
+```
+
+> 构建时踩到一个坑值得记：`common/serializers/third_party/msg_codec/protobuf-c`
+> 是 git submodule，`git clone` 反复 TLS 中断；改用
+> `curl -L codeload.github.com/protobuf-c/protobuf-c/tar.gz/refs/tags/v1.5.0`
+> 拉 tarball 解压进去就通了 —— 说明是 git 协议这条路不稳，不是网络整体不可用。
+
+### 烧录仍需要一次人工操作
+
+`esptool` 在 `/dev/ttyUSB1` 上**无法自动进下载模式**（DTR/RTS 未接 EN/BOOT，
+三种极性组合都试过）。必须：
+
+**按住板上 BOOT（C6 的 GPIO9）→ 按一下 RESET（或断电重上电）→ 松开 BOOT**
+
+然后：
+
+```sh
+tools/build_flash/c6_hosted/flash_c6.sh /dev/ttyUSB1
+```
+
+烧完 P4 复位一次，`esp_hosted_sdio_state()` 应能走到 `ENUMERATED`。
+
+### 仍需确认的一点（诚实标注）
+
+这颗固件用的是 esp-hosted **默认的 C6 侧 SDIO 引脚**
+（CLK19 / CMD18 / D0 20 / D1 21 / D2 22 / D3 23，见官方
+`getting-started-mcu.md` 的 Co-processor connections 表）。
+板子把这 6 根线接到哪里，我**没有原理图级的确认**（原理图文本层里只看到
+P4 侧的 SD2_*）。如果烧完仍无应答，下一步就是用万用表核对这 6 个引脚。

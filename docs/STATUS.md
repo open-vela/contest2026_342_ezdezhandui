@@ -30,6 +30,16 @@
 > 收尾卡住的两个真因都在自检程序（`mq_msgsize` 设大导致每次 `mq_receive` 直接
 > `EMSGSIZE`；发流循环永远只用 `buffers[0]` 重复入队）—— 驱动侧一直是对的。
 >
+> **第 13 轮 —— C6 的 SDIO 从机固件已构建完成**：
+> 用 ESP-IDF 5.5.6 + `esp-hosted-mcu` 的 `examples/wifi/sta/cp` 构建出
+> `eh_cp_wifi_sta.bin`（**1,094,464 B**，`CONFIG_IDF_TARGET="esp32c6"`、
+> `CONFIG_EH_TRANSPORT_CP_SDIO=y`、`SW_AGGR` 模式，构建完整）——
+> 这就是让 C6 从"串口传输"变成"SDIO 传输"所需的固件。
+> 已随交付收录在 `tools/build_flash/c6_hosted/`（固件 + sdkconfig + 烧录脚本）。
+> ⚠️ **烧录仍需一次人工操作**：按住 C6 的 BOOT → 按 RESET → 松开，
+> 因为这颗 CP2102 的 DTR/RTS 没接 EN/BOOT，esptool 无法自动进下载模式。
+> 详见 `docs/08` §E.6。
+>
 > **第 12 轮 —— 拿到 esp-hosted 上游源码并核对**：成功拉取
 > `espressif/esp-hosted-mcu`（从机固件 + 主机驱动 + 协议）。
 > **官方 P4 主机引脚表与本移植完全一致**（CLK18/CMD19/D0-17…/Reset 54），

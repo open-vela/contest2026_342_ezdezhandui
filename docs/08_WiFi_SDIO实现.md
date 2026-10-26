@@ -1718,3 +1718,59 @@ esp_hosted_sdio: CLK pin (GPIO18) sampled 512x as input:
 3. **`sdmmc_ll_select_clk_source` 选的源是否真的在输出** —— 上轮补了
    `clk_gate_ll_ref_160m_clk_en(true)` 但现象未变，需确认这个 API 在
    NuttX 的 esp-hal 里不是空实现。
+
+## I.11 第 32 轮：隔离测试 —— **引脚是好的，SDMMC 没有驱动它**
+
+### 结果
+
+把 CLK 引脚当普通 GPIO 驱动并回读：
+
+```
+esp_hosted_sdio: CLK pad as plain GPIO: wrote 1 -> read 1, wrote 0 -> read 0
+                 -- pad works
+```
+
+而同一根引脚路由给 SDMMC 的 CLK 信号时：
+
+```
+esp_hosted_sdio: CLK pin (GPIO18) sampled 512x as input: 0 high, 512 low
+                 -- NOT toggling (no clock on the pad)
+```
+
+**引脚、输出驱动器、输入通路、焊接全部正常。恒低电平来自 SDMMC 一侧。**
+
+这一条把范围从"引脚/走线/上拉/矩阵"整体排除，只剩**控制器的时钟生成**。
+
+### 我在这个测试里又犯了一次同类错误（记下来）
+
+第一版隔离测试写的是"配置成 GPIO 输出 → 写寄存器 → 回读"，结果是
+`wrote 1 -> read 0`，看起来像"引脚坏了"。**但那是测试自己的错**：引脚当时
+**仍然被路由到 SDMMC 的 CLK 信号**（我自己在前面的 `esp_sdmmc_configpins()` 里
+接的），所以写 GPIO 输出寄存器根本不起作用。
+
+加上 `esp_rom_gpio_connect_out_signal(pin, SIG_GPIO_OUT_IDX, ...)`
+把输出改回 GPIO 之后，才测出真实结果 `wrote 1 -> read 1`。
+
+> 这已经是**同一个坑的第二次**（上一次是 `esp_configgpio(CLK, INPUT)` 关掉了
+> 输出驱动器）。共同点：**测引脚之前必须先把引脚的输出源明确指定到自己要测的
+> 那一方**，否则测的是上一次留下的路由。写进文档，避免第三次。
+
+### 一个必须说明的保留
+
+DesignWare MSHC 的卡时钟**可能只在命令/数据传输进行时才输出**（idle 时门控）。
+如果是这样，那么"空闲时采样到恒低"本身**并不证明**控制器坏了 —— 它是正常行为。
+
+但**这不影响另一个独立事实**：**CMD0 的 `start_command` 永不自清**。
+CMD0 执行期间时钟理应处于活动状态，命令却走不完 —— 这一条无法用"空闲门控"解释。
+
+所以现在的判断是：
+
+- 引脚层：**排除**（本轮直接测量）
+- 空闲时钟恒低：**保留**（可能正常，也可能异常，尚未区分）
+- 命令走不完：**真问题，且与引脚无关**
+
+### 下一步
+
+要在"命令进行中"而不是"空闲时"观察引脚 —— 例如在发出 CMD0 之后立刻连续采样
+GPIO18，看那段时间有没有波形。这能直接判定"控制器在命令期间到底有没有输出时钟"，
+从而把"空闲门控"这个保留彻底区分掉。

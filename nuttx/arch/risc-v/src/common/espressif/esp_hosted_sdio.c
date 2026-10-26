@@ -86,6 +86,8 @@
 #include "esp_gpio.h"
 #include "esp_hosted_sdio.h"
 #include "esp_sdmmc.h"
+
+#include <soc/gpio_sig_map.h>
 #include "eh_frame.h"
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
@@ -373,6 +375,48 @@ int esp_hosted_sdio_initialize(void)
            HOSTED_TAG, CONFIG_ESPRESSIF_SDMMC_CLK, hi, lo,
            (hi && lo) ? "TOGGLING (clock is really running)"
                       : "NOT toggling (no clock on the pad)");
+  }
+
+  /* Isolation test: does the CLK pad itself work?
+   *
+   * Driving it as a plain GPIO and reading it back separates two very different
+   * failures. If the pad follows the value written, the pad, its output driver
+   * and its input path are all fine, and the missing clock must come from
+   * either the matrix routing or the controller's clock generation. If the pad
+   * does not follow, the problem is at the pad and no amount of controller
+   * configuration will matter.
+   */
+
+  {
+    int drove_hi;
+    int drove_lo;
+
+    esp_configgpio(CONFIG_ESPRESSIF_SDMMC_CLK, INPUT | OUTPUT);
+
+    /* Point the pad's output mux back at the GPIO output register first.
+     * Without this the pad is still driven by the SDMMC CLK signal (the routing
+     * done in esp_sdmmc_configpins), so writing the GPIO register changes
+     * nothing and the test reports a pad fault that is really its own doing.
+     */
+
+    esp_rom_gpio_connect_out_signal(CONFIG_ESPRESSIF_SDMMC_CLK,
+                                    SIG_GPIO_OUT_IDX, false, false);
+
+    esp_gpiowrite(CONFIG_ESPRESSIF_SDMMC_CLK, true);
+    drove_hi = esp_gpioread(CONFIG_ESPRESSIF_SDMMC_CLK);
+    esp_gpiowrite(CONFIG_ESPRESSIF_SDMMC_CLK, false);
+    drove_lo = esp_gpioread(CONFIG_ESPRESSIF_SDMMC_CLK);
+
+    syslog(LOG_INFO,
+           "%s: CLK pad as plain GPIO: wrote 1 -> read %d, wrote 0 -> read %d -- %s\n",
+           HOSTED_TAG, drove_hi, drove_lo,
+           (drove_hi && !drove_lo) ? "pad works"
+                                   : "pad does NOT follow (pad-level fault)");
+
+    /* Hand the pad back to the controller. */
+
+    esp_rom_gpio_connect_out_signal(CONFIG_ESPRESSIF_SDMMC_CLK,
+                                    SD_CARD_CCLK_2_PAD_OUT_IDX, false, false);
   }
 
   ret = sdio_probe(sdio);

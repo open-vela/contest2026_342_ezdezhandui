@@ -2106,3 +2106,66 @@ esp_sdmmc: previous command still pending (cmd=a0018000 ... rintsts=00001000)
 `CTRL` 里是否还有某个使能位（`dma_enable` / `int_enable` 之外）；
 命令是否要求 `BMOD`/`IDINTEN` 的某个状态；
 以及 `update_clk_reg` 这类"非真实命令"是否对 CIU 有额外前置要求。
+
+## I.17 第 38 轮：`CTRL.dma_enable` 从未在初始化时置起（真缺陷，已修）
+
+上轮把问题收敛成"CIU 为什么不执行命令"。本轮**先把寄存器实际状态打出来**
+（此前日志把 `ctrl`/`bmod`/`rintsts` 裁掉了，这是我自己的疏忽）：
+
+```
+esp_hosted_sdio: verid=5342270a status=00000406 cdetect=00000000 clkena=00000002
+esp_hosted_sdio: ctrl=00000010 bmod=00000000 rintsts=00000000 cmdarg=00000000
+```
+
+`ctrl = 0x10` → **只有 bit4 `int_enable`，bit5 `dma_enable` 是 0**。
+
+### 根因：`sdmmc_ll_init_dma()` 的调用位置错了
+
+`sdmmc_ll_init_dma()` 会置 `ctrl.dma_enable = 1`、清 `bmod` 并置 `sw_reset`、
+以及 `idinten.ni/ri/ti`。本驱动**只在数据传输的准备路径里**调用它（两处），
+**控制器初始化时从未调用**；而 `esp_sdmmc_reset()` 里的
+`sdmmc_ll_reset_controller()` 会**清掉整个 CTRL 寄存器**。
+
+Espressif 的顺序（`sd_host_sdmmc_controller_init()`）是：
+**先复位，再 `sdmmc_ll_init_dma()`**。本驱动漏了后一步。
+
+### 修复与验证
+
+在 `esp_sdmmc_initialize()` 的复位**之后**补上 `sdmmc_ll_init_dma(hw)`。
+
+真机寄存器读回确认生效：
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| `ctrl` | `00000010` | **`00000030`** |
+| 含义 | 仅 `int_enable` | `int_enable` + **`dma_enable`** |
+
+### 但仍不足以让时钟出现
+
+```
+ctrl=00000030 bmod=00000000
+CLK pin sampled 512x: 0 high, 512 low     ← 仍无时钟
+probe 1/12 -> -110
+probe 2/12 -> -16
+```
+
+这是一处**真缺陷**（寄存器证据明确：0x10 → 0x30），保留。
+
+### 累计已修（第 10 处）
+
+1. 卡时钟未提交（附录 C）
+2. `is_command_taken` 判断取反（附录 G.2）
+3. 时钟更新命令缺三个字段（附录 G.3）
+4. 输入采样相位未配置（附录 I.6）
+5. 时钟源未使能（附录 I.7）
+6. slot 1 矩阵路由缺失（附录 I.9）
+7. 管脚功能未选回 GPIO（附录 I.10）
+8. 系统分频传 1 而非 2（附录 I.13）
+9. FIFO 复位死锁（附录 I.16）
+10. **初始化时未调 `sdmmc_ll_init_dma()`（本轮，有寄存器前后对比）**
+
+### 下一步
+
+继续用"打寄存器 + 测引脚"这对工具，把 `sd_host_sdmmc_controller_init()` 里
+**其余每一步的寄存器效果**逐条与本驱动对比。本轮证明这个方法是有效的
+（`ctrl` 0x10→0x30 是明确证据），比读源码推断更可靠。

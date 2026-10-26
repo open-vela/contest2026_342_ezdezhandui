@@ -57,6 +57,8 @@ struct esp_sdmmc_debug_s
   uint32_t clkdiv;                /* Clock dividers                       */
   uint32_t ctrl;                  /* Control                              */
   uint32_t rintsts;               /* Raw interrupt status                 */
+  uint32_t bmod;                  /* Bus mode                             */
+  uint32_t cmdarg;                /* Command argument as latched          */
 };
 
 /****************************************************************************

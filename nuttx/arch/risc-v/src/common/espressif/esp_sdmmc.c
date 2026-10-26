@@ -1570,6 +1570,22 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
   esp_sdmmc_configpins();
   esp_sdmmc_reset(&priv->dev);
 
+  /* Initialise the DMA interface AFTER the reset, as Espressif does.
+   *
+   * sdmmc_ll_reset_controller() clears the whole CTRL register, and this driver
+   * only called sdmmc_ll_init_dma() from the data-transfer setup path -- so at
+   * the point where commands are issued CTRL.dma_enable was still 0. Hardware
+   * confirmed it: ctrl=00000010, i.e. int_enable set and dma_enable clear.
+   * Espressif's controller init resets first and then calls sdmmc_ll_init_dma(),
+   * which sets dma_enable plus the IDMAC interrupt enables.
+   *
+   * The controller is configured for internal DMA, so with its DMA interface off
+   * the CIU can accept a command and never execute it -- which is exactly what
+   * the hardware shows (start_command never self-clears, RINTSTS bit 12 EBE).
+   */
+
+  sdmmc_ll_init_dma(hw);
+
   sdmmc_ll_enable_global_interrupt(hw, true);
 
   priv->initialized = true;
@@ -1601,6 +1617,8 @@ void esp_sdmmc_debug(FAR struct esp_sdmmc_debug_s *dbg)
   dbg->clkdiv  = hw->clkdiv.val;
   dbg->ctrl    = hw->ctrl.val;
   dbg->rintsts = hw->rintsts.val;
+  dbg->bmod    = hw->bmod.val;
+  dbg->cmdarg  = hw->cmdarg;
 }
 
 /****************************************************************************

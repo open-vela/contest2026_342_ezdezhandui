@@ -316,6 +316,9 @@ int esp_hosted_sdio_initialize(void)
     syslog(LOG_INFO, "%s: verid=%08" PRIx32 " status=%08" PRIx32
            " cdetect=%08" PRIx32 " clkena=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.verid, dbg.status, dbg.cdetect, dbg.clkena);
+    syslog(LOG_INFO, "%s: ctrl=%08" PRIx32 " bmod=%08" PRIx32
+           " rintsts=%08" PRIx32 " cmdarg=%08" PRIx32 "\n",
+           HOSTED_TAG, dbg.ctrl, dbg.bmod, dbg.rintsts, dbg.cmdarg);
   }
 
   /* Give the companion a real chance to come up before declaring failure.

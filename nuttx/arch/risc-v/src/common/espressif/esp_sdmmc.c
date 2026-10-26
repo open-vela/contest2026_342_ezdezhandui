@@ -748,15 +748,25 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev)
    * there is a clock and the reset completes normally.
    */
 
-  if (hw->clkena.val == 0)
-    {
-      syslog(LOG_INFO, "%s: deferring FIFO reset until a card clock exists\n",
-             "esp_sdmmc");
-    }
-  else
-    {
-      sdmmc_ll_reset_fifo(hw);
-    }
+  /* The FIFO reset is deliberately NOT issued here.
+   *
+   * CTRL.fifo_reset self-clears in the card-clock domain, and while it is set
+   * the CIU cannot execute any command -- including the update_clk_reg command
+   * that is the only way to make the card clock take effect. The two therefore
+   * wait on each other and nothing ever runs.
+   *
+   * An earlier attempt gated this on `hw->clkena.val != 0`, which does not work:
+   * CLKENA is written before it is committed, so the register already reads
+   * non-zero while the clock has never actually been latched. The gate opened
+   * every time and the deadlock stood.
+   *
+   * A controller that has just come out of reset has nothing worth flushing, so
+   * the safe order is to leave the FIFO alone until commands are running --
+   * which is also what the databook implies by making the reset depend on the
+   * card clock in the first place.
+   */
+
+  (void)start;
 
   start = clock_systime_ticks();
   while (!sdmmc_ll_is_fifo_reset_done(hw))

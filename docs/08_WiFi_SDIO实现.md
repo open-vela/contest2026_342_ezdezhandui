@@ -2051,3 +2051,58 @@ while (!sdmmc_ll_is_controller_reset_done(hw)) { /* 带超时 */ }
 **写交接记录必须以代码为准，不能凭记忆** —— 否则会把后来人（包括下一轮的自己）
 引向一次无效的重试。这和第 31 轮那次"测引脚前没看路由"是同一类错误：
 **先读现场，再下判断。**
+
+## I.16 第 37 轮：拆掉一个**真实存在的死锁**，但它不是最终阻塞点
+
+### 先发现我自己门控里的一个逻辑错误
+
+第 24 轮我给 FIFO 复位加的门控是：
+
+```c
+if (hw->clkena.val == 0)  defer;   /* ← 这个条件不成立 */
+else                      reset_fifo();
+```
+
+**这个条件永远为假**：CLKENA 是在**"提交"之前**就被写入的，所以寄存器读回来
+已经是非零（`clkena=0x2`），而时钟**从未真正锁存进卡时钟域**。门控每次都放行。
+
+于是死锁成立：FIFO 复位发出 → 它需要卡时钟才自清 → 卡时钟要靠一条命令才生效 →
+CIU 在 `fifo_reset=1` 时无法执行任何命令。**三方互等。**
+
+### 修法：直接不发 FIFO 复位
+
+刚出复位的控制器没有需要冲刷的内容，所以正确做法是**在命令能跑起来之前根本不碰
+FIFO**。已删除该复位（保留 controller / DMA 复位）。
+
+真机确认它生效了 —— **日志里"FIFO reset did not complete"这条不再出现**：
+
+```
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: CLK pin (GPIO18) sampled 512x: 0 high, 512 low   ← 仍无时钟
+esp_sdmmc: CLK during cmd=a0018000: 0 high, 256 low               ← 命令期间也无
+esp_hosted_sdio: probe 1/12 -> -110
+esp_sdmmc: previous command still pending (cmd=a0018000 ... rintsts=00001000)
+```
+
+### 所以：死锁是真的，但拆掉它不足以解决问题
+
+`fifo_reset` 不再是障碍，**时钟依然没有出现，CMD0 依然挂着**。
+这说明"CIU 无法执行命令"还有**另一个**原因，而它独立于 FIFO 复位。
+
+### 现在的判断
+
+已知（都有直接证据）：
+
+- 引脚、矩阵索引、路由、管脚功能 —— 排除；
+- 总线时钟、时钟源门控、系统分频、卡时钟寄存器值、低功耗门控、复位 —— 全部对齐或排除；
+- FIFO 复位死锁 —— 已拆除，**但不充分**；
+- **CIU 无法执行任何命令**（`start_command` 写入后恒为 1，`rintsts` 恒为 bit12 EBE）；
+- 从机正常且什么也没收到。
+
+剩下的问题只剩一句话：**为什么 CIU 拿到一条命令后不执行它。**
+
+这是下一轮唯一该查的问题。可查方向：
+`CTRL` 里是否还有某个使能位（`dma_enable` / `int_enable` 之外）；
+命令是否要求 `BMOD`/`IDINTEN` 的某个状态；
+以及 `update_clk_reg` 这类"非真实命令"是否对 CIU 有额外前置要求。

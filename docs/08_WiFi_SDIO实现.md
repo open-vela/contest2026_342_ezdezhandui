@@ -1958,3 +1958,71 @@ esp_sdmmc_probe_clk(bool);         /* 命令飞行中采样 CLK 引脚 */
 它天然会把排查引向"检查寄存器值"，而寄存器值一直是对的。
 **唯一有效的做法是测引脚**（第 31 轮才用上，之后每一步才开始有确定结论）。
 若继续排查，请从 J.5 的测量工具开始，不要从读寄存器开始。
+
+## I.14 第 36 轮：排掉三条，并把零散事实拼成一个连贯解释
+
+### 排掉的三条
+
+1. **矩阵索引无冲突**：`SIG_GPIO_OUT_IDX = 256`，而 slot 1 的 SDIO 信号占 0–5+。
+   所以 CLK 用的索引 **0** 确实是 `SD_CARD_CCLK_2_PAD_OUT_IDX`，不是"0 是特殊值"
+   的问题。**索引是对的。**
+2. **`force_norst_sdmmc` 无关**：`LP_AON_CLKRST.hp_sdmmc_emac_rst_ctrl` 里确实有
+   这一位（"hp sdmmc force norst"），但**全树没有任何代码使用它**，排除。
+3. **`sdmmc_ll_reset_register` 正常**：它把 `rst_en_sdmmc` 置 1 再置 0，
+   是标准复位脉冲，**没有把模块按在复位态**。
+
+### 查到的两件有用的事
+
+**（a）CLKENA 的字段布局**（`sdmmc_struct.h`）：
+
+```
+cclk_enable : bitpos [1:0]     ← 每槽一位
+lp_enable   : bitpos [17:16]   ← 每槽一位，"低功耗门控"
+default: 0
+```
+
+本驱动读回 `clkena = 0x00000002` → `cclk_enable = 0b10`（slot 1 已使能）、
+**`lp_enable = 0`**。
+
+按 Espressif 的 `sd_host_slot_set_cclk_always_on_internal()`：
+
+```c
+if (always_on)  sdmmc_ll_enable_card_clock_low_power(dev, slot, false); /* lp_enable=0 */
+else            sdmmc_ll_enable_card_clock_low_power(dev, slot, true);
+sd_host_slot_clock_update_command(slot, false);   /* ← 关键：改完必须发这条命令 */
+```
+
+即 **`lp_enable = 0` 就是"时钟常开"**，本驱动已经是这个状态。
+所以"时钟仅在有活动时输出"这条**也不成立** —— 它本来就该一直输出。
+
+**（b）但注意上面那个函数最后一行**：改完 `lp_enable` 之后**必须**调用
+`sd_host_slot_clock_update_command()`（即 `update_clk_reg` 命令）。
+**而那条命令正是本驱动上永远走不完的那一条。**
+
+### 由此得到的连贯解释（目前最自洽的一个）
+
+把零散事实拼起来：
+
+| 事实 | 出处 |
+|---|---|
+| 卡时钟的所有设置（CLKDIV / CLKSRC / CLKENA / lp_enable）都要靠 `update_clk_reg` 命令**锁存进卡时钟域**才生效 | 附录 C、本轮 (b) |
+| 那条命令在本芯片上**永远不自清**（`start_command` 恒为 1） | 附录 G、I.13 |
+| 因此寄存器里的值"全对"，但**从未进入卡时钟域** | 引脚级实测：无波形 |
+| 引脚本身、矩阵索引、总线时钟、时钟源门控、低功耗门控、复位 —— **全部已排除** | 本附录 I.9–I.14 |
+
+也就是：**不是某一步写错了，而是"把设置生效"这一个动作本身在本芯片上做不到。**
+
+这一解释与所有已知事实一致，也解释了为什么"逐条对齐 Espressif 的寄存器写法"
+（本驱动已对齐了 8 处）始终无效 —— **对的写法也需要那条命令才生效**。
+
+### 下一步的两个方向
+
+1. **换一种锁存途径**。第 26 轮试过"用控制器复位来锁存"（`sdmmc_ll_reset_controller`），
+   当时现象未变 —— 但那一次是在**其它缺陷尚未修复**的情况下试的，值得在现在这个
+   干净状态下**重试一次**，并且这次要用**引脚采样**来判定时钟是否真的出来了
+   （上次只能看返回码，看不到波形）。
+
+2. **查 `update_clk_reg` 命令为何不自清**。已知：字段全对、`use_hold_reg` 试过、
+   `wait_complete` 试过、新旧控制器都一样、`rintsts` 恒为 bit12(EBE)。
+   剩下可查的是**这条命令对 CIU 状态的前置要求**
+   （例如是否要求 `CTRL` 里某个使能位、或是否与 `SDIO_PLL` 相关）。

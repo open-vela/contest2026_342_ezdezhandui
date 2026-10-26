@@ -1174,3 +1174,59 @@ tools/build_flash/c6_hosted/
 - **从机完全没有任何反应** → 问题在**物理层**（尽管两侧引脚都已确认，
   仍需考虑焊接/走线/上拉实效）；
 - **从机报了错或收到命令** → 错误信息会直接指出是协议还是配置。
+
+## H.8 第 22 轮：`GPIO_RESET=-1` 不是问题 —— 上游文档明确说它对本板是对的
+
+之前把 `CONFIG_EH_TRANSPORT_CP_SDIO_GPIO_RESET=-1` 列为可疑项，查了上游
+Kconfig 之后确认**这个判断是错的**：
+
+```
+config EH_TRANSPORT_CP_SDIO_GPIO_RESET
+    int "Slave GPIO pin to reset itself"
+    default -1
+    help
+        -1 (default) means the host resets the co-processor with its EN pin.
+        Set a pin only if the module does not expose EN. The host drives it
+        like EN: parked HIGH, pulsed LOW. A LOW pulse of 2 ms or more does a
+        software restart, which cannot recover a hung co-processor.
+```
+
+三点结论：
+
+1. **`-1` 就是"主机用 EN 脚复位从机"** —— 本板正是这样（P4 GPIO54 → C6 的 EN），
+   所以 `-1` **是正确配置**，不是遗漏；
+2. 主机应当 **parked HIGH, pulsed LOW** —— 本驱动现在的顺序（拉低 50 ms 再拉高）
+   恰好符合；
+3. 该 Kconfig 只在"模组没有引出 EN 脚"时才需要设值。
+
+## H.9 至此被排除的清单（按轮次累积）
+
+| # | 曾经的怀疑 | 结论 | 依据 |
+|---|---|---|---|
+| 1 | 控制器没起来 | ❌ 排除 | `verid=5342270a`，`SDIO host ready on slot 1` |
+| 2 | 卡时钟没提交 | ✅ **确是真缺陷，已修** | 附录 C（`update_clk_reg`）|
+| 3 | 使能极性/时长 | ❌ 排除 | 高低两种极性、200ms~10s 全试过 |
+| 4 | C6 停在下载模式 | ✅ **确是真问题，已解决** | 附录 F.7（`boot:0x4 DOWNLOAD`）|
+| 5 | C6 没跑 SDIO 固件 | ❌ 排除 | 附录 H.2（`Transport used :: SDIO only`）|
+| 6 | C6 的 SDIO 从机没初始化 | ❌ 排除 | 附录 H.2（`SDIO_SLAVE: ... sdio_init`）|
+| 7 | START 判断取反 | ✅ **确是真缺陷，已修** | 附录 G.2（`-16` → `-110`）|
+| 8 | 时钟更新命令缺字段 | ✅ **确是真缺陷，已修** | 附录 G.3 |
+| 9 | 复位卡住 | ❌ 排除 | 三处复位超时日志一条未触发 |
+| 10 | P4 侧引脚不对 | ❌ 排除 | 附录 H.7.1（原理图 GPIO14-19）|
+| 11 | C6 侧引脚/上拉不对 | ❌ 排除 | 用户确认 18-23 + 3.3V 上拉 |
+| 12 | `GPIO_RESET=-1` 配置缺失 | ❌ 排除 | 附录 H.8（上游文档：这正是本板的正确值）|
+
+**累计在真机上定位并修复的缺陷：** 驱动侧 8 个（含本轮之前的 5 个音频缺陷）、
+上游应用 2 个（nxplayer/nxrecorder）。WiFi 侧这 3 个（#2/#7/#8）都只有真机
+才能暴露。
+
+## H.10 还剩下什么
+
+主机侧配置已按官方逐项对齐，两侧引脚与上拉均已确认，从机确认在跑并从机已初始化，
+但 `CMD5` 仍无应答。剩下的只在两处：
+
+1. **物理层实效**（焊接/走线/上拉是否真的通）—— 需要万用表量通断；
+2. **从机为何不响应** —— 需要让从机"开口"：烧 DEBUG 日志版（已备好，
+   `flash_c6.sh --debug`），一边看 C6 日志一边让 P4 探测。
+
+第 2 条能一次性区分这两者，且只差一次按键。

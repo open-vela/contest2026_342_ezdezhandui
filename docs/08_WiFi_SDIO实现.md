@@ -1032,3 +1032,83 @@ probe 1/12 -> -110
 下一步方向：核对 C6 侧从机固件的 SDIO 配置（从机固件用的是默认引脚
 18/19/20/21/22/23 与 `CONFIG_EH_TRANSPORT_CP_SDIO_GPIO_RESET=-1`），
 以及 C6 是否真的把 SDIO 从机初始化起来了（可考虑在 C6 侧打开 SDIO 相关日志）。
+
+---
+
+# 附录 H：C6 侧的完整启动日志 —— 从机是好的（2026-10-26 傍晚）
+
+把复位脉冲改回来（之前误以为是它导致 `-16`，实际是 G.2 那个取反的判断），
+然后在 P4 复位 C6 的同时监听 `/dev/ttyUSB1`，**抓到了 C6 的完整启动日志**。
+
+## H.1 ROM 与引导
+
+```
+ESP-ROM:esp32c6-20220919
+rst:0x1 (POWERON),boot:0xc (SPI_FAST_FLASH_BOOT)     ← 正常启动，不再是 DOWNLOAD
+SPIWP:0xee
+mode:DIO, clock div:2
+I (303) boot: Loaded app from partition at offset 0x10000
+```
+
+`boot:0xc (SPI_FAST_FLASH_BOOT)` —— 附录 F.7 那个"卡在 ROM 下载模式"的问题
+已经彻底解决。
+
+## H.2 从机固件确实在跑 ESP-Hosted over SDIO
+
+```
+I (317) cpu_start: GPIO 17 and 16 are used as console UART I/O pins
+I (407) ehcp_core: ESP-Hosted core init
+I (429) ehcp_core: - WLAN over SDIO
+I (441) ehcp_core: ESP-Hosted Firmware version :: EH-3.0.10
+I (448) ehcp_core: Transport used :: SDIO only
+I (462) SDIO_SLAVE: Using SDIO interface (TX_MODE=0)
+I (466) SDIO_SLAVE: SDIO datapath mode: SW_AGGR
+I (470) SDIO_SLAVE: rx_buf_size=15872
+I (474) SDIO_SLAVE: [mem:sdio_init] free=291320 min=291320 largest=270336
+I (480) ehcp_core: host reset handler task started
+...
+I (623) ehcp_wifi: WiFi feature init ok
+I (627) ehcp_core: auto_feat_init_task: all extensions initialised
+I (633) ehcp_core: ESP-Hosted core initialized
+I (644) wifi_mcu_example: ESP-Hosted MCU WiFi Example Starting...
+```
+
+这一条非常有价值：**"Transport used :: SDIO only"** —— 从机确认自己跑的是
+SDIO 传输（对比出厂固件那句 `serial : in/rsp/evt`），SDIO 从机也已初始化，
+WiFi 扩展就绪，之后 `main_task` 返回、进入空闲等待主机。
+
+## H.3 由此可以排除的
+
+- ❌ "C6 没启动" —— ROM 日志显示已从 `0x10000` 载入应用；
+- ❌ "C6 跑的不是 SDIO 版本固件" —— 它自己打印 `Transport used :: SDIO only`；
+- ❌ "C6 的 SDIO 从机没初始化" —— `SDIO_SLAVE:` 那几行说明初始化完成了；
+- ❌ "WiFi 栈没起来" —— `ehcp_wifi: WiFi feature init ok`。
+
+**从机侧是好的，在等主机。**
+
+## H.4 但主机发 CMD5 仍然没有应答（-110）
+
+时序上也说得通但不足以解释：P4 复位 C6 后等 200 ms 就开始探测，而 C6 要到
+约 650 ms 才完全就绪 —— 不过探测窗口是 **12 × 250 ms = 3 秒**，
+后面的探测远远晚于 650 ms，所以**不是时间不够**。
+
+## H.5 剩下的可能性（收窄到两条）
+
+1. **P4 与 C6 之间的 SDIO 走线并非 GPIO14–19 ↔ GPIO18–23 这一组**
+   （用户已确认 C6 侧 `18/19/20/21/22/23` 与上拉没问题，但"P4 侧那 6 根
+   到底接的是 P4 的哪几个脚"仍缺原理图级证据 —— 我一直是从
+   `sdmmc_pins.h` 的 SLOT1 定义反推的）；
+2. **从机需要 `CONFIG_EH_TRANSPORT_CP_SDIO_GPIO_RESET` 配置**
+   （当前 `=-1`，即从机侧不管理复位脚），或从机在等待主机某个
+   特定的初始化动作。
+
+## H.6 一个可执行的下一步
+
+C6 的日志是**可以读的**（GPIO16/17 → ttyUSB1，115200）。所以下次可以：
+
+- 在从机固件里打开 SDIO 从机的详细日志（`CONFIG_LOG_DEFAULT_LEVEL_DEBUG`
+  或 esp-hosted 的 SDIO 调试开关），重新构建烧写；
+- 然后一边看 C6 日志、一边让 P4 探测 —— **如果从机完全没有反应，
+  问题就在物理连线；如果从机报错，错误信息会直接指出来**。
+
+这一步能一次性判定"是连线还是协议"。需要再次让 C6 进下载模式（按 BOOT）。

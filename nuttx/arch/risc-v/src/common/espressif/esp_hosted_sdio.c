@@ -217,15 +217,22 @@ int esp_hosted_sdio_initialize(void)
        * bus.
        */
 
-      /* Hold the enable high and do NOT pulse it.
+      /* Reset the companion, then hold it enabled.
        *
-       * Pulsing reboots the companion, and a module that is mid-boot drives its
-       * SDIO pins in an undefined state -- which on this bus shows up as the
-       * host controller being unable to complete even the broadcast CMD0, i.e.
-       * -EBUSY rather than the "no card answered" -ETIMEDOUT. Since the module
-       * is already running, leaving it alone and simply asking is the right
-       * first move; a reset is only wanted if the link is known wedged.
+       * Driving the enable line low holds the module in reset and releasing it
+       * gives the module a defined start, so the host knows the state it is
+       * talking to instead of inheriting whatever the module happened to be
+       * doing before. This is what esp-hosted's own bring-up does.
+       *
+       * (An earlier round removed this pulse on the theory that a mid-boot
+       * module was wedging the host controller. That theory was wrong -- the
+       * -EBUSY came from an inverted START predicate in this driver -- so the
+       * pulse is back, and it is also what lets the module's boot log be
+       * captured from the host.)
        */
+
+      esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
+      nxsig_usleep(50000);
 
       esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
       syslog(LOG_INFO,

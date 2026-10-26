@@ -1230,3 +1230,38 @@ config EH_TRANSPORT_CP_SDIO_GPIO_RESET
    `flash_c6.sh --debug`），一边看 C6 日志一边让 P4 探测。
 
 第 2 条能一次性区分这两者，且只差一次按键。
+
+## H.11 第 23 轮：DEBUG 版从机固件已烧入并**读回校验通过**
+
+用修正后的脚本（4 个镜像、正确偏移）烧入 DEBUG 版：
+
+```
+Wrote 1131952 bytes (640142 compressed) at 0x00010000 in 16.0 seconds
+Hash of data verified.
+```
+
+并额外做了一次**读回比对**（不只是写入时的自校验）：
+
+```
+esptool verify_flash 0x10000 eh_cp_wifi_sta_debug.bin
+Verifying 0x1145b0 (1131952) bytes @ 0x00010000 ...
+-- verify OK (digest matched)
+```
+
+**这条同时验证了两件事**：DEBUG 固件确实在 C6 的 flash 里；
+以及 `flash_c6.sh` 修正后的 4 镜像偏移布局是对的。
+
+## H.12 但 C6 又进了下载模式（BOOT 仍被按住）
+
+烧写后 P4 复位（会拉低 C6 的 EN）时，C6 的 ROM 日志又是：
+
+```
+rst:0x1 (POWERON),boot:0x4 (DOWNLOAD(USB/UART0/SDIO_FEI_FEO))
+waiting for download
+```
+
+`boot:0x4` 说明**复位时 GPIO9(BOOT) 仍为低**。这与附录 F.7 是同一个现象：
+按下 BOOT 之后必须**松开**，芯片才会在下次复位时从 flash 启动。
+
+**需要：松开 BOOT 键 → 断电重新上电（或按一下 RESET）。**
+之后 C6 才会跑起 DEBUG 版，我们才能看到它在 P4 探测时的 SDIO 行为。

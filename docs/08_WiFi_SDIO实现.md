@@ -712,3 +712,34 @@ RESULT: all checks passed
 **交付收录**：`tools/test/eh_frame/`（测试 + 三个最小 shim + `run.sh`）。
 shim 只有 `esp_err.h` / `linux/types.h` / `sdkconfig.h` 三个头，
 上游源码保持原样。
+
+## E.9 第 2 层已投放进驱动树并通过目标编译
+
+帧层现在是**驱动的一部分**，不再是只在主机上跑的测试：
+
+```
+nuttx/arch/risc-v/src/common/espressif/eh_frame/
+├── src/eh_frame.c              上游原样
+├── include/                    上游原样（eh_frame.h + eh_common_* + eh_tlv_tags.h）
+├── shim/linux/types.h          唯一的本地补充
+└── README.md                   逐文件对应上游路径 + 升级方式
+```
+
+**投放而非改写**：所有上游文件逐字节一致，将来升级直接覆盖。CMake 里挂在
+`CONFIG_ESPRESSIF_HOSTED_SDIO` 下，默认配置不受影响。
+
+### 编译时遇到并解决的两处平台差异
+
+1. **`<linux/types.h>`**：上游 `eh_common_interface.h` 包含它，NuttX 交叉环境没有。
+   → 提供 `shim/linux/types.h`（只 include `<stdint.h>` / `<stddef.h>`），
+   放在组件 include 之后，影响范围限于本组件。
+
+2. **`__KERNEL__` 被 NuttX 定义**：`eh_frame.c` 的字节序辅助函数第一分支是
+   `#ifdef __KERNEL__ → #include <asm/byteorder.h>`（Linux 内核专用头）。
+   NuttX 构建恰好定义了 `__KERNEL__`，于是走进了内核分支。
+   → 对该源文件单独 `-U__KERNEL__`，让它落到普通小端分支
+   （RISC-V 这里就是小端，正是该分支实现的语义）。
+
+两处都是**构建系统层面**的适配，没有改动上游一个字节。
+
+结果：目标编译 **0 error**（产出 7,876 B 目标文件），默认配置构建同样 0 error。

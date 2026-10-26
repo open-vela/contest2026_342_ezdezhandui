@@ -47,6 +47,15 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.mk" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.mk"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/chip.h" dest="nuttx/arch/risc-v/src/common/espressif/chip.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/README.md" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/README.md"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_header.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_header.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_header_v2.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_header_v2.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_interface.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_interface.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_sdio_cfg.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_sdio_cfg.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_frame.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_frame.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_tlv_tags.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_tlv_tags.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/shim/linux/types.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/shim/linux/types.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/src/eh_frame.c" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/src/eh_frame.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_adc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_adc.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_adc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_adc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_aes.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_aes.c"/>

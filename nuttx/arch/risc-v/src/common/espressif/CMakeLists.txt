@@ -592,3 +592,20 @@ set_property(
   DIRECTORY ${NUTTX_DIR}
   APPEND
   PROPERTY ADDITIONAL_CLEAN_FILES ${ESP_CLEAN_FILES})
+
+# ESP-Hosted frame layer (vendored byte-for-byte from espressif/esp-hosted-mcu;
+# see eh_frame/README.md). Only built for the hosted-SDIO configuration.
+if(CONFIG_ESPRESSIF_HOSTED_SDIO)
+  set(_eh_frame_src ${CMAKE_CURRENT_LIST_DIR}/eh_frame/src/eh_frame.c)
+  target_sources(arch PRIVATE ${_eh_frame_src})
+
+  # eh_frame.c picks its endian helpers with `#ifdef __KERNEL__` first, and the
+  # NuttX build defines __KERNEL__ -- so it would try to pull <asm/byteorder.h>
+  # (a Linux-only header) instead of taking the plain little-endian branch.
+  # Undefining it, for this one source, selects the correct branch: NuttX on
+  # RISC-V here is little-endian, which is exactly what that branch implements.
+  set_source_files_properties(${_eh_frame_src} PROPERTIES COMPILE_OPTIONS "-U__KERNEL__")
+  target_include_directories(arch PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/eh_frame/include
+    ${CMAKE_CURRENT_LIST_DIR}/eh_frame/shim)
+endif()

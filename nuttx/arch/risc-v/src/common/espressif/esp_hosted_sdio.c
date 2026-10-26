@@ -88,6 +88,7 @@
 #include "esp_sdmmc.h"
 
 #include <soc/gpio_sig_map.h>
+#include <soc/gpio_struct.h>
 #include "eh_frame.h"
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
@@ -434,6 +435,19 @@ int esp_hosted_sdio_initialize(void)
    */
 
   esp_sdmmc_probe_clk(true);
+
+  /* Confirm the matrix output selection actually took effect.
+   *
+   * GPIO.func_out_sel_cfg[pin].out_sel defaults to 256 (SIG_GPIO_OUT_IDX) and
+   * this driver routes the CLK pad to SD_CARD_CCLK_2_PAD_OUT_IDX, which is 0.
+   * Reading the field back is the difference between "the routing call was made"
+   * and "the pad is really driven by the SDMMC clock".
+   */
+
+  syslog(LOG_INFO, "%s: GPIO%d out_sel=%" PRIu32
+                   " (0 = SDMMC CLK signal, 256 = plain GPIO)\n",
+         HOSTED_TAG, CONFIG_ESPRESSIF_SDMMC_CLK,
+         (uint32_t)GPIO.func_out_sel_cfg[CONFIG_ESPRESSIF_SDMMC_CLK].out_sel);
 
   ret = sdio_probe(sdio);
         if (ret >= 0)

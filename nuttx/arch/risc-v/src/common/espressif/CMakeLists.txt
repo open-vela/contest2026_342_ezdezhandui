@@ -144,6 +144,14 @@ if(CONFIG_ESPRESSIF_I2S)
   list(APPEND SRCS esp_i2s.c)
 endif()
 
+if(CONFIG_ESPRESSIF_SDMMC)
+  list(APPEND SRCS esp_sdmmc.c)
+endif()
+
+if(CONFIG_ESPRESSIF_HOSTED_SDIO)
+  list(APPEND SRCS esp_hosted_sdio.c)
+endif()
+
 if(CONFIG_ESPRESSIF_SPI)
   if(CONFIG_ESPRESSIF_SPI_PERIPH)
     list(APPEND SRCS esp_spi.c)

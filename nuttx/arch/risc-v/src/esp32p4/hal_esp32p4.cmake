@@ -188,6 +188,16 @@ else()
        ${ESP_HAL_3RDPARTY_REPO}/components/soc/${CHIP_SERIES}/register/hw_ver3)
 endif()
 
+# SD/MMC: this tree has no SDMMC driver for the P4, so esp_sdmmc.c builds on
+# Espressif's LL for this chip rather than on a hand-copied register map.  The
+# paths are added only when the driver is enabled, so a build that does not use
+# SDIO keeps exactly the include list it had before.
+if(CONFIG_ESPRESSIF_SDMMC)
+  list(APPEND ESP32P4_INCLUDES
+       ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_sd/${CHIP_SERIES}/include
+       ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_sd/include)
+endif()
+
 target_include_directories(arch PRIVATE ${ESP32P4_INCLUDES})
 
 # ##############################################################################

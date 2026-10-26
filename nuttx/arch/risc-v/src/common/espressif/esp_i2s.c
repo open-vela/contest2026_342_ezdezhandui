@@ -36,7 +36,10 @@
 #include <nuttx/nuttx.h>
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/kmalloc.h>
+#include <nuttx/mutex.h>
 #include <nuttx/spinlock.h>
+#include <nuttx/wqueue.h>
 
 #include "riscv_internal.h"
 
@@ -268,10 +271,29 @@ struct esp_buffer_s
  * track of the bytes that were not written to the internal buffer yet.
  */
 
+/* Bytes carried from one audio buffer to the next.
+ *
+ * `value` has to be as large as the maximum carry, which is bounded by the
+ * cache-line rounding performed in i2s_txdma_setup(): on this chip the
+ * transfer is rounded down to a whole number of 64-byte lines, so up to 63
+ * bytes (a full line minus a frame) can be left over.
+ *
+ * It used to be a uint32_t.  The save path then did
+ *
+ *   memcpy(&priv->tx.carry.value, samp, priv->tx.carry.bytes);
+ *
+ * with carry.bytes possibly larger than 4, which ran past `value` and straight
+ * into the `bytes` field that follows it -- the length corrupted itself, and the
+ * next transfer read the audio samples back as a length of ~1.3 GB and was
+ * rejected with -EFBIG.  Playback therefore stopped after the first buffer.
+ */
+
+#define ESP_I2S_CARRY_MAX 64
+
 struct esp_buffer_carry_s
 {
-  uint32_t value;
-  size_t bytes;
+  uint8_t value[ESP_I2S_CARRY_MAX];
+  size_t  bytes;
 };
 
 /* This structure describes the state of one receiver or transmitter
@@ -635,7 +657,7 @@ static int i2s_buf_initialize(struct esp_i2s_s *priv)
   int ret;
 
   priv->tx.carry.bytes = 0;
-  priv->tx.carry.value = 0;
+  memset(priv->tx.carry.value, 0, sizeof(priv->tx.carry.value));
 
   priv->bf_freelist = NULL;
   for (int i = 0; i < CONFIG_ESPRESSIF_I2S_MAXINFLIGHT; i++)
@@ -966,16 +988,42 @@ static IRAM_ATTR int i2s_txdma_setup(struct esp_i2s_s *priv,
 
   uint32_t aligned_frame_num = bufsize / bytes_per_frame;
 
-  /* To make the buffer aligned with the cache line size, search for the ceil
-   * aligned size first. If the buffer size exceed the max DMA buffer size,
-   * toggle the sign to search for the floor aligned size.
+  /* Round the transfer size down to a whole number of cache lines, so the
+   * remainder is carried over to the next buffer instead of forcing the DMA
+   * to straddle a cache line.
+   *
+   * This used to be a loop:
+   *
+   *   for (; bufsize % alignment != 0; aligned_frame_num--)
+   *     {
+   *       bufsize = aligned_frame_num * bytes_per_frame;
+   *       carry_size += bytes_per_frame;
+   *     }
+   *
+   * which never terminates for the very common case where the audio buffer
+   * does not begin on a cache-line boundary -- a WAV stream starting with a
+   * 44-byte header is exactly that.  The termination test is *inside* the
+   * condition, so the first iteration overwrites bufsize with a value that is
+   * still unaligned, and aligned_frame_num keeps decrementing.  Being unsigned,
+   * it wraps to ~4 billion, bufsize jumps to ~1.3 GB, and the caller then
+   * rejects the transfer with -EFBIG ("Required buffer size can't fit into DMA
+   * outlink").  Playback through this path could therefore never start at all.
+   *
+   * Computing the aligned frame count directly is both shorter and total: no
+   * wrap, no iteration, and well defined when a single frame is larger than a
+   * cache line.
    */
 
-  for (; bufsize % alignment != 0; aligned_frame_num--)
+  if (bytes_per_frame != 0 && bytes_per_frame <= alignment)
     {
-      bufsize = aligned_frame_num * bytes_per_frame;
-      carry_size += bytes_per_frame;
+      uint32_t frames_per_line = alignment / bytes_per_frame;
+
+      aligned_frame_num = (aligned_frame_num / frames_per_line) *
+                          frames_per_line;
     }
+
+  bufsize     = aligned_frame_num * bytes_per_frame;
+  carry_size  = samp_size - bufsize;
 
   DEBUGASSERT((samp_size - carry_size) % alignment == 0);
 
@@ -990,13 +1038,32 @@ static IRAM_ATTR int i2s_txdma_setup(struct esp_i2s_s *priv,
    * carried from the last upper half audio buffer.
    */
 
-  bfcontainer->buf = kmm_memalign(alignment, bfcontainer->nbytes);
+  /* The buffer has to hold every byte the copy below will write, and that is
+   * samp_size -- the current audio data *plus* the carry left over from the
+   * previous buffer -- not bfcontainer->nbytes, which is only the transfer
+   * length.  Allocating nbytes and then writing samp_size bytes ran off the end
+   * of the allocation by exactly the carry, and the carry lives immediately
+   * after it in the driver structure, so the overrun overwrote it with audio
+   * samples.  The next buffer then read that garbage back as a carry length and
+   * was rejected as far too large ("can't fit into DMA outlink"), which is why
+   * playback stopped right after the first buffer.
+   */
+
+  /* Round the allocation up to whole cache lines: the write-back after the
+   * copy has to cover complete lines (see below), and for a buffer whose
+   * length is not a line multiple that would otherwise touch memory past the
+   * end of what was allocated.
+   */
+
+  bfcontainer->buf = kmm_memalign(alignment,
+                                  ALIGN_UP(samp_size, alignment));
   if (bfcontainer->buf == NULL)
     {
       i2serr("Failed to allocate the DMA internal buffer "
-             "[%" PRIu32 " bytes]", bfcontainer->nbytes);
+             "[%" PRIu32 " bytes]", (uint32_t)samp_size);
       return -ENOMEM;
     }
+
 
   data_copied = 0;
   buf = bfcontainer->buf;
@@ -1010,7 +1077,7 @@ static IRAM_ATTR int i2s_txdma_setup(struct esp_i2s_s *priv,
 
   if (priv->tx.carry.bytes)
     {
-      memcpy(buf, &priv->tx.carry.value, priv->tx.carry.bytes);
+      memcpy(buf, priv->tx.carry.value, priv->tx.carry.bytes);
       buf += priv->tx.carry.bytes;
       data_copied += priv->tx.carry.bytes;
       memcpy(buf, samp, (bytes_per_frame - priv->tx.carry.bytes));
@@ -1037,15 +1104,31 @@ static IRAM_ATTR int i2s_txdma_setup(struct esp_i2s_s *priv,
    * rebuild the sample correctly.
    */
 
+  DEBUGASSERT(carry_size <= sizeof(priv->tx.carry.value));
   priv->tx.carry.bytes = carry_size;
   if (priv->tx.carry.bytes)
     {
-      memcpy((uint8_t *)&priv->tx.carry.value, samp, priv->tx.carry.bytes);
+      memcpy(priv->tx.carry.value, samp, priv->tx.carry.bytes);
     }
 
 #if SOC_CACHE_INTERNAL_MEM_VIA_L1CACHE
+  /* Write back whole cache lines covering the buffer.
+   *
+   * The transfer length is whatever the caller supplied -- a WAV stream's last
+   * buffer, for instance, ends on a 44-byte-header-adjusted length like 8148,
+   * which is not a multiple of the 64-byte line.  esp_cache_msync() rejects
+   * such a range outright:
+   *
+   *   E cache: esp_cache_msync(126): ... size: 0x1fd4 is(are) not aligned
+   *   with cache line size (0x40)B
+   *
+   * and then the DMA engine reads stale data.  The start is already aligned
+   * (kmm_memalign above) and the allocation is padded to a line multiple, so
+   * rounding the length up covers exactly the bytes written and nothing else.
+   */
+
   esp_cache_msync((void *)bfcontainer->buf,
-                  bfcontainer->nbytes,
+                  ALIGN_UP(bfcontainer->nbytes, alignment),
                   ESP_CACHE_MSYNC_FLAG_DIR_C2M);
 #endif
 
@@ -2990,6 +3073,7 @@ static int i2s_send(struct i2s_dev_s *dev, struct ap_buffer_s *apb,
       nbytes = (apb->nbytes - apb->curbyte) + priv->tx.carry.bytes;
 
       nbytes -= (nbytes % (priv->data_width / 8));
+
 
       if (nbytes > (I2S_DMA_BUFFER_MAX_SIZE * I2S_DMADESC_NUM))
         {

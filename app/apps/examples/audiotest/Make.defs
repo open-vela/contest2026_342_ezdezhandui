@@ -1,0 +1,10 @@
+############################################################################
+# apps/examples/audiotest/Make.defs
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+############################################################################
+
+ifneq ($(CONFIG_EXAMPLES_AUDIOTEST),)
+CONFIGURED_APPS += $(APPDIR)/examples/audiotest
+endif

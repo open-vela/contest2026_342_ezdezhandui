@@ -58,6 +58,10 @@ if(CONFIG_ESP32P4_FUNCTION_EV_BOARD_CAMERA)
   list(APPEND SRCS esp32p4_camera.c)
 endif()
 
+if(CONFIG_ESP32P4_FUNCTION_EV_BOARD_AUDIO_ES8311)
+  list(APPEND SRCS esp32p4_audio_es8311.c)
+endif()
+
 target_sources(board PRIVATE ${SRCS})
 
 # ##############################################################################

@@ -79,6 +79,14 @@
 #  include "esp_board_i2s.h"
 #endif
 
+#ifdef CONFIG_ESP32P4_FUNCTION_EV_BOARD_AUDIO_ES8311
+#  include <arch/board/esp32p4_audio_es8311.h>
+#endif
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
+#  include "espressif/esp_hosted_sdio.h"
+#endif
+
 #ifdef CONFIG_ESPRESSIF_SPI
 #  include "espressif/esp_spi.h"
 #  include "esp_board_spidev.h"
@@ -355,13 +363,48 @@ int esp_bringup(void)
     }
 #endif
 
-#if defined(CONFIG_ESPRESSIF_I2S)
+#if defined(CONFIG_ESP32P4_FUNCTION_EV_BOARD_AUDIO_ES8311)
+  /* Audio path: ES8311 codec over I2C0 + I2S0 (GDMA), registered as
+   * /dev/audio/pcm0.
+   *
+   * This replaces the generic board_i2s_init() below rather than running
+   * alongside it: both would drive I2S0, and two audio devices competing for
+   * one port would deadlock the second one that tried to start a stream.
+   * Keeping it a single entry point also means nothing else in the board port
+   * needs to know how the codec is wired.
+   */
+
+  ret = esp32p4_audio_es8311_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "Failed to initialize the ES8311 audio path: %d\n",
+             ret);
+    }
+
+#elif defined(CONFIG_ESPRESSIF_I2S)
   /* Configure I2S peripheral interfaces */
 
   ret = board_i2s_init();
   if (ret < 0)
     {
       syslog(LOG_ERR, "Failed to initialize I2S driver: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
+  /* Companion-radio transport over SDIO: the P4 SDMMC controller in SDIO
+   * mode on slot 1, plus card enumeration.  This is only the bottom layer of
+   * the WiFi path -- the ESP-Hosted protocol above it is separate -- so a
+   * failure here is reported and does not stop the boot.  Ethernet remains
+   * the working network path either way.
+   */
+
+  ret = esp_hosted_sdio_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_WARNING,
+             "Companion-radio SDIO transport not available (%d); "
+             "WiFi is unavailable, ethernet is unaffected\n", ret);
     }
 #endif
 

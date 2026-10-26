@@ -115,6 +115,38 @@ config ESP32P4_FUNCTION_EV_BOARD_TOUCHSCREEN
 		This is compatible with the LVGL NuttX touchscreen glue, which reads
 		/dev/input0 from its own input timer.
 
+config ESP32P4_FUNCTION_EV_BOARD_AUDIO_ES8311
+	bool "ES8311 audio codec (I2S + GDMA) and /dev/audio/pcm0"
+	default n
+	select AUDIO
+	select DRIVERS_AUDIO
+	select AUDIO_ES8311
+	select I2S
+	select ESPRESSIF_I2S0
+	select ESPRESSIF_I2C0
+	---help---
+		Bring up the board's ES8311 mono audio codec and register the
+		resulting audio device as /dev/audio/pcm0.
+
+		The codec is controlled over the shared I2C0 bus (SDA = GPIO7,
+		SCL = GPIO8) at address 0x18 and carries its data on I2S0, which
+		NuttX drives from the GDMA engine:
+
+		  MCLK = GPIO13   BCLK = GPIO12   WS = GPIO10
+		  DAC data (host out) = GPIO9    ADC data (host in) = GPIO11
+
+		Note that the board schematic names those two data nets from the
+		codec's point of view, so the host's transmit line is the net
+		labelled "I2S_DSDIN" and the host's receive line is the one
+		labelled "I2S_ASDOUT".  See esp32p4_audio_es8311.c.
+
+		The onboard NS4150B class D amplifier is enabled through
+		PA_CTRL = GPIO53 once the codec register sequence has completed.
+
+		Playback expects 16-bit stereo WAV; the codec takes the left slot.
+		24 kHz is the recommended default for speech, since it halves the
+		APLL frequency and the PSRAM bandwidth compared with 48 kHz.
+
 config ESP32P4_FUNCTION_EV_BOARD_CAMERA
 	bool "MIPI-CSI camera (SC2336) and /dev/video0"
 	default n

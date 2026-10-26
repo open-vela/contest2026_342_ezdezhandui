@@ -2076,6 +2076,175 @@ config ESPRESSIF_BLE
 	---help---
 		Enable BLE support
 
+# ##############################################################################
+# WiFi on a chip that has no radio: companion module over SDIO
+# ##############################################################################
+
+# ESPRESSIF_WIFI above is deliberately limited to the chips that own a radio
+# (C3/C6).  An ESP32-P4 does not define SOC_WIFI_SUPPORTED at all, so on a P4
+# board the radio lives on a separate companion module reached over a physical
+# link.  On the ESP32-P4X-C5-Function-EV-Board that companion is an
+# ESP32-C5-MINI-1 on 4-bit SDIO.
+#
+# The two options below are the lowest layer of that path.  They are separate
+# on purpose: the SDIO host controller is useful and testable on its own (any
+# SDIO card will do), so it can be brought up and verified before anything
+# knows about ESP-Hosted.
+
+config ESPRESSIF_SDMMC
+	bool "SD/MMC host controller"
+	depends on ARCH_CHIP_ESP32P4
+	default n
+	select ARCH_HAVE_SDIO
+	select MMCSD
+	select SDIO_DMA
+	---help---
+		Enable the ESP32-P4 SD/MMC host controller as a NuttX SDIO lower
+		half, so that SDIO peripherals (and, once slot 0 is wired up, SD
+		memory cards) can be used.
+
+		Unlike the ESP32-S3, whose SDMMC pins all go through the GPIO
+		matrix, the P4 splits the two slots:
+
+		  slot 0  microSD   IOMUX,       CLK=43 CMD=44 D0..D3=39..42
+		  slot 1  companion GPIO matrix, CLK=18 CMD=19 D0..D3=14..17
+
+		so pin setup is slot-dependent rather than uniform.
+
+		The register layer is built on Espressif's own LL for this chip
+		(components/esp_hal_sd/esp32p4/include/hal/sdmmc_ll.h), the same
+		code ESP-IDF drives the controller with.  That avoids re-deriving
+		a large and easy-to-get-subtly-wrong register map; only the
+		chip-specific integration (clock tree, reset, pin routing, CLIC
+		interrupt) is written here.
+
+if ESPRESSIF_SDMMC
+
+config ESPRESSIF_SDMMC_SLOT
+	int "SDMMC slot"
+	default 1
+	range 0 1
+	---help---
+		Which of the P4's two SDMMC slots this driver instance drives.
+		0 is the microSD card on IOMUX pins, 1 is the companion radio
+		module on GPIO-matrix pins.
+
+config ESPRESSIF_SDMMC_DMA
+	bool "Support DMA for SD/MMC"
+	default y
+	---help---
+		Drive data transfers through the controller's internal DMA engine
+		(IDMAC) instead of PIO.  Required for any useful SDIO throughput.
+
+config ESPRESSIF_SDMMC_CLK
+	int "SDMMC CLK GPIO"
+	default 18 if ESPRESSIF_SDMMC_SLOT = 1
+	default 43 if ESPRESSIF_SDMMC_SLOT = 0
+	range 0 54
+
+config ESPRESSIF_SDMMC_CMD
+	int "SDMMC CMD GPIO"
+	default 19 if ESPRESSIF_SDMMC_SLOT = 1
+	default 44 if ESPRESSIF_SDMMC_SLOT = 0
+	range 0 54
+
+config ESPRESSIF_SDMMC_D0
+	int "SDMMC D0 GPIO"
+	default 14 if ESPRESSIF_SDMMC_SLOT = 1
+	default 39 if ESPRESSIF_SDMMC_SLOT = 0
+	range 0 54
+
+config ESPRESSIF_SDMMC_D1
+	int "SDMMC D1 GPIO"
+	default 15 if ESPRESSIF_SDMMC_SLOT = 1
+	default 40 if ESPRESSIF_SDMMC_SLOT = 0
+	range 0 54
+
+config ESPRESSIF_SDMMC_D2
+	int "SDMMC D2 GPIO"
+	default 16 if ESPRESSIF_SDMMC_SLOT = 1
+	default 41 if ESPRESSIF_SDMMC_SLOT = 0
+	range 0 54
+
+config ESPRESSIF_SDMMC_D3
+	int "SDMMC D3 GPIO"
+	default 17 if ESPRESSIF_SDMMC_SLOT = 1
+	default 42 if ESPRESSIF_SDMMC_SLOT = 0
+	range 0 54
+
+config ESPRESSIF_SDMMC_REGDEBUG
+	bool "Register level debug"
+	depends on DEBUG_MMCSD_INFO
+	default n
+	---help---
+		Print every register access together with a caller address.
+
+endif # ESPRESSIF_SDMMC
+
+config ESPRESSIF_HOSTED_SDIO
+	bool "Companion radio over SDIO (ESP-Hosted transport)"
+	depends on ARCH_CHIP_ESP32P4
+	default n
+	select ESPRESSIF_SDMMC
+	---help---
+		Bring up the transport that carries an ESP-Hosted link to the
+		board's companion radio module (ESP32-C5-MINI-1 on the
+		ESP32-P4X-C5-Function-EV-Board).
+
+		This is only the bottom two layers: the P4 SDMMC controller in
+		SDIO mode, plus SDIO card enumeration.  The ESP-Hosted framing and
+		the mapping of the remote radio onto a NuttX net device are a
+		separate layer and are not part of this option -- a link that
+		enumerates is not yet a network interface.
+
+		Bring-up reports which milestone was actually reached (see
+		esp_hosted_sdio_state()), so a log never implies more than was
+		done.  Ethernet (CONFIG_ESPRESSIF_EMAC) remains the working
+		network path regardless.
+
+		The ESP-Hosted protocol layer is not implemented yet; see
+		docs/08_WiFi_SDIO实现.md.
+
+config ESPRESSIF_HOSTED_SDIO_EN_GPIO
+	int "Companion module enable GPIO (-1 = no enable line)"
+	default 54
+	range -1 54
+	---help---
+		GPIO that holds the companion module in reset / power-down while it
+		is low, driven high to bring it up before the SDIO probe.
+
+		On the ESP32-P4X-C5-Function-EV-Board this is GPIO54: the board's
+		J1 pin table notes that GPIO54 doubles as "ESP32-P4 control of the
+		ESP32-C5 enable function", and that moving R76 to R80 takes that
+		control away and ties the module permanently on.
+
+		Sketching this was not optional.  Without it the controller comes up
+		and the probe fails with -EBUSY, because there is nothing powered on
+		the other end of the bus to answer.
+
+		Set to -1 on a carrier where the module is not gated.
+
+config ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS
+	int "Delay after enabling the companion module (ms)"
+	default 200
+	depends on ESPRESSIF_HOSTED_SDIO_EN_GPIO != -1
+	---help---
+		How long to wait after asserting the enable line before probing.
+		The companion has to boot its own firmware before it can enumerate
+		as an SDIO card, so probing immediately would find nothing.
+
+config ESPRESSIF_HOSTED_SDIO_SLOT
+	int "SDIO slot used by the companion radio"
+	default 1
+	range 0 1
+	---help---
+		Which SDMMC slot the companion module sits on.  Slot 1 is the
+		GPIO-matrix slot the P4X-C5 board wires to the ESP32-C5-MINI-1;
+		slot 0 is the IO_MUX slot used by the microSD card.  The default
+		is the board's wiring, and the value is a choice rather than a
+		constant because a different carrier could route it the other
+		way round.
+
 config ESPRESSIF_EMAC
 	bool "Ethernet MAC"
 	depends on ARCH_CHIP_ESP32P4

@@ -1,0 +1,45 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config EXAMPLES_AUDIOTEST
+	tristate "Audio output test"
+	default n
+	depends on AUDIO
+	---help---
+		Enable a self-contained audio output test.
+
+		It synthesises a PCM stream in RAM (a tone, or a sweep with -s)
+		and writes it to an audio device, so a successful run exercises
+		the whole path at once: the application, the PCM decoder, the
+		codec driver, I2S/DMA and the codec itself.
+
+		It needs neither an SD card nor a network, which is what makes it
+		usable as a bring-up check on a board whose storage is not up yet.
+
+if EXAMPLES_AUDIOTEST
+
+config EXAMPLES_AUDIOTEST_PROGNAME
+	string "Program name"
+	default "audiotest"
+	---help---
+		The name of the program that will be used when the NSH ELF
+		program is installed.
+
+config EXAMPLES_AUDIOTEST_PRIORITY
+	int "Audio test task priority"
+	default 100
+
+config EXAMPLES_AUDIOTEST_STACKSIZE
+	int "Audio test stack size"
+	default 4096
+
+config EXAMPLES_AUDIOTEST_DEVPATH
+	string "Default audio device path"
+	default "/dev/audio/pcm0"
+	---help---
+		The audio device used when none is given on the command line.
+		The board's codec is registered here by the board bring-up.
+
+endif # EXAMPLES_AUDIOTEST

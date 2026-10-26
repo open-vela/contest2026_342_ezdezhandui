@@ -1,0 +1,1320 @@
+/****************************************************************************
+ * arch/risc-v/src/common/espressif/esp_sdmmc.c
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+/****************************************************************************
+ * ESP32-P4 SD/MMC host controller as a NuttX SDIO lower half
+ *
+ * This is the bottom layer of the board's WiFi path: the ESP32-P4 has no
+ * radio of its own (SOC_WIFI_SUPPORTED is not defined for it), so Wi-Fi comes
+ * from a companion module reached over SDIO.  See docs/08_WiFi_SDIO实现.md.
+ *
+ * ## Why this is not a copy of the ESP32-S3 driver
+ *
+ * The controller is the same DesignWare MSHC block and the register offsets
+ * match, but four things are chip-specific and all four had to be redone:
+ *
+ *  1. **Pin routing is per-slot, not uniform.**  On the S3 every SDMMC pin
+ *     goes through the GPIO matrix.  On the P4 the slots differ, and the
+ *     chip's own pin header says so:
+ *
+ *       slot 0  microSD    IO_MUX        CLK43 CMD44 D0..D3 39..42
+ *       slot 1  companion  GPIO matrix   CLK18 CMD19 D0..D3 14..17
+ *
+ *     (components/esp_hal_sd/esp32p4/include/soc/sdmmc_pins.h defines S LOT0
+ *     and states "SLOT1 doesn't go through IOMUX"; SDMMC_LL_SLOT_SUPPORT_
+ *     GPIO_MATRIX() agrees, returning true only for slot 1.)
+ *
+ *  2. **The clock tree lives outside the controller**, in HP_SYS_CLKRST
+ *     (peri_clk_ctrl01/02).  The per-card divider is in the SDMMC CLKDIV
+ *     register, but the source divider and the HS/LS edge selection are in
+ *     the system clock block.
+ *
+ *  3. **The DMA is the block's own IDMAC**, not a GDMA channel.  That matters
+ *     on this board because the I2S driver already claims GDMA channels;
+ *     IDMAC keeps the two completely independent.
+ *
+ *  4. **Interrupts route through CLIC**, so the handler is installed with
+ *     esp_setup_irq(SDIO_HOST_INTR_SOURCE, ...).
+ *
+ * ## Register layer
+ *
+ * All register access goes through Espressif's LL for this chip
+ * (components/esp_hal_sd/esp32p4/include/hal/sdmmc_ll.h) -- the same code
+ * ESP-IDF drives the controller with.  Hand-copying ~440 lines of bitfields
+ * would be a large, silent-failure-prone duplication for no benefit.  What is
+ * written here is the *integration*: NuttX's struct sdio_dev_s method table, command and
+ * response translation, the wait/callback machinery, and the IDMAC chain.
+ ****************************************************************************/
+
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
+#include <nuttx/config.h>
+
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <assert.h>
+#include <debug.h>
+#include <errno.h>
+
+#include <nuttx/arch.h>
+#include <nuttx/clock.h>
+#include <nuttx/kmalloc.h>
+#include <nuttx/mutex.h>
+#include <nuttx/sdio.h>
+#include <nuttx/semaphore.h>
+#include <nuttx/wdog.h>
+#include <nuttx/wqueue.h>
+
+#include "esp_gpio.h"
+#include "esp_irq.h"
+#include "esp_sdmmc.h"
+
+/* The LL's clock/reset helpers expand this macro around a register update.
+ * It comes from an ESP-IDF private header (esp_private/periph_ctrl.h) that is
+ * not part of the NuttX port.  NuttX calls the clock setup from thread context
+ * before any transfer is in flight, so there is no concurrent writer to
+ * serialise against and an empty expansion is correct here.
+ */
+
+#ifndef __DECLARE_RCC_ATOMIC_ENV
+#  define __DECLARE_RCC_ATOMIC_ENV (void)0
+#endif
+
+#include "hal/sdmmc_ll.h"
+
+#ifdef CONFIG_ESPRESSIF_SDMMC
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#define SDMMC_SLOT            CONFIG_ESPRESSIF_SDMMC_SLOT
+
+/* Timeouts in system ticks.  The command timeout bounds a hung CIU; the long
+ * timeout is the backstop for a card that never answers.
+ */
+
+#define SDMMC_CMDTIMEOUT      (1000 / MSEC_PER_TICK)
+#define SDMMC_LONGTIMEOUT     (5000 / MSEC_PER_TICK)
+
+/* Interrupt bits this driver acts on.  Unlike the bitfields the SDMMC block
+ * exposes, the interrupt status is a plain bitmask.
+ */
+
+#define SDMMC_CMD_DONE        (1u << 2)   /* Command done           */
+#define SDMMC_DATA_OVER       (1u << 3)   /* Data transfer over     */
+#define SDMMC_RXDR            (1u << 5)   /* RX FIFO data available */
+#define SDMMC_TXDR            (1u << 4)   /* TX FIFO data request   */
+
+/* Error bits: response error/CRC, data CRC, response and data timeouts, FIFO
+ * under/overrun, hardware lock, start-bit and end-bit errors.
+ */
+
+#define SDMMC_ERR_RE          (1u << 1)
+#define SDMMC_ERR_RCRC        (1u << 6)
+#define SDMMC_ERR_DCRC        (1u << 7)
+#define SDMMC_ERR_RTO         (1u << 8)
+#define SDMMC_ERR_DRTO        (1u << 9)
+#define SDMMC_ERR_HTO         (1u << 10)
+#define SDMMC_ERR_FRUN        (1u << 11)
+#define SDMMC_ERR_HLE         (1u << 12)
+#define SDMMC_ERR_SBE         (1u << 13)
+#define SDMMC_ERR_EBE         (1u << 15)
+
+#define SDMMC_ALL_ERRORS      (SDMMC_ERR_RE | SDMMC_ERR_RCRC | \
+                               SDMMC_ERR_DCRC | SDMMC_ERR_RTO | \
+                               SDMMC_ERR_DRTO | SDMMC_ERR_HTO | \
+                               SDMMC_ERR_FRUN | SDMMC_ERR_HLE | \
+                               SDMMC_ERR_SBE | SDMMC_ERR_EBE)
+
+#define SDMMC_INT_ENABLE      (SDMMC_CMD_DONE | SDMMC_DATA_OVER | \
+                               SDMMC_ALL_ERRORS)
+
+/****************************************************************************
+ * Private Types
+ ****************************************************************************/
+
+/* One entry of the IDMAC descriptor chain.
+ *
+ * The 64-byte size is not padding for looks: the P4's L1 cache line is 64
+ * bytes, and the chip's own sdmmc_desc_t carries the same reserved[] tail for
+ * the same reason.  A shorter descriptor would share a cache line with its
+ * neighbour, so cleaning one would write back the other's stale contents and
+ * corrupt the chain.
+ */
+
+struct esp_sdmmc_desc_s
+{
+  uint32_t des0;                 /* Control and status                */
+  uint32_t des1;                 /* Buffer size                       */
+  uint32_t buffer;               /* Buffer address                    */
+  uint32_t next;                 /* Next descriptor address           */
+  uint32_t pad[12];              /* Pad to 64 bytes (cache line)      */
+};
+
+#define SDMMC_DESC_OWN        (1u << 31)  /* Owned by the IDMAC engine */
+#define SDMMC_DESC_CES        (1u << 30)  /* Card error summary        */
+#define SDMMC_DESC_ER         (1u << 5)   /* End of ring               */
+#define SDMMC_DESC_CH         (1u << 4)   /* Second address chained    */
+#define SDMMC_DESC_FS         (1u << 3)   /* First descriptor          */
+#define SDMMC_DESC_LD         (1u << 2)   /* Last descriptor           */
+#define SDMMC_DESC_DIC        (1u << 1)   /* Disable int on completion */
+
+struct esp_sdmmc_dev_s
+{
+  struct sdio_dev_s dev;         /* Base class; must be first         */
+
+  sdmmc_dev_t *hw;               /* Controller registers              */
+  uint8_t slot;                  /* Slot being driven                 */
+
+  int clk_pin;                   /* Pin assignment for this slot      */
+  int cmd_pin;
+  int d0_pin;
+  int d1_pin;
+  int d2_pin;
+  int d3_pin;
+
+  /* Event machinery */
+
+  uint8_t waitmask;              /* Events the waiter cares about     */
+  volatile uint8_t xfrmask;      /* Events that have occurred         */
+  volatile bool enablewait;      /* A waiter is parked                */
+  sem_t waitsem;                 /* Posted when an event arrives      */
+  struct wdog_s timeout;         /* Transfer timeout                  */
+
+  /* Callback machinery */
+
+  uint8_t cbenable;              /* Events that fire the callback     */
+  worker_t callback;             /* The callback function             */
+  void *cbarg;                   /* Callback argument                 */
+  struct work_s work;            /* Deferred callback work            */
+
+  /* Transfer state */
+
+  bool widebus;                  /* True: 4-bit mode                  */
+  uint32_t blocksize;            /* Current block size                */
+  uint32_t nblocks;              /* Blocks in the pending transfer    */
+
+  int cpuint;                    /* Allocated CPU interrupt           */
+  bool initialized;
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+  struct esp_sdmmc_desc_s *desc;     /* Two-entry descriptor chain        */
+#endif
+};
+
+/****************************************************************************
+ * Private Function Prototypes
+ ****************************************************************************/
+
+static int  esp_sdmmc_lock(struct sdio_dev_s *dev, bool lock);
+static void esp_sdmmc_reset(struct sdio_dev_s *dev);
+static sdio_capset_t esp_sdmmc_capabilities(struct sdio_dev_s *dev);
+static sdio_statset_t esp_sdmmc_status(struct sdio_dev_s *dev);
+static void esp_sdmmc_widebus(struct sdio_dev_s *dev, bool enable);
+static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate);
+static int  esp_sdmmc_attach(struct sdio_dev_s *dev);
+
+static int  esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
+                              uint32_t arg);
+#ifdef CONFIG_SDIO_BLOCKSETUP
+static void esp_sdmmc_blocksetup(struct sdio_dev_s *dev,
+                                 unsigned int blocklen,
+                                 unsigned int nblocks);
+#endif
+static int  esp_sdmmc_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
+                                size_t nbytes);
+static int  esp_sdmmc_sendsetup(struct sdio_dev_s *dev,
+                                const uint8_t *buffer, size_t nbytes);
+static int  esp_sdmmc_cancel(struct sdio_dev_s *dev);
+static int  esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd);
+static int  esp_sdmmc_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
+                                   uint32_t *rshort);
+static int  esp_sdmmc_recvlong(struct sdio_dev_s *dev, uint32_t cmd,
+                               uint32_t rlong[4]);
+static int  esp_sdmmc_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
+                                uint32_t *rshort);
+
+static void esp_sdmmc_waitenable(struct sdio_dev_s *dev,
+                                 sdio_eventset_t eventset, uint32_t timeout);
+static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev);
+static void esp_sdmmc_callbackenable(struct sdio_dev_s *dev,
+                                     sdio_eventset_t eventset);
+static int  esp_sdmmc_registercallback(struct sdio_dev_s *dev,
+                                       worker_t callback, void *arg);
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+static int  esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
+                                   size_t buflen);
+static int  esp_sdmmc_dmasendsetup(struct sdio_dev_s *dev,
+                                   const uint8_t *buffer, size_t buflen);
+#endif
+
+static int  esp_sdmmc_interrupt(int irq, void *context, void *arg);
+static void esp_sdmmc_callback(void *arg);
+static void esp_sdmmc_timeout(wdparm_t arg);
+
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+/* Method table.
+ *
+ * NuttX embeds the operations in struct sdio_dev_s itself rather than having
+ * a separate ops structure, so this is a fully-initialised device, not a
+ * table that gets pointed at one.  Entries that only exist under a CONFIG are
+ * spelled out with their guards, because a designated initialiser for a
+ * missing member is a compile error rather than something quietly ignored.
+ */
+
+#ifdef CONFIG_SDIO_MUXBUS
+static mutex_t g_sdmmc_lock = NXMUTEX_INITIALIZER;
+#endif
+
+static struct esp_sdmmc_dev_s g_sdmmc =
+{
+  .dev =
+  {
+#ifdef CONFIG_SDIO_MUXBUS
+    .lock             = esp_sdmmc_lock,
+#endif
+    .reset            = esp_sdmmc_reset,
+    .capabilities     = esp_sdmmc_capabilities,
+    .status           = esp_sdmmc_status,
+    .widebus          = esp_sdmmc_widebus,
+    .clock            = esp_sdmmc_clock,
+    .attach           = esp_sdmmc_attach,
+    .sendcmd          = esp_sdmmc_sendcmd,
+#ifdef CONFIG_SDIO_BLOCKSETUP
+    .blocksetup       = esp_sdmmc_blocksetup,
+#endif
+    .recvsetup        = esp_sdmmc_recvsetup,
+    .sendsetup        = esp_sdmmc_sendsetup,
+    .cancel           = esp_sdmmc_cancel,
+    .waitresponse     = esp_sdmmc_waitresponse,
+    .recv_r1          = esp_sdmmc_recvshortcrc,
+    .recv_r2          = esp_sdmmc_recvlong,
+    .recv_r3          = esp_sdmmc_recvshort,
+    .recv_r4          = esp_sdmmc_recvshort,
+    .recv_r5          = esp_sdmmc_recvshortcrc,
+    .recv_r6          = esp_sdmmc_recvshortcrc,
+    .recv_r7          = esp_sdmmc_recvshort,
+    .waitenable       = esp_sdmmc_waitenable,
+    .eventwait        = esp_sdmmc_eventwait,
+    .callbackenable   = esp_sdmmc_callbackenable,
+#if defined(CONFIG_SCHED_WORKQUEUE) && defined(CONFIG_SCHED_HPWORK)
+    .registercallback = esp_sdmmc_registercallback,
+#endif
+#ifdef CONFIG_SDIO_DMA
+    .dmarecvsetup     = esp_sdmmc_dmarecvsetup,
+    .dmasendsetup     = esp_sdmmc_dmasendsetup,
+#endif
+  },
+};
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: esp_sdmmc_ciu_sendcmd
+ *
+ * Description:
+ *   Hand a command to the card interface unit and start it.
+ *
+ *   START is a busy indicator for the *previous* command: hardware clears it
+ *   once that command has been served.  Waiting for it here is what stops two
+ *   commands from being in flight at once.
+ *
+ ****************************************************************************/
+
+static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
+{
+  clock_t start = clock_systime_ticks();
+  sdmmc_dev_t *hw = g_sdmmc.hw;
+
+  while (sdmmc_ll_is_command_taken(hw))
+    {
+      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+        {
+          mcerr("ERROR: timed out waiting for the previous command\n");
+          return -EBUSY;
+        }
+    }
+
+  hwcmd.use_hold_reg  = 1;
+  hwcmd.start_command = 1;
+
+  sdmmc_ll_set_command_arg(hw, arg);
+  sdmmc_ll_set_command(hw, hwcmd);
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_configpins
+ *
+ * Description:
+ *   Route this slot's CLK/CMD/D0..D3 to the controller and give the pads the
+ *   electrical properties the SD specification asks for: push-pull outputs
+ *   with pull-ups on CMD and DAT (so an idle bus does not float), and a plain
+ *   output on CLK.
+ *
+ ****************************************************************************/
+
+static void esp_sdmmc_configpins(void)
+{
+  struct esp_sdmmc_dev_s *priv = &g_sdmmc;
+
+  esp_configgpio(priv->clk_pin, OUTPUT | DRIVE_3);
+  esp_configgpio(priv->cmd_pin, OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(priv->d0_pin,  OUTPUT | PULLUP | DRIVE_3);
+
+  if (priv->widebus)
+    {
+      esp_configgpio(priv->d1_pin, OUTPUT | PULLUP | DRIVE_3);
+      esp_configgpio(priv->d2_pin, OUTPUT | PULLUP | DRIVE_3);
+      esp_configgpio(priv->d3_pin, OUTPUT | PULLUP | DRIVE_3);
+    }
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_clock
+ *
+ * Description:
+ *   Select the card clock.  The source is the 160 MHz PLL chosen in
+ *   esp_sdmmc_initialize(); the card divider is per slot, which is why slot 0
+ *   and slot 1 cannot interfere with each other's rate.
+ *
+ *   For div >= 1 the card clock is source / (2 * div).  160 MHz / 320 = 500
+ *   kHz is the identification rate the SD specification requires; 160/2 =
+ *   80 MHz is the ceiling the transport can take.
+ *
+ ****************************************************************************/
+
+static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  sdmmc_dev_t *hw = priv->hw;
+  clock_t start = clock_systime_ticks();
+  uint32_t div;
+
+  switch (rate)
+    {
+      default:
+      case CLOCK_SDIO_DISABLED:
+        sdmmc_ll_enable_card_clock(hw, priv->slot, false);
+        return;
+
+      case CLOCK_IDMODE:
+        div = 159;              /* 160 MHz / 320 = 500 kHz */
+        break;
+
+      case CLOCK_MMC_TRANSFER:
+      case CLOCK_SD_TRANSFER_1BIT:
+      case CLOCK_SD_TRANSFER_4BIT:
+        div = 0;                /* 160 MHz / 2 = 80 MHz    */
+        break;
+    }
+
+  sdmmc_ll_set_card_clock_div(hw, priv->slot, div);
+  sdmmc_ll_enable_card_clock(hw, priv->slot, true);
+
+  /* Commit the clock registers into the card-clock domain.
+   *
+   * Writing CLKDIV / CLKSRC / CLKENA only stages the values in the BIU.  The
+   * CIU does not see them until a command with update_clk_reg set is issued;
+   * per the register description those three registers "are transferred into
+   * card clock domain" only then.
+   *
+   * Skipping this step is silent: the registers read back as written, the
+   * clock looks enabled, and yet no command ever completes because there is no
+   * card clock at all.  On hardware that surfaced as every probe returning
+   * -EBUSY with rintsts stuck at 0 -- the CIU never finished the first command,
+   * so its START bit never cleared.
+   */
+
+  {
+    sdmmc_hw_cmd_t upd;
+
+    memset(&upd, 0, sizeof(upd));
+    upd.update_clk_reg = 1;
+    upd.start_command  = 1;
+    sdmmc_ll_set_command(hw, upd);
+
+    while (sdmmc_ll_is_command_taken(hw))
+      {
+        /* Bounded: on a working controller this clears within a few cycles. */
+
+        if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+          {
+            mcerr("ERROR: clock update never completed\n");
+            break;
+          }
+      }
+  }
+
+  mcinfo("slot=%u rate=%d div=%" PRIu32 "\n", priv->slot, (int)rate, div);
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_reset
+ *
+ * Description:
+ *   Put the controller back to a known state.  The three sub-blocks are reset
+ *   in the order the IP expects (DMA, FIFO, controller) and each has its own
+ *   completion flag, so a reset that never completes is reported rather than
+ *   silently continuing into an unusable state.
+ *
+ ****************************************************************************/
+
+static void esp_sdmmc_reset(struct sdio_dev_s *dev)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  sdmmc_dev_t *hw = priv->hw;
+  clock_t start;
+
+  sdmmc_ll_enable_interrupt(hw, 0xffffffff, false);
+  sdmmc_ll_clear_interrupt(hw, 0xffffffff);
+
+  sdmmc_ll_reset_dma(hw);
+  start = clock_systime_ticks();
+  while (!sdmmc_ll_is_dma_reset_done(hw))
+    {
+      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+        {
+          mcerr("ERROR: DMA reset timed out\n");
+          break;
+        }
+    }
+
+  sdmmc_ll_reset_fifo(hw);
+  start = clock_systime_ticks();
+  while (!sdmmc_ll_is_fifo_reset_done(hw))
+    {
+      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+        {
+          mcerr("ERROR: FIFO reset timed out\n");
+          break;
+        }
+    }
+
+  sdmmc_ll_reset_controller(hw);
+  start = clock_systime_ticks();
+  while (!sdmmc_ll_is_controller_reset_done(hw))
+    {
+      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+        {
+          mcerr("ERROR: controller reset timed out\n");
+          break;
+        }
+    }
+
+  sdmmc_ll_set_response_timeout(hw, 0xffffff);
+  sdmmc_ll_set_data_timeout(hw, 0xffffff);
+
+  priv->xfrmask  = 0;
+  priv->waitmask = 0;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_capabilities / esp_sdmmc_status
+ ****************************************************************************/
+
+static sdio_capset_t esp_sdmmc_capabilities(struct sdio_dev_s *dev)
+{
+  UNUSED(dev);
+
+  sdio_capset_t caps = SDIO_CAPS_4BIT;
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+  caps |= SDIO_CAPS_DMASUPPORTED;
+#endif
+
+  return caps;
+}
+
+static sdio_statset_t esp_sdmmc_status(struct sdio_dev_s *dev)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  sdio_statset_t status = 0;
+
+  /* On this board the companion radio is soldered down, so there is no
+   * socket that could report otherwise.  Slot 0 keeps the controller's own
+   * card-detect, which is what a removable microSD card needs.
+   */
+
+  if (priv->slot == 0)
+    {
+      if (sdmmc_ll_is_card_detected(priv->hw, priv->slot))
+        {
+          status |= SDIO_STATUS_PRESENT;
+        }
+
+      if (sdmmc_ll_is_card_write_protected(priv->hw, priv->slot))
+        {
+          status |= SDIO_STATUS_WRPROTECTED;
+        }
+    }
+  else
+    {
+      status |= SDIO_STATUS_PRESENT;
+    }
+
+  return status;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_widebus
+ ****************************************************************************/
+
+static void esp_sdmmc_widebus(struct sdio_dev_s *dev, bool enable)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  priv->widebus = enable;
+
+  sdmmc_ll_set_card_width(priv->hw, priv->slot,
+                          enable ? SD_BUS_WIDTH_4_BIT : SD_BUS_WIDTH_1_BIT);
+
+  /* DAT1..3 only need to be driven once the bus is four bits wide; leaving
+   * them unconfigured in 1-bit mode keeps them from fighting anything else.
+   */
+
+  if (enable)
+    {
+      esp_configgpio(priv->d1_pin, OUTPUT | PULLUP | DRIVE_3);
+      esp_configgpio(priv->d2_pin, OUTPUT | PULLUP | DRIVE_3);
+      esp_configgpio(priv->d3_pin, OUTPUT | PULLUP | DRIVE_3);
+    }
+
+  mcinfo("widebus=%d\n", (int)enable);
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_lock
+ ****************************************************************************/
+
+#ifdef CONFIG_SDIO_MUXBUS
+static int esp_sdmmc_lock(struct sdio_dev_s *dev, bool lock)
+{
+  UNUSED(dev);
+
+  /* The SDIO stack serialises access to the bus through this pair.  A plain
+   * non-recursive mutex is what the contract asks for; returning OK without
+   * locking would let two transfers interleave on one controller.
+   */
+
+  if (lock)
+    {
+      return nxmutex_lock(&g_sdmmc_lock);
+    }
+
+  return nxmutex_unlock(&g_sdmmc_lock);
+}
+#endif
+
+/****************************************************************************
+ * Name: esp_sdmmc_attach
+ ****************************************************************************/
+
+static int esp_sdmmc_attach(struct sdio_dev_s *dev)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  int irq;
+
+  priv->cpuint = esp_setup_irq(SDIO_HOST_INTR_SOURCE,
+                               ESP_IRQ_PRIORITY_DEFAULT,
+                               ESP_IRQ_TRIGGER_LEVEL,
+                               esp_sdmmc_interrupt, priv);
+  if (priv->cpuint < 0)
+    {
+      mcerr("ERROR: failed to attach the SDMMC interrupt: %d\n",
+            priv->cpuint);
+      return priv->cpuint;
+    }
+
+  irq = SDIO_HOST_INTR_SOURCE;
+  up_enable_irq(irq);
+
+  /* Errors stay unmasked even when nobody is waiting on them, so a failure
+   * latches ERROR into the transfer mask instead of being dropped.
+   */
+
+  sdmmc_ll_enable_interrupt(priv->hw, SDMMC_INT_ENABLE, true);
+
+  mcinfo("attached, cpuint=%d\n", priv->cpuint);
+  return OK;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_sendcmd
+ *
+ * Description:
+ *   Translate a NuttX MMCSD_* command word into the controller's command
+ *   register and start it.
+ *
+ ****************************************************************************/
+
+static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
+                             uint32_t arg)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  sdmmc_hw_cmd_t hwcmd;
+  uint32_t cmdidx;
+
+  memset(&hwcmd, 0, sizeof(hwcmd));
+
+  cmdidx = (cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT;
+
+  hwcmd.cmd_index = cmdidx;
+  hwcmd.card_num  = priv->slot;
+
+  /* Response expectations.  R2 is the 136-bit response and is the only one
+   * that sets response_long.  CRC checking is requested for the short
+   * responses that carry a valid CRC: R3 (OCR) and R4 do not.
+   */
+
+  if ((cmd & MMCSD_RESPONSE_MASK) != MMCSD_NO_RESPONSE)
+    {
+      hwcmd.response_expect = 1;
+
+      if ((cmd & MMCSD_RESPONSE_MASK) == MMCSD_R2_RESPONSE)
+        {
+          hwcmd.response_long = 1;
+        }
+      else if ((cmd & MMCSD_RESPONSE_MASK) != MMCSD_R3_RESPONSE &&
+               (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R4_RESPONSE)
+        {
+          /* R3 (OCR) and R4 carry no valid CRC. */
+
+          hwcmd.check_response_crc = 1;
+        }
+    }
+
+  /* Data phase.  Direction comes from the command flags; the block count and
+   * size come from blocksetup() and the DMA setup calls.
+   */
+
+  if (cmd & MMCSD_DATAXFR)
+    {
+      hwcmd.data_expected = 1;
+      hwcmd.rw            = (cmd & MMCSD_WRDATAXFR) ? 1 : 0;
+
+      /* A multi-block transfer stops itself so the caller does not have to
+       * issue CMD12 separately.
+       */
+
+      if (cmd & MMCSD_MULTIBLOCK)
+        {
+          hwcmd.send_auto_stop = 1;
+        }
+    }
+
+  /* CMD0 is the one that needs the 80-clock initialisation sequence. */
+
+  if (cmdidx == 0)
+    {
+      hwcmd.send_init = 1;
+    }
+
+  priv->xfrmask = 0;
+  priv->nblocks = 0;
+
+  return esp_sdmmc_ciu_sendcmd(hwcmd, arg);
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_blocksetup
+ ****************************************************************************/
+
+#ifdef CONFIG_SDIO_BLOCKSETUP
+static void esp_sdmmc_blocksetup(struct sdio_dev_s *dev,
+                                 unsigned int blocklen, unsigned int nblocks)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  priv->blocksize = blocklen;
+  priv->nblocks   = nblocks;
+
+  sdmmc_ll_set_block_size(priv->hw, blocklen);
+  sdmmc_ll_set_data_transfer_len(priv->hw, blocklen * nblocks);
+}
+#endif /* CONFIG_SDIO_BLOCKSETUP */
+
+/****************************************************************************
+ * Name: esp_sdmmc_setup_desc
+ *
+ * Description:
+ *   Build the IDMAC descriptor chain for one transfer.
+ *
+ *   A single descriptor covers at most SDMMC_DMA_MAX_BUF_LEN (4096) bytes,
+ *   because the buffer-size field is 13 bits.  Two entries are allocated, so
+ *   a transfer of up to 8 KB is described without allocating; anything larger
+ *   is refused rather than silently truncated.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+static int esp_sdmmc_setup_desc(struct esp_sdmmc_dev_s *priv,
+                                uintptr_t buffer, size_t buflen, bool write)
+{
+  uintptr_t addr = buffer;
+  uint32_t remaining = buflen;
+  int index = 0;
+
+  if (buflen == 0)
+    {
+      return -EINVAL;
+    }
+
+  /* The engine walks 32-bit physical addresses and the buffer-size field is
+   * 13 bits, so a misaligned or oversized request must be refused up front.
+   */
+
+  if ((buffer & 3) != 0)
+    {
+      return -EINVAL;
+    }
+
+  while (remaining > 0 && index < 2)
+    {
+      uint32_t chunk = remaining > SDMMC_DMA_MAX_BUF_LEN ?
+                       SDMMC_DMA_MAX_BUF_LEN : remaining;
+
+      priv->desc[index].des0   = SDMMC_DESC_OWN | SDMMC_DESC_DIC;
+      priv->desc[index].des1   = chunk;
+      priv->desc[index].buffer = (uint32_t)addr;
+      priv->desc[index].next   = 0;
+
+      addr      += chunk;
+      remaining -= chunk;
+      index++;
+    }
+
+  if (remaining > 0)
+    {
+      return -EMSGSIZE;
+    }
+
+  priv->desc[0].des0 |= SDMMC_DESC_FS;
+
+  if (index > 1)
+    {
+      priv->desc[0].des0 |= SDMMC_DESC_CH;
+      priv->desc[0].next  = (uint32_t)(uintptr_t)&priv->desc[1];
+    }
+
+  priv->desc[index - 1].des0 |= SDMMC_DESC_LD | SDMMC_DESC_ER;
+
+  /* The engine reads the chain from memory, so the CPU's writes to it must
+   * reach DRAM first.  For a write the data must too; for a read the stale
+   * lines must go, or the engine's data would be overwritten by the writeback
+   * of cache lines that are about to be refilled anyway.
+   */
+
+  up_clean_dcache((uintptr_t)priv->desc,
+                  (uintptr_t)(priv->desc + 2));
+
+  if (write)
+    {
+      up_clean_dcache(buffer, buffer + buflen);
+    }
+  else
+    {
+      up_invalidate_dcache(buffer, buffer + buflen);
+    }
+
+  return OK;
+}
+#endif
+
+/****************************************************************************
+ * Name: esp_sdmmc_recvsetup / sendsetup / cancel
+ *
+ *   The transfer geometry arrives through blocksetup() and the DMA setup
+ *   calls, so the plain setup hooks have nothing to add.  They are still
+ *   provided because the SDIO stack calls them.
+ ****************************************************************************/
+
+static int esp_sdmmc_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
+                               size_t nbytes)
+{
+  UNUSED(dev);
+  UNUSED(buffer);
+  UNUSED(nbytes);
+  return OK;
+}
+
+static int esp_sdmmc_sendsetup(struct sdio_dev_s *dev,
+                               const uint8_t *buffer, size_t nbytes)
+{
+  UNUSED(dev);
+  UNUSED(buffer);
+  UNUSED(nbytes);
+  return OK;
+}
+
+static int esp_sdmmc_cancel(struct sdio_dev_s *dev)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  sdmmc_ll_stop_dma(priv->hw);
+  sdmmc_ll_enable_dma(priv->hw, false);
+
+  priv->xfrmask |= SDIOWAIT_TRANSFERDONE;
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_dmarecvsetup / esp_sdmmc_dmasendsetup
+ ****************************************************************************/
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
+                                  size_t buflen)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  int ret;
+
+  ret = esp_sdmmc_setup_desc(priv, (uintptr_t)buffer, buflen, false);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  sdmmc_ll_init_dma(priv->hw);
+  sdmmc_ll_set_desc_addr(priv->hw, (uint32_t)(uintptr_t)priv->desc);
+  sdmmc_ll_enable_dma(priv->hw, true);
+
+  return OK;
+}
+
+static int esp_sdmmc_dmasendsetup(struct sdio_dev_s *dev,
+                                  const uint8_t *buffer, size_t buflen)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  int ret;
+
+  ret = esp_sdmmc_setup_desc(priv, (uintptr_t)buffer, buflen, true);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  sdmmc_ll_init_dma(priv->hw);
+  sdmmc_ll_set_desc_addr(priv->hw, (uint32_t)(uintptr_t)priv->desc);
+  sdmmc_ll_enable_dma(priv->hw, true);
+
+  return OK;
+}
+#endif
+
+/****************************************************************************
+ * Name: esp_sdmmc_waitresponse / esp_sdmmc_recv_*
+ ****************************************************************************/
+
+static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
+{
+  sdio_eventset_t wkupevent;
+
+  UNUSED(cmd);
+
+  esp_sdmmc_waitenable(dev, SDIOWAIT_RESPONSEDONE, SDMMC_LONGTIMEOUT);
+  wkupevent = esp_sdmmc_eventwait(dev);
+
+  if (wkupevent & SDIOWAIT_TIMEOUT)
+    {
+      mcerr("ERROR: timed out waiting for a response\n");
+      return -ETIMEDOUT;
+    }
+
+  if (wkupevent & SDIOWAIT_ERROR)
+    {
+      mcerr("ERROR: response error\n");
+      return -EIO;
+    }
+
+  return OK;
+}
+
+static int esp_sdmmc_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
+                                  uint32_t *rshort)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  UNUSED(cmd);
+
+  *rshort = priv->hw->resp[0];
+  return OK;
+}
+
+static int esp_sdmmc_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
+                               uint32_t *rshort)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  UNUSED(cmd);
+
+  *rshort = priv->hw->resp[0];
+  return OK;
+}
+
+static int esp_sdmmc_recvlong(struct sdio_dev_s *dev, uint32_t cmd,
+                              uint32_t rlong[4])
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  int i;
+
+  UNUSED(cmd);
+
+  for (i = 0; i < 4; i++)
+    {
+      rlong[i] = priv->hw->resp[i];
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_waitenable
+ ****************************************************************************/
+
+static void esp_sdmmc_waitenable(struct sdio_dev_s *dev,
+                                 sdio_eventset_t eventset, uint32_t timeout)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  /* The controller cannot signal a timeout, so it is never part of the
+   * hardware mask; it is produced by the watchdog below.
+   */
+
+  eventset &= ~SDIOWAIT_TIMEOUT;
+
+  priv->waitmask   = eventset;
+  priv->enablewait = (eventset != 0);
+
+  if (timeout > 0)
+    {
+      wd_start(&priv->timeout, timeout, esp_sdmmc_timeout,
+               (wdparm_t)(uintptr_t)priv);
+    }
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_eventwait
+ ****************************************************************************/
+
+static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  sdio_eventset_t wkupevent;
+
+  while (priv->xfrmask == 0)
+    {
+      nxsem_wait_uninterruptible(&priv->waitsem);
+    }
+
+  /* Cancel the watchdog if it is still armed, then take the accumulated
+   * events and disarm.
+   */
+
+  wd_cancel(&priv->timeout);
+
+  wkupevent        = priv->xfrmask;
+  priv->xfrmask    = 0;
+  priv->waitmask   = 0;
+  priv->enablewait = false;
+
+  return wkupevent;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_callbackenable / registercallback / callback
+ ****************************************************************************/
+
+static void esp_sdmmc_callbackenable(struct sdio_dev_s *dev,
+                                     sdio_eventset_t eventset)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  priv->cbenable = eventset & 0xff;
+}
+
+static int esp_sdmmc_registercallback(struct sdio_dev_s *dev,
+                                      worker_t callback, void *arg)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  priv->callback = callback;
+  priv->cbarg    = arg;
+  return OK;
+}
+
+static void esp_sdmmc_callback(void *arg)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)arg;
+
+  if (priv->callback != NULL)
+    {
+      priv->callback(priv->cbarg);
+    }
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_timeout
+ ****************************************************************************/
+
+static void esp_sdmmc_timeout(wdparm_t arg)
+{
+  struct esp_sdmmc_dev_s *priv =
+    (struct esp_sdmmc_dev_s *)(uintptr_t)arg;
+
+  priv->xfrmask |= SDIOWAIT_TIMEOUT;
+
+  if (priv->enablewait)
+    {
+      nxsem_post(&priv->waitsem);
+    }
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_interrupt
+ *
+ * Description:
+ *   Turn controller interrupt status into SDIO wait events.
+ *
+ ****************************************************************************/
+
+static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)arg;
+  sdio_eventset_t eventset = 0;
+  uint32_t status;
+
+  UNUSED(irq);
+  UNUSED(context);
+
+  status = sdmmc_ll_get_intr_status(priv->hw);
+  sdmmc_ll_clear_interrupt(priv->hw, status);
+
+  if (status & SDMMC_CMD_DONE)
+    {
+      eventset |= SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE;
+    }
+
+  if (status & SDMMC_DATA_OVER)
+    {
+      eventset |= SDIOWAIT_TRANSFERDONE;
+    }
+
+  if (status & SDMMC_ALL_ERRORS)
+    {
+      eventset |= SDIOWAIT_ERROR;
+      mcerr("ERROR: SDMMC status=%08" PRIx32 "\n", status);
+    }
+
+  if (eventset == 0)
+    {
+      return OK;
+    }
+
+  priv->xfrmask |= eventset;
+
+  if (priv->enablewait && (eventset & priv->waitmask) != 0)
+    {
+      nxsem_post(&priv->waitsem);
+    }
+  else if ((eventset & priv->cbenable) != 0 && priv->callback != NULL)
+    {
+      work_queue(LPWORK, &priv->work, esp_sdmmc_callback, priv, 0);
+    }
+
+  return OK;
+}
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: esp_sdmmc_initialize
+ *
+ * Description:
+ *   Initialise the selected SDMMC slot and return a NuttX SDIO lower half.
+ *   See esp_sdmmc.h for the contract.
+ *
+ ****************************************************************************/
+
+struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
+{
+  struct esp_sdmmc_dev_s *priv = &g_sdmmc;
+  sdmmc_dev_t *hw = &SDMMC;
+
+  if (priv->initialized)
+    {
+      return &priv->dev;
+    }
+
+  if (slotno < 0 || slotno > 1)
+    {
+      mcerr("ERROR: invalid SDMMC slot %d\n", slotno);
+      return NULL;
+    }
+
+  /* g_sdmmc is statically initialised with its method table, so only the
+   * fields that describe this instance are set here.  The event bookkeeping
+   * is cleared so a re-initialisation cannot inherit a pending event.
+   */
+
+  priv->hw           = hw;
+  priv->slot         = slotno;
+  priv->waitmask     = 0;
+  priv->xfrmask      = 0;
+  priv->enablewait   = false;
+  priv->cbenable     = 0;
+  priv->callback     = NULL;
+  priv->cbarg        = NULL;
+  priv->widebus      = false;
+  priv->blocksize    = 0;
+  priv->nblocks      = 0;
+  priv->cpuint       = -1;
+
+  /* Pin assignment.  The Kconfig defaults match the P4X-C5 board wiring, so
+   * a board that routes the bus differently only changes those values; the
+   * code does not need to know which board it is on.
+   */
+
+  priv->clk_pin = CONFIG_ESPRESSIF_SDMMC_CLK;
+  priv->cmd_pin = CONFIG_ESPRESSIF_SDMMC_CMD;
+  priv->d0_pin  = CONFIG_ESPRESSIF_SDMMC_D0;
+  priv->d1_pin  = CONFIG_ESPRESSIF_SDMMC_D1;
+  priv->d2_pin  = CONFIG_ESPRESSIF_SDMMC_D2;
+  priv->d3_pin  = CONFIG_ESPRESSIF_SDMMC_D3;
+
+  /* Module clock gate and reset.  The reset must complete before any
+   * register of the block is touched.
+   */
+
+  sdmmc_ll_enable_bus_clock(0, true);
+  sdmmc_ll_reset_register(0);
+
+  /* Clock source and the system-side divider (HP_SYS_CLKRST), plus the
+   * controller-side output phase.
+   */
+
+  sdmmc_ll_select_clk_source(hw, SDMMC_CLK_SRC_DEFAULT);
+  sdmmc_ll_set_clock_div(hw, 1);
+  sdmmc_ll_init_phase_delay(hw);
+
+  /* Output phase 0 is the reset default, so it is stated rather than merely
+   * assumed: it is the value the P4X-C5 board is known good with, and a board
+   * with longer traces is the case that would change it.
+   */
+
+  sdmmc_ll_set_dout_delay_phase(hw, SDMMC_LL_DELAY_PHASE_0,
+                                SDMMC_LL_SPEED_MODE_HS);
+
+  nxsem_init(&priv->waitsem, 0, 0);
+  wd_start(&priv->timeout, 0, esp_sdmmc_timeout,
+           (wdparm_t)(uintptr_t)priv);
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+  /* Two descriptors, 64-byte aligned: the chain must not share a cache line
+   * with anything else, for the reason given at struct esp_sdmmc_desc_s.
+   */
+
+  priv->desc = kmm_memalign(64, sizeof(struct esp_sdmmc_desc_s) * 2);
+  if (priv->desc == NULL)
+    {
+      mcerr("ERROR: failed to allocate the IDMAC descriptor chain\n");
+      return NULL;
+    }
+
+  memset(priv->desc, 0, sizeof(struct esp_sdmmc_desc_s) * 2);
+#endif
+
+  esp_sdmmc_configpins();
+  esp_sdmmc_reset(&priv->dev);
+
+  sdmmc_ll_enable_global_interrupt(hw, true);
+
+  priv->initialized = true;
+
+  mcinfo("SDMMC slot %d up: CLK=%d CMD=%d D0..D3=%d,%d,%d,%d\n",
+         slotno, priv->clk_pin, priv->cmd_pin, priv->d0_pin, priv->d1_pin,
+         priv->d2_pin, priv->d3_pin);
+
+  return &priv->dev;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_debug
+ ****************************************************************************/
+
+void esp_sdmmc_debug(FAR struct esp_sdmmc_debug_s *dbg)
+{
+  sdmmc_dev_t *hw = &SDMMC;
+
+  if (dbg == NULL)
+    {
+      return;
+    }
+
+  dbg->verid   = sdmmc_ll_get_version_id(hw);
+  dbg->status  = hw->status.val;
+  dbg->cdetect = hw->cdetect.val;
+  dbg->clkena  = hw->clkena.val;
+  dbg->clkdiv  = hw->clkdiv.val;
+  dbg->ctrl    = hw->ctrl.val;
+  dbg->rintsts = hw->rintsts.val;
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_bus_reset
+ ****************************************************************************/
+
+void esp_sdmmc_bus_reset(void)
+{
+  if (g_sdmmc.hw == NULL)
+    {
+      return;
+    }
+
+  esp_sdmmc_reset(&g_sdmmc.dev);
+  g_sdmmc.xfrmask   = 0;
+  g_sdmmc.waitmask  = 0;
+  g_sdmmc.enablewait = false;
+
+  /* Re-arm the card clock: the reset above disables interrupts and the CIU, and
+   * the next attempt needs the identification clock running again.
+   */
+
+  esp_sdmmc_clock(&g_sdmmc.dev, CLOCK_IDMODE);
+}
+
+#endif /* CONFIG_ESPRESSIF_SDMMC */

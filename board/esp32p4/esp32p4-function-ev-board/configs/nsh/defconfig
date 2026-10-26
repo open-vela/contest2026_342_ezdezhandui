@@ -298,6 +298,107 @@ CONFIG_SC2336_I2CADDR=0x30
 CONFIG_SC2336_FREQUENCY=100000
 CONFIG_ESP32P4_FUNCTION_EV_BOARD_CAMERA=y
 
+# ── 板载音频：ES8311 codec（I2C0 控制 + I2S0/GDMA 数据）→ /dev/audio/pcm0 ──
+#
+# 引脚取自官方原理图 ESP32_P4X_C5_Function_EV_board-2.0（网名以 codec 为准，
+# 与主机方向相反 —— 详见 board/.../src/esp32p4_audio_es8311.c 顶部表）：
+#   I2S_MCLK=GPIO13  I2S_SCLK=GPIO12  I2S_LRCK=GPIO10
+#   I2S_DSDIN=GPIO9 (主机输出→codec DAC)  I2S_ASDOUT=GPIO11 (codec ADC→主机输入)
+#   PA_CTRL=GPIO53 使能 NS4150B 功放；codec 控制地址 0x18（共享 I2C0）
+#
+# 数据搬运不需要额外代码：esp_i2s.c 已用 GDMA 驱动 I2S0，
+# drivers/audio/es8311.c 已实现 codec 寄存器序列 —— 本板只做二者之间的粘合。
+CONFIG_ESP32P4_FUNCTION_EV_BOARD_AUDIO_ES8311=y
+
+CONFIG_AUDIO=y
+# AUDIO_ES8311 sits under `if DRIVERS_AUDIO` in drivers/audio/Kconfig, so the
+# board's `select AUDIO_ES8311` cannot switch it on by itself -- kconfig warns
+# and silently leaves the codec out.  DRIVERS_AUDIO has no dependencies of its
+# own, so it must be named here.
+CONFIG_DRIVERS_AUDIO=y
+CONFIG_AUDIO_FORMAT_PCM=y
+CONFIG_I2S=y
+CONFIG_ESPRESSIF_I2S0=y
+CONFIG_ESPRESSIF_I2S0_TX=y
+CONFIG_ESPRESSIF_I2S0_RX=y
+CONFIG_ESPRESSIF_I2S0_ROLE_MASTER=y
+CONFIG_ESPRESSIF_I2S0_DATA_BIT_WIDTH_16BIT=y
+CONFIG_ESPRESSIF_I2S0_SAMPLE_RATE=24000
+
+# MCLK 必须开：ES8311 用 MCLK/采样率 的比值选内部系数，
+# esp_i2s.c 对 16bit 取 mclk = rate*256，正好落在 es8311 系数表的
+# 12.288MHz/24kHz 项上。24kHz 是语音播报的推荐值（APLL 与 PSRAM 带宽减半）。
+CONFIG_ESPRESSIF_I2S0_MCLK=y
+CONFIG_ESPRESSIF_I2S0_MCLKPIN=13
+CONFIG_ESPRESSIF_I2S0_BCLKPIN=12
+CONFIG_ESPRESSIF_I2S0_WSPIN=10
+CONFIG_ESPRESSIF_I2S0_DOUTPIN=9
+CONFIG_ESPRESSIF_I2S0_DINPIN=11
+
+# 扬声器功放在 codec 配置完成后再使能，避免复位序列被放大成"咔哒"声
+CONFIG_ES8311_SRC_MCLK=y
+CONFIG_ES8311_OUTPUT_INITVOLUME=800
+CONFIG_ES8311_BUFFER_SIZE=8192
+CONFIG_ES8311_NUM_BUFFERS=4
+
+# 同时在途的缓冲区数量必须与播放器实际分配的数量匹配。codec 的
+# enqueuebuffer 只会从队列里取 CONFIG_ES8311_INFLIGHT 个送进 I2S，其余留在
+# pend 队列里等前一个回来。默认值 2 而播放器分配 4 时，后两个会长期"占着不放"，
+# 播放器按"4 个都能轮转"记账就会卡住 —— 真机复现过：声音正常发出、但程序等不到
+# 收尾。这里让两者一致。
+CONFIG_ES8311_INFLIGHT=4
+
+# AUDIOIOC_GETBUFFERINFO 在 es8311.c 里被这个开关包着（`#ifdef
+# CONFIG_AUDIO_DRIVER_SPECIFIC_BUFFERS`）。不开的话，驱动直接走 default 分支
+# 返回 -ENOTTY，任何按"先问缓冲区信息再分配"这一标准流程走的播放器（nxplayer、
+# 自检程序）都在第一步就失败 —— 报 ENOTTY(25)，看起来像"设备不支持这个命令"，
+# 实际是"这个选项没开"。
+CONFIG_AUDIO_DRIVER_SPECIFIC_BUFFERS=y
+
+# I2S 一次发送的最大字节数 = I2S_DMA_BUFFER_MAX_SIZE(4092) × I2S_DMADESC_NUM，
+# 默认 DMADESC_NUM=2 只能发 8184 字节。而 ES8311 驱动是**按整块**把每个
+# audio buffer 交给 I2S 的（I2S_SEND(apb)），所以 ES8311_BUFFER_SIZE 必须落在
+# 这个上限之内 —— 8192 恰好比 8184 多 8 字节，真机实测直接失败：
+#   i2s_send: Required buffer size can't fit into DMA outlink (exceeds in 84 bytes)
+#   es8311_processbegin: I2S transfer failed: -27
+# 报错本身建议加大 DMADESC_NUM，这里采纳（4×4092 = 16368，8192 块有充裕余量）。
+CONFIG_I2S_DMADESC_NUM=4
+
+# ── 语音播放入口：NSH 内置 nxplayer ──
+# 用法（板端）：
+#   nxplayer
+#   nxplayer> device pcm0
+#   nxplayer> play /data/voice.wav
+#
+# ⚠️ 音频文件必须是 **16bit 立体声 WAV**：ES8311 是单声道 codec，默认取左声道，
+# 而本端口按双 slot 配置 I2S（与 esp_i2s.c 的默认一致）。采样率取 16k 或 24k，
+# 48k 会让 MCLK=12.288MHz 的 APLL 频率翻倍、占用更多 PSRAM 带宽。
+CONFIG_SYSTEM_NXPLAYER=y
+CONFIG_NXPLAYER_COMMAND_LINE=y
+
+# ── WiFi 前两层：板载协处理器的 SDIO 传输（P4 自身无射频）──
+#
+# 这一组开关**能编入、能跑通到"枚举到对端"**，但 ESP-Hosted 协议层与远端
+# WiFi netdev（第 2/3 层）尚未实现，所以**默认不开**：开了也不会凭空多出一个
+# wlan0，反而让启动日志多两行噪声。
+#
+# 需要验证这段时间链时把下面三行打开即可（实测 0 error、符号落位、调用链
+# esp_bringup → esp_hosted_sdio_initialize → esp_sdmmc_initialize → sdio_probe）：
+#
+#   CONFIG_ESPRESSIF_SDMMC=y
+#   CONFIG_ESPRESSIF_HOSTED_SDIO=y
+#   CONFIG_MMCSD_SDIO=y
+#
+# 引脚（slot 1 = 协处理器走 GPIO matrix，slot 0 = microSD 走 IO_MUX）由
+# Kconfig 默认值给出，与本板接线一致。详见 docs/08_WiFi_SDIO实现.md。
+
+# ── 音频输出自检：NSH 内置 `audiotest` ──
+# 在 RAM 里合成一段 PCM（可 -s 扫频）直接写 /dev/audio/pcm0，不依赖 SD 卡/网络，
+# 因此能在存储还没起来的板子上当作 bring-up 检查用。跑通即等于走完
+# 应用 → pcm_decode → codec 驱动 → I2S/DMA → ES8311 → NS4150B → 扬声器 全链路。
+CONFIG_EXAMPLES_AUDIOTEST=y
+CONFIG_EXAMPLES_AUDIOTEST_PROGNAME="audiotest"
+
 # ── V4L2 capture test app (apps/examples/camera) -> NSH builtin `camera` ──
 # Used to prove the MIPI-CSI/SC2336 capture path end to end on hardware.
 CONFIG_EXAMPLES_CAMERA=y
@@ -372,3 +473,4 @@ CONFIG_DEBUG_FEATURES=y
 CONFIG_DEBUG_ERROR=y
 CONFIG_DEBUG_VIDEO=y
 CONFIG_DEBUG_VIDEO_ERROR=y
+

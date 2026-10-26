@@ -243,6 +243,9 @@ static void esp_sdmmc_widebus(struct sdio_dev_s *dev, bool enable);
 /* Bring-up switch: skip the update_clk_reg command (see header). */
 static bool g_sdmmc_skip_clk_update;
 
+/* Bring-up aid: sample the CLK pad while commands are in flight. */
+static bool g_sdmmc_probe_clk;
+
 static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate);
 static int  esp_sdmmc_attach(struct sdio_dev_s *dev);
 
@@ -393,6 +396,40 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
 
   sdmmc_ll_set_command_arg(hw, arg);
   sdmmc_ll_set_command(hw, hwcmd);
+
+  /* Sample the CLK pad while this command is in flight.
+   *
+   * Sampling it at idle proves nothing: a DesignWare MSHC may legitimately gate
+   * the card clock when no command or data transfer is running, so "no clock at
+   * idle" is compatible with a perfectly healthy controller. The question that
+   * matters is whether a clock exists *during* a command -- and this is the only
+   * place in the driver where a command is known to be in flight.
+   */
+
+  if (g_sdmmc_probe_clk)
+    {
+      int hi = 0;
+      int lo = 0;
+      int i;
+
+      for (i = 0; i < 256; i++)
+        {
+          if (esp_gpioread(CONFIG_ESPRESSIF_SDMMC_CLK))
+            {
+              hi++;
+            }
+          else
+            {
+              lo++;
+            }
+        }
+
+      syslog(LOG_INFO,
+             "esp_sdmmc: CLK during cmd=%08" PRIx32 ": %d high, %d low -- %s\n",
+             hwcmd.val, hi, lo,
+             (hi && lo) ? "clock IS running"
+                        : "no clock during the command either");
+    }
 
   return OK;
 }
@@ -1593,6 +1630,11 @@ void esp_sdmmc_bus_reset(void)
 void esp_sdmmc_skip_clk_update(bool skip)
 {
   g_sdmmc_skip_clk_update = skip;
+}
+
+void esp_sdmmc_probe_clk(bool enable)
+{
+  g_sdmmc_probe_clk = enable;
 }
 
 #endif /* CONFIG_ESPRESSIF_SDMMC */

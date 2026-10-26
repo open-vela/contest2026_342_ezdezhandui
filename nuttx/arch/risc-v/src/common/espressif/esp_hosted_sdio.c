@@ -419,6 +419,15 @@ int esp_hosted_sdio_initialize(void)
                                     SD_CARD_CCLK_2_PAD_OUT_IDX, false, false);
   }
 
+  /* Enable the in-flight CLK sampling for this bring-up.
+   *
+   * The pad's input path is already enabled by the isolation test above, and the
+   * output is routed back to the controller, so a read now returns whatever the
+   * SDMMC is really driving during a command.
+   */
+
+  esp_sdmmc_probe_clk(true);
+
   ret = sdio_probe(sdio);
         if (ret >= 0)
           {

@@ -128,6 +128,16 @@ void esp_sdmmc_bus_reset(void);
 
 void esp_sdmmc_skip_clk_update(bool skip);
 
+/****************************************************************************
+ * Name: esp_sdmmc_probe_clk
+ *
+ * Description:
+ *   Bring-up aid: sample the CLK pad while commands are in flight.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_probe_clk(bool enable);
+
 #endif /* CONFIG_ESPRESSIF_SDMMC */
 
 #undef EXTERN

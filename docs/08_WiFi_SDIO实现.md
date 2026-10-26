@@ -1112,3 +1112,65 @@ C6 的日志是**可以读的**（GPIO16/17 → ttyUSB1，115200）。所以下�
   问题就在物理连线；如果从机报错，错误信息会直接指出来**。
 
 这一步能一次性判定"是连线还是协议"。需要再次让 C6 进下载模式（按 BOOT）。
+
+## H.7 第 21 轮：P4 侧引脚**已从原理图确认**，并备好带调试日志的从机固件
+
+### H.7.1 P4 侧引脚确证 —— 与本移植完全一致
+
+重新在原理图文本里定位 `SD2_*` 与 P4 GPIO 的对应（这次抓到了带引脚号的表）：
+
+```
+SD2_D0  -> GPIO14        SD2_D1  -> GPIO15
+SD2_D2  -> GPIO16        SD2_D3  -> GPIO17
+SD2_CLK -> GPIO18        SD2_CMD -> GPIO19
+```
+
+**与 `esp_sdmmc.c` 里为 slot 1 配的引脚一字不差**，也与 Espressif 官方
+`getting-started-mcu.md` 的 P4 主机表一致。加上用户确认的 C6 侧
+（18/19/20/21/22/23）与 3.3V 上拉 —— **两侧引脚都已确认无误，H.5 的第 1 条排除**。
+
+### H.7.2 顺带查了 P4 专用 workaround：与我们无关
+
+`eh_host_port_sdio_workaround()` 只处理 **slot 0 在 1-bit 模式下的 IOMUX 引脚**
+问题；本移植用 slot 1 + 4-bit，不涉及。
+
+### H.7.3 备好了 DEBUG 日志版的从机固件
+
+既然 C6 的日志**可读**（GPIO16/17 → ttyUSB1 @115200），下一步就是让它"开口"：
+
+| | INFO 版（已烧） | **DEBUG 版（已备好）** |
+|---|---|---|
+| `CONFIG_LOG_DEFAULT_LEVEL` | 3 | **4** |
+| `CONFIG_LOG_MAXIMUM_LEVEL` | 3 | **4** |
+| 体积 | 1,094,464 B | 1,131,952 B |
+
+### H.7.4 修掉一个真 bug：flash 脚本的偏移是错的
+
+`flasher_args.json` 的真实布局是 **4 个镜像**：
+
+| 偏移 | 镜像 |
+|---|---|
+| `0x0` | bootloader.bin |
+| `0x8000` | partition-table.bin |
+| `0xd000` | ota_data_initial.bin |
+| **`0x10000`** | **app** |
+
+而本脚本早期版本把 app 单镜像写到 `0x0` —— 那是错的。现在
+`flash_c6.sh` 按真实布局烧 4 个镜像，并把 4 个镜像都收录进交付：
+
+```
+tools/build_flash/c6_hosted/
+├── eh_cp_wifi_sta_esp32c6_sdio.bin    INFO 版
+├── eh_cp_wifi_sta_debug.bin           DEBUG 版（观察从机 SDIO 行为用）
+├── bootloader.bin / partition-table.bin / ota_data_initial.bin
+├── sdkconfig.esp32c6.sdio
+└── flash_c6.sh                        [--debug] 可选
+```
+
+### H.7.5 下一步的判定逻辑
+
+烧 DEBUG 版后，一边看 C6 日志、一边让 P4 探测：
+
+- **从机完全没有任何反应** → 问题在**物理层**（尽管两侧引脚都已确认，
+  仍需考虑焊接/走线/上拉实效）；
+- **从机报了错或收到命令** → 错误信息会直接指出是协议还是配置。

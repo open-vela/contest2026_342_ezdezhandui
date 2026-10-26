@@ -1414,3 +1414,70 @@ Linux `dw_mmc` 的 `SDMMC_INT_*` 定义）。
 
 **目前的净收益**：主机侧第一次能真正把命令发出去，且时钟提交不再依赖那条
 走不通的命令；剩下的问题从"一条命令都发不出"收窄到"命令发出后 FSM 不收尾"。
+
+## I.6 第 27 轮：把卡住的那条命令**解码出来** —— 是 CMD0，根因是卡时钟没跑
+
+上轮留下的悬念是"`rintsts` 第 12 位是什么"。查清了：
+
+hw_ver3 的 `sdhost_rintsts_reg_t` 把 16 个中断位放在一个字段里：
+
+```
+[ 0] int_status_raw (16)     ← 16 个中断位都在这里
+[16] sdio_interrupt_raw (2)
+[18] reserved_18 (14)
+```
+
+`rintsts=0x1000` → 该字段的 bit 12 → 按 `dw_mmc` 的定义即 **EBE（End Bit Error，
+结束位错误）**：响应/数据的结束位不是 1。
+
+### 更关键的是把**卡住的那条命令**解码出来
+
+一直卡住的是 `cmd=a0018000`，逐位展开：
+
+```
+bit 31  start_command        ← 未自清，就是它卡住的原因
+bit 29  card_num  (=1，slot 1，正确)
+bit 16  (未列名)
+bit 15  send_initialization  ← 关键
+```
+
+**bit 15 = `send_initialization`** —— 这条命令是 **CMD0**，也就是那条要输出
+**80 个时钟**做初始化的命令。
+
+**所以 START 不清的原因很直接：80 个时钟需要卡时钟在跑才能发出来；
+卡时钟没跑，这 80 个时钟永远发不完，START 就永远不清。**
+随后所有命令都因为 START 占着而返回 `-EBUSY`。
+
+### 由此得出的结论
+
+**卡时钟仍然没有真正运行** —— 尽管 `clkena` 读回来是 `0x2`
+（bit1 = `cclk_enable` 已置位）。也就是说：
+
+- 寄存器层面"时钟已使能"；
+- 但时钟**没有真正进入卡时钟域**；
+- 无论是用 `update_clk_reg` 命令（走不完）还是用控制器复位（本轮换成这个）
+  来提交，都没能让它真正跑起来。
+
+这解释了此前所有的现象，也把问题**收敛到一处**：如何让 P4 的 SDMMC 卡时钟
+真正输出。
+
+### 本轮顺带补上的一个真实缺口
+
+驱动里只配了**输出**延迟相位（`sdmmc_ll_set_dout_delay_phase`），
+**输入采样相位从未配置**：
+
+```c
+sdmmc_ll_set_din_delay_phase(hw, SDMMC_LL_DELAY_PHASE_0, SDMMC_LL_SPEED_MODE_HS);
+```
+
+这个缺口是真的（EBE 正是输入被误采样的症状），已补上。但真机上 EBE 依旧
+出现 —— 说明在"卡时钟没跑"这个更大的问题面前，它还不是主因。保留该修复。
+
+### 下一步
+
+查"卡时钟为什么没真正跑起来"。可查的方向：
+
+1. `sdmmc_ll_select_clk_source(hw, SDMMC_CLK_SRC_DEFAULT)` 选的源是否真的在输出；
+2. 系统侧的时钟门控（`HP_SYS_CLKRST`）里是否有额外的 SDMMC 时钟使能位没打开
+   —— 本驱动只调了 `sdmmc_ll_enable_bus_clock(0, true)`；
+3. 对照 Espressif 的 `sd_host_setup()` 完整时钟初始化序列，逐条比对还差哪一步。

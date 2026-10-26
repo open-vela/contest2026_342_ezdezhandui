@@ -1367,6 +1367,17 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
   sdmmc_ll_set_dout_delay_phase(hw, SDMMC_LL_DELAY_PHASE_0,
                                 SDMMC_LL_SPEED_MODE_HS);
 
+  /* The input sampling phase matters as much as the output one, and was
+   * missing here. Without it the CIU samples the incoming CMD/DAT lines at an
+   * arbitrary point in the bit period, so a perfectly good response gets read
+   * with a bad end bit -- which is exactly RINTSTS bit 12, EBE (End Bit Error).
+   * On hardware that looked like "the companion never answers" when in fact the
+   * companion's answer was being misread.
+   */
+
+  sdmmc_ll_set_din_delay_phase(hw, SDMMC_LL_DELAY_PHASE_0,
+                               SDMMC_LL_SPEED_MODE_HS);
+
   nxsem_init(&priv->waitsem, 0, 0);
   wd_start(&priv->timeout, 0, esp_sdmmc_timeout,
            (wdparm_t)(uintptr_t)priv);

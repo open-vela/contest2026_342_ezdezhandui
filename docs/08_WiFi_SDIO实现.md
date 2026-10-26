@@ -1534,3 +1534,69 @@ cmd=a0010000 status=00000406 rintsts=00001000
 `esp_sdmmc_configpins()` 里用的 GPIO 矩阵信号号（`sdmmc_periph_signal` 一类）
 是下一个应当逐条核对的地方 —— 若号段选错，引脚会被配置成功能态却**没有真正
 连到 SDMMC 外设**，症状与现在完全吻合。
+
+## I.8 第 29 轮：**根因找到** —— slot 1 必须走 GPIO 矩阵，而本驱动从未做路由
+
+### 证据链（两处独立的官方定义互相印证）
+
+`components/esp_hal_sd/esp32p4/include/hal/sdmmc_ll.h`：
+
+```c
+#define SDMMC_LL_SLOT_SUPPORT_GPIO_MATRIX(SLOT_ID)    ((SLOT_ID == 0) ? 0 : 1)
+```
+
+即 **slot 0 不支持 GPIO 矩阵（走 IOMUX），slot 1 必须走 GPIO 矩阵**。
+
+`components/esp_hal_sd/esp32p4/include/soc/sdmmc_pins.h` 里则只有 slot 0 的
+IOMUX 引脚号，并直接写着一行注释：
+
+```c
+// SLOT1 doesn't go through IOMUX
+```
+
+### 而本驱动的引脚配置是这样的
+
+```c
+static void esp_sdmmc_configpins(void)
+{
+  esp_configgpio(priv->clk_pin, OUTPUT | DRIVE_3);
+  esp_configgpio(priv->cmd_pin, OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(priv->d0_pin,  OUTPUT | PULLUP | DRIVE_3);
+  ...
+}
+```
+
+**只有 `esp_configgpio()`，一次 `esp_gpio_matrix_out()` / `esp_gpio_matrix_in()`
+都没有。** 也就是说：引脚被配置成了"通用 GPIO 输出"，但 **SDMMC 外设的信号
+从来没有连到这些引脚上**。
+
+### 这一条解释了此前所有现象
+
+| 现象 | 解释 |
+|---|---|
+| CLK 不翻转（CMD0 的 80 时钟发不完） | 控制器在内部计数，但信号不出现在引脚上 |
+| `rintsts` 恒为 **EBE（结束位错误）** | 控制器从引脚回读的是引脚自身状态（上拉高），不是它自己发的波形 |
+| `clkena` 读回"已使能"却看不到时钟 | 寄存器层面一切正常，断点在 GPIO 矩阵这一跳 |
+| 对端（C6）完全收不到命令 | 命令根本没到线上 |
+| 从机侧日志毫无异常 | 它确实什么都没收到 |
+
+### 这也解释了为什么前几轮的排查屡屡"看似合理却无效"
+
+时钟提交、START 判断、采样相位、时钟源使能 —— 这些**都是真缺陷也都修对了**，
+但它们都在 GPIO 矩阵**之后**的环节。**只要信号出不了引脚，后面修得再对也看不到效果。**
+
+### 修复方向（下一轮第一件事）
+
+按 slot 1 走 GPIO 矩阵的要求，把六个信号分别路由到引脚，例如：
+
+```c
+esp_gpio_matrix_out(clk_pin, SDMMC_SLOT1_CLK_OUT_IDX, 0, 0);
+esp_gpio_matrix_in (cmd_pin, SDMMC_SLOT1_CMD_IN_IDX,  0);
+esp_gpio_matrix_out(cmd_pin, SDMMC_SLOT1_CMD_OUT_IDX, 0, 0);
+/* D0..D3 同理，每个方向各一条 */
+```
+
+还需要拿到 P4 上 SDMMC slot 1 各信号的**矩阵索引号**。
+本轮查过 `components/soc/esp32p4/include/soc/gpio_sig_map.h` —— 里面**没有**
+SDMMC 条目，所以索引应当来自别处（可能随 IO_MUX/矩阵的 P4 专属定义，
+或需要从 IDF 的 `sdmmc_periph.c` 信号表里取）。这是下一轮要解决的第一件事。

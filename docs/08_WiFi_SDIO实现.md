@@ -834,3 +834,55 @@ NuttX 构建定义了 `__KERNEL__`，`eh_frame.c` 因此走内核分支去找 Li
 改为**满足这个 include**：提供 `shim/asm/byteorder.h`，把小端转换定义成恒等
 （本目标是 RISC-V，小端）—— 与上游小端分支语义一致。
 加了这个 shim 之后，含 SDIO 的整机构建 **0 error**。
+
+## F.7 决定性发现：C6 一直卡在下载模式，从没跑过应用程序
+
+不猜了 —— 在 **P4 复位 C6 的同时**监听 `/dev/ttyUSB1`，抓到了 C6 的 ROM 启动日志：
+
+```
+ESP-ROM:esp32c6-20220919
+Build:Sep 19 2022
+rst:0x1 (POWERON),boot:0x4 (DOWNLOAD(USB/UART0/SDIO_FEI_FEO))
+waiting for download
+```
+
+关键两行：
+
+- **`boot:0x4 (DOWNLOAD(...))`** —— 复位时采样的 strapping 是 **下载模式**，
+  说明 **GPIO9（BOOT）在复位时是低电平**
+- **`waiting for download`** —— ROM 引导程序停在下载模式等主机发数据，
+  **根本没有跳转到 flash 里的应用程序**
+
+再验证一次：`esptool --before no_reset chip_id` **仍然能连上**
+（`Chip is ESP32-C6FH4 (QFN32) (revision v0.2)`）。芯片在复位后保持可连接，
+就是"还在 ROM 下载模式"的确证。
+
+**所以之前所有 -110 的解释都对齐了**：SDIO 从机固件确实烧进去了
+（`Hash of data verified`），但它**一次都没有运行过**。指望一个停在 ROM
+里的芯片应答 CMD5 是不可能的。
+
+### 这不是软件能改的
+
+试过用 `--after watchdog_reset` 触发一次不依赖 RTS 的复位，无效
+（esptool 仍报 "Hard resetting via RTS pin"，而该脚未接）。
+
+原理图上 `C5_BOOT` 只出现在**编程排针**附近（旁边是一个 3V3 的可选连接），
+**没有接到 P4 的任何 GPIO** —— 原理图里 P4 到协处理器的信号只有
+`P4_WAKEUP_C5` 一条。所以 P4 无法把 BOOT 拉高。
+
+ESP32-C6 的 GPIO9 在复位时默认启用内部上拉，**松开按键后理应回到高电平**。
+它现在仍是低电平，最可能的原因是：
+
+1. **BOOT 键仍被按住**（刷写时按住后没有松开）；
+2. 或者该脚的按键/跳线处于闭合状态。
+
+### 需要你做的一步
+
+**松开 BOOT 键**（确认它弹起），然后**给板子断电重新上电**。
+
+之后 C6 的 ROM 日志应该变成类似
+`boot:0x8 (SPI_FAST_FLASH_BOOT)`，那就说明进应用了。
+再复位一次 P4，`esp_hosted_sdio` 就应该能枚举到它。
+
+> 这一条把"引脚映射对不对"这个问题推后了：先让 C6 真的跑起来，
+> 再看 SDIO 链路 —— 之前的 -110 里混着"芯片没启动"这个更大的问题。

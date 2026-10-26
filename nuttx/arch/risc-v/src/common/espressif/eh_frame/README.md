@@ -38,6 +38,17 @@
 `<stdint.h>` / `<stddef.h>`）。它放在 `shim/` 下并**排在组件自身 include 之后**，
 NuttX 也没有别处会找 `linux/types.h`，所以影响范围限于本组件。
 
+### 另一个 shim：`shim/asm/byteorder.h`
+
+`eh_frame.c` 的字节序辅助函数第一分支是
+`#ifdef __KERNEL__ -> #include <asm/byteorder.h>`（Linux 内核专用头），
+而 **NuttX 构建会定义 `__KERNEL__`**，于是走进了这个分支。
+
+尝试过对源文件单独加 `-U__KERNEL__`，但该选项没有出现在生成的编译命令行里。
+改成**满足这个 include**：本目标是 RISC-V（小端），所以
+`cpu_to_le16`/`le16_to_cpu` 就是恒等变换 —— 与上游小端分支的语义完全一致。
+比跟宏较劲更稳，也不用动源码。
+
 ## 独立验证
 
 帧层的正确性不需要板子：

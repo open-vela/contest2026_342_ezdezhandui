@@ -30,6 +30,20 @@
 > 收尾卡住的两个真因都在自检程序（`mq_msgsize` 设大导致每次 `mq_receive` 直接
 > `EMSGSIZE`；发流循环永远只用 `buffers[0]` 重复入队）—— 驱动侧一直是对的。
 >
+> **第 16 轮 —— C6 已刷入 SDIO 固件，但枚举仍未通**：
+> C6 进入下载模式（识别为 **ESP32-C6FH4 (QFN32) rev v0.2**），按
+> `flasher_args.json` 的真实布局烧入 4 个镜像（bootloader@0x0、
+> partition-table@0x8000、otadata@0xd000、app@0x10000），
+> `Hash of data verified`。
+> **固件确实换了**：刷写前 C6 的 UART 每 5 秒吐一次串口传输统计，刷写后
+> **完全静默** —— 跑起来的正是 SDIO 版本。
+> **但 P4 仍枚举不到**：探测窗口放宽到 20 次 × 250 ms = 5 秒，全部 `-110`。
+> 剩余怀疑对象：① C6 侧 SDIO 引脚（固件用默认 18/19/20/21/22/23，
+> 本板实际接线始终未获原理图级确认）；② 从机固件
+> `CONFIG_EH_TRANSPORT_CP_SDIO_GPIO_RESET=-1`。详见 `docs/08` 附录 F。
+>
+> 顺带修掉一个方法论问题：原来只探一次，测的是"C6 启动多快"而非"链路通不通"。
+>
 > **第 13 轮 —— C6 的 SDIO 从机固件已构建完成**：
 > 用 ESP-IDF 5.5.6 + `esp-hosted-mcu` 的 `examples/wifi/sta/cp` 构建出
 > `eh_cp_wifi_sta.bin`（**1,094,464 B**，`CONFIG_IDF_TARGET="esp32c6"`、

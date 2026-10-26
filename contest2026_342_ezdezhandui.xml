@@ -54,6 +54,7 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_sdio_cfg.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_common_sdio_cfg.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_frame.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_frame.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_tlv_tags.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/include/eh_tlv_tags.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/shim/asm/byteorder.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/shim/asm/byteorder.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/shim/linux/types.h" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/shim/linux/types.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/eh_frame/src/eh_frame.c" dest="nuttx/arch/risc-v/src/common/espressif/eh_frame/src/eh_frame.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_adc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_adc.c"/>

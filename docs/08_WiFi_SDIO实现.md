@@ -743,3 +743,94 @@ nuttx/arch/risc-v/src/common/espressif/eh_frame/
 两处都是**构建系统层面**的适配，没有改动上游一个字节。
 
 结果：目标编译 **0 error**（产出 7,876 B 目标文件），默认配置构建同样 0 error。
+
+---
+
+# 附录 F：C6 已刷入 SDIO 固件 —— 但枚举仍未通（2026-10-26 傍晚）
+
+## F.1 刷写成功
+
+C6 进入下载模式后，esptool 识别为：
+
+```
+Chip is ESP32-C6FH4 (QFN32) (revision v0.2)
+```
+
+按 `build/flasher_args.json` 的真实布局烧入（**注意不是单镜像烧 0x0**）：
+
+| 偏移 | 镜像 |
+|---|---|
+| `0x0` | `bootloader/bootloader.bin` |
+| `0x8000` | `partition_table/partition-table.bin` |
+| `0xd000` | `ota_data_initial.bin` |
+| `0x10000` | `eh_cp_wifi_sta.bin` |
+
+```
+Wrote 1094464 bytes (628034 compressed) at 0x00010000 in 15.6 seconds
+Hash of data verified.
+```
+
+## F.2 固件确实换了 —— 有证据
+
+刷写前，C6 的 UART 每 5 秒吐一次**串口传输**统计：
+
+```
+stats: slave StaRxQLoad: 0
+  serial : in: 0 rsp: 0 evt: 0
+```
+
+刷写后再读 `/dev/ttyUSB1`：**完全静默**。串口传输的统计消失了，
+说明跑起来的正是 SDIO 传输版本。
+
+## F.3 但 P4 仍然枚举不到（-110）
+
+把探测窗口放宽到 **20 次 × 250 ms = 5 秒**，全部返回 `-110`：
+
+```
+esp_hosted_sdio: companion reset pulsed (GPIO54), holding enable for 200 ms
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: verid=5342270a status=00000406 cdetect=00000000 clkena=00000002
+esp_hosted_sdio: probe 1/20 -> -110, retrying
+...
+```
+
+> 顺带修掉一个方法论问题：原来只探一次，那测的是"C6 启动多快"而不是"链路通不通"。
+> 现在是有界重试窗口 —— 结论（-110）因此才是可信的。
+
+## F.4 剩下的两个怀疑对象（按可疑度）
+
+**1）C6 侧 SDIO 引脚可能不匹配本板接线。**
+构建用的从机固件是 esp-hosted 的**默认 C6 引脚**：
+
+```
+CONFIG_EH_TRANSPORT_CP_SDIO_PIN_CMD=18
+CONFIG_EH_TRANSPORT_CP_SDIO_PIN_CLK=19
+CONFIG_EH_TRANSPORT_CP_SDIO_PIN_D0=20   D1=21   D2=22   D3=23
+```
+
+这组值是官方 P4+C6 参考设计的默认。但**本板把这 6 根线接到 C6 的哪几个脚，
+我始终没有原理图级确认**（原理图文本层里只看到 P4 侧的 `SD2_*`，
+协处理器侧只出现 `C5_IO2..C5_IO6`、`C5_U0TXD/RXD`、`C5_BOOT`、`C5_CHIP_PU`、`C5_EN`）。
+如果本板用的是另一组引脚，改 `CONFIG_EH_TRANSPORT_CP_SDIO_PIN_*` 重新构建即可。
+
+**2）从机固件的复位脚没配。**
+`sdkconfig` 里 `CONFIG_EH_TRANSPORT_CP_SDIO_GPIO_RESET=-1`，
+即从机侧没有配置复位脚。P4 侧我是用 GPIO54 拉低再拉高来复位 C6 的
+（原理图确认 GPIO54 → `C5_EN`）。这一条是否足够让从机完成 SDIO 初始化的
+复位序列，还没有证据。
+
+## F.5 下一步（成本从低到高）
+
+1. **用万用表/示波器核对** C6 的 GPIO18/19/20/21/22/23 是否真的接到 P4 的
+   SD2_CMD/CLK/D0..D3 —— 这一步能直接判定是不是引脚问题；
+2. 若引脚不同，改 `CONFIG_EH_TRANSPORT_CP_SDIO_PIN_*` 重新构建 C6 固件再烧；
+3. 核对从机是否需要配 `GPIO_RESET`。
+
+## F.6 顺带修掉的一个真实编译问题
+
+投放帧层后目标编译报 `asm/byteorder.h: No such file or directory`：
+NuttX 构建定义了 `__KERNEL__`，`eh_frame.c` 因此走内核分支去找 Linux 专用头。
+源文件级 `-U__KERNEL__` 没有出现在生成的编译命令行里（试过，无效），
+改为**满足这个 include**：提供 `shim/asm/byteorder.h`，把小端转换定义成恒等
+（本目标是 RISC-V，小端）—— 与上游小端分支语义一致。
+加了这个 shim 之后，含 SDIO 的整机构建 **0 error**。

@@ -105,6 +105,13 @@
 
 #define ESP_HOSTED_SDIO_BLOCK_SIZE 512
 
+/* How long to keep asking. The companion boots its own firmware before it can
+ * answer, so "first probe failed" says nothing on its own.
+ */
+
+#define ESP_HOSTED_SDIO_PROBE_TRIES       20
+#define ESP_HOSTED_SDIO_PROBE_INTERVAL_MS 250
+
 /* Defaults for the companion enable line.
  *
  * These mirror ESPRESSIF_HOSTED_SDIO_EN_GPIO / _EN_DELAY_MS so that the driver
@@ -288,7 +295,34 @@ int esp_hosted_sdio_initialize(void)
            HOSTED_TAG, dbg.verid, dbg.status, dbg.cdetect, dbg.clkena);
   }
 
-  ret = sdio_probe(sdio);
+  /* Give the companion a real chance to come up before declaring failure.
+   *
+   * The module has to boot its own RTOS and start the SDIO slave before it can
+   * answer CMD5, and that takes appreciably longer than the enable-to-first-
+   * command gap. Probing once right after the enable delay therefore measures
+   * how fast the companion boots rather than whether the link works at all.
+   * Retry for a bounded window instead.
+   */
+
+  {
+    int attempt;
+
+    for (attempt = 1; attempt <= ESP_HOSTED_SDIO_PROBE_TRIES; attempt++)
+      {
+        ret = sdio_probe(sdio);
+        if (ret >= 0)
+          {
+            break;
+          }
+
+        syslog(LOG_INFO, "%s: probe %d/%d -> %d, retrying\n",
+               HOSTED_TAG, attempt, ESP_HOSTED_SDIO_PROBE_TRIES, ret);
+
+        esp_sdmmc_bus_reset();
+        nxsig_usleep(ESP_HOSTED_SDIO_PROBE_INTERVAL_MS * 1000);
+      }
+  }
+
   if (ret < 0)
     {
       g_hosted_state   = ESP_HOSTED_SDIO_FAILED;

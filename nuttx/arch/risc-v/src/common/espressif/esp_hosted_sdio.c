@@ -86,6 +86,7 @@
 #include "esp_gpio.h"
 #include "esp_hosted_sdio.h"
 #include "esp_sdmmc.h"
+#include "eh_frame.h"
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
 
@@ -105,11 +106,17 @@
 
 #define ESP_HOSTED_SDIO_BLOCK_SIZE 512
 
-/* How long to keep asking. The companion boots its own firmware before it can
- * answer, so "first probe failed" says nothing on its own.
+/* How long to keep asking for the companion before giving up.
+ *
+ * The companion boots its own firmware before it can answer, so a single probe
+ * right after the enable delay measures how fast it boots rather than whether
+ * the link works -- hence a retry window. But this runs during boot, and every
+ * millisecond here is a millisecond the console is not up, so the window is
+ * deliberately short: ~1.5 s is comfortably more than a C6 needs to come up,
+ * and an absent companion costs the user 1.5 s rather than 5.
  */
 
-#define ESP_HOSTED_SDIO_PROBE_TRIES       20
+#define ESP_HOSTED_SDIO_PROBE_TRIES       12
 #define ESP_HOSTED_SDIO_PROBE_INTERVAL_MS 250
 
 /* Defaults for the companion enable line.
@@ -210,12 +217,19 @@ int esp_hosted_sdio_initialize(void)
        * bus.
        */
 
-      esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
-      nxsig_usleep(50000);
+      /* Hold the enable high and do NOT pulse it.
+       *
+       * Pulsing reboots the companion, and a module that is mid-boot drives its
+       * SDIO pins in an undefined state -- which on this bus shows up as the
+       * host controller being unable to complete even the broadcast CMD0, i.e.
+       * -EBUSY rather than the "no card answered" -ETIMEDOUT. Since the module
+       * is already running, leaving it alone and simply asking is the right
+       * first move; a reset is only wanted if the link is known wedged.
+       */
 
       esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
       syslog(LOG_INFO,
-             "%s: companion reset pulsed (GPIO%d), holding enable for %d ms\n",
+             "%s: companion enable held high (GPIO%d), settling %d ms\n",
              HOSTED_TAG, CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO,
              CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS);
 
@@ -389,10 +403,38 @@ int esp_hosted_sdio_initialize(void)
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;
 
-  syslog(LOG_INFO,
-         "%s: card function ready (FN1, %u-byte blocks) -- ESP-Hosted "
-         "framing is not implemented yet\n",
-         HOSTED_TAG, (unsigned)ESP_HOSTED_SDIO_BLOCK_SIZE);
+  /* Bring up the frame layer, which is the wire format both sides speak.
+   *
+   * These are the settings esp-hosted's own host port uses for an MCU host on
+   * SDIO: V1 headers with the checksum enabled. Initialising it here means the
+   * layer is live and validated, not vendored dead code waiting for a caller.
+   */
+
+  {
+    eh_frame_cfg_t ehcfg = EH_FRAME_CFG_HOST_MCU_SDIO_DEFAULT;
+
+    if (eh_frame_init(&ehcfg) != ESP_OK)
+      {
+        syslog(LOG_ERR, "%s: frame layer init failed\n", HOSTED_TAG);
+        goto bringup_failed;
+      }
+
+    syslog(LOG_INFO,
+           "%s: card function ready (FN1, %u-byte blocks), frame layer up "
+           "(hdr v%u, %u-byte headers, checksum %s)\n",
+           HOSTED_TAG, (unsigned)ESP_HOSTED_SDIO_BLOCK_SIZE,
+           ehcfg.hdr_version, (unsigned)eh_frame_hdr_size(),
+           eh_frame_checksum_enabled() ? "on" : "off");
+  }
+
+  /* The data path itself is not wired yet: moving frames over SDIO needs the
+   * CMD53 buffer protocol (packet-length and token registers) on top of the
+   * card function brought up above. That work is deliberately left until the
+   * companion answers on this bus -- see docs/08 appendix F.
+   */
+
+  g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
+  g_hosted_errcode = 0;
 
   return OK;
 

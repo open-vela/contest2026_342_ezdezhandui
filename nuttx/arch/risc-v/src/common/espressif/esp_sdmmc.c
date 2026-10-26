@@ -522,6 +522,45 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
       }
   }
 
+  /* Re-issue any reset that did not complete while there was no card clock.
+   *
+   * The FIFO/DMA/controller resets are performed during initialisation, before
+   * any clock is programmed. Their self-clearing bits are synchronised in the
+   * card-clock domain, so with no card clock they can simply never clear --
+   * CTRL.fifo_reset then stays 1 for good, and while it does the CIU cannot
+   * finish a single command. On hardware that shows up as "FIFO reset did not
+   * complete (ctrl=00000002)" and then every command returning -EBUSY.
+   *
+   * Now that the clock is running the same reset does complete, so retry it.
+   */
+
+  if (hw->ctrl.fifo_reset || hw->ctrl.dma_reset || hw->ctrl.controller_reset)
+    {
+      clock_t rstart = clock_systime_ticks();
+
+      syslog(LOG_WARNING,
+             "%s: reset did not clear without a card clock (ctrl=%08" PRIx32
+             "), retrying now that the clock runs\n", "esp_sdmmc",
+             hw->ctrl.val);
+
+      sdmmc_ll_reset_controller(hw);
+      sdmmc_ll_reset_dma(hw);
+      sdmmc_ll_reset_fifo(hw);
+
+      while (!sdmmc_ll_is_controller_reset_done(hw) ||
+             !sdmmc_ll_is_dma_reset_done(hw) ||
+             !sdmmc_ll_is_fifo_reset_done(hw))
+        {
+          if (clock_systime_ticks() - rstart > SDMMC_CMDTIMEOUT)
+            {
+              syslog(LOG_ERR,
+                     "%s: reset still stuck after the clock came up "
+                     "(ctrl=%08" PRIx32 ")\n", "esp_sdmmc", hw->ctrl.val);
+              break;
+            }
+        }
+    }
+
   mcinfo("slot=%u rate=%d div=%" PRIu32 "\n", priv->slot, (int)rate, div);
 }
 
@@ -557,7 +596,30 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev)
         }
     }
 
-  sdmmc_ll_reset_fifo(hw);
+  /* Only reset the FIFO once the card clock is running.
+   *
+   * The FIFO reset self-clearing bit is synchronised in the card-clock domain,
+   * so issuing it with no card clock leaves CTRL.fifo_reset set forever. That
+   * is not merely cosmetic: while fifo_reset is 1 the CIU cannot execute any
+   * command -- including the update_clk_reg command that would bring the card
+   * clock up. The two then deadlock, and the controller never issues a command
+   * again (every probe returns -EBUSY with rintsts stuck at 0).
+   *
+   * At initialisation the clock has not been programmed yet, so the FIFO reset
+   * is deferred; by the time esp_sdmmc_clock() runs and this is called again,
+   * there is a clock and the reset completes normally.
+   */
+
+  if (hw->clkena.val == 0)
+    {
+      syslog(LOG_INFO, "%s: deferring FIFO reset until a card clock exists\n",
+             "esp_sdmmc");
+    }
+  else
+    {
+      sdmmc_ll_reset_fifo(hw);
+    }
+
   start = clock_systime_ticks();
   while (!sdmmc_ll_is_fifo_reset_done(hw))
     {

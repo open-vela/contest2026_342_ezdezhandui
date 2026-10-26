@@ -1265,3 +1265,66 @@ waiting for download
 
 **需要：松开 BOOT 键 → 断电重新上电（或按一下 RESET）。**
 之后 C6 才会跑起 DEBUG 版，我们才能看到它在 P4 探测时的 SDIO 行为。
+
+---
+
+# 附录 I：C6 真正跑起来后暴露的**三方死锁**（2026-10-26 夜）
+
+C6 跑起 DEBUG 版之后（esptool 连不上、串口出现 `D` 前缀日志），P4 侧的日志
+第一次把完整的因果链摆出来了：
+
+```
+esp_sdmmc: deferring FIFO reset until a card clock exists   ← 本轮的修复生效
+esp_sdmmc: clock update did not complete (cmd=a0212000)      ← 卡时钟提交失败
+esp_sdmmc: previous command still pending after 100 ticks (cmd=a0212000 ...)
+esp_hosted_sdio: probe 1/12 -> -16
+esp_sdmmc: FIFO reset did not complete (ctrl=00000012 ...)
+esp_sdmmc: reset still stuck after the clock came up (ctrl=00000012)
+```
+
+`cmd=a0212000` 各位：bit31 `start_command` + bit29 `card_num=1` +
+bit21 `update_clk_reg` + bit13 `wait_complete` + bit5 `use_hold_reg`
+—— 字段全对（附录 G.3），**但它就是走不完**。
+
+## I.1 三方互相锁死
+
+DesignWare MSHC 上这三件事互为前提：
+
+1. **FIFO 复位**（`CTRL.fifo_reset` 自清）需要**卡时钟在跑**
+   —— 它的自清位在卡时钟域同步；
+2. **卡时钟**要真正生效，必须发一条 `update_clk_reg=1` 的命令把它从 BIU
+   提交到卡时钟域（附录 C）；
+3. **任何命令**（包括第 2 条）都要求 **CIU 可用**，而 `CTRL.fifo_reset` 为 1
+   时 CIU 跑不了命令。
+
+于是：初始化时"先复位、后配时钟"的顺序，会让第 1 步在**没有时钟**时发出
+（寄存器写进去了、`clkena` 读回来也是 2），但它**永远不会自清**；
+接着第 2 步因为第 1 步卡住而失败；第 3 步从此再也发不出命令。
+
+**本轮的修复（已做）**：`esp_sdmmc_reset()` 里，**只有当卡时钟已使能时才复位
+FIFO**，否则延后 —— 真机上确实看到 `deferring FIFO reset until a card clock
+exists`，说明这一步按预期生效了。
+
+**但还不够**：后续 `esp_sdmmc_bus_reset()` 再次复位时，`clkena` 虽读回非 0，
+可它**从未真正提交到卡时钟域**（提交命令就是失败的那条），所以 FIFO 复位
+依旧卡在 `ctrl=00000012`。判断依据是自清的 `fifo_reset` 位在 `ctrl` 里读回为 1。
+
+## I.2 因此正确的修法是**调整初始化顺序**
+
+不能"先复位、后配时钟"。应当：
+
+1. 使能外设总线时钟 / 解除控制器复位（BIU 域，不需要卡时钟）；
+2. **先**配置并提交卡时钟（`CLKDIV`/`CLKENA` + `update_clk_reg` 命令）
+   —— 此时 FIFO 尚未被复位，CIU 可用；
+3. **再**做 FIFO 复位（这时卡时钟已在跑，自清会成功）；
+4. 之后才允许发正常命令。
+
+本轮的"延后 FIFO 复位"只是把第 1 步挪开，第 2 步之前仍有一次不带时钟的
+`reset_controller`/`reset_dma`，而且提交时钟那一步本身失败——所以还需要
+把顺序整体理顺。**这是下一轮的第一件事。**
+
+## I.3 附带收获：从机侧 DEBUG 日志确认可用
+
+C6 的 DEBUG 日志确实打出来了（`D (518) intr_alloc: ...`），说明"让从机开口"
+这条诊断通道是通的。本轮 C6 侧没有报错，也没有收到命令的迹象 —— 这与
+"主机根本没把命令发出去"（I.1 的死锁）是一致的，**不构成从机侧的问题证据**。

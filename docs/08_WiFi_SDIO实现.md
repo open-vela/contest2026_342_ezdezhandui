@@ -605,3 +605,63 @@ tools/build_flash/c6_hosted/flash_c6.sh /dev/ttyUSB1
 `getting-started-mcu.md` 的 Co-processor connections 表）。
 板子把这 6 根线接到哪里，我**没有原理图级的确认**（原理图文本层里只看到
 P4 侧的 SD2_*）。如果烧完仍无应答，下一步就是用万用表核对这 6 个引脚。
+
+## E.7 第 2 层的线格式（已抄录，实现时照此即可）
+
+esp-hosted 的帧层在 `common/eh_frame`（430 行，纯 C，只依赖 `esp_err_t`，
+移植成本很低）。配置由 `eh_frame_init()` 给出，MCU+SDIO 主机的默认是：
+
+```c
+EH_FRAME_CFG_HOST_MCU_SDIO_DEFAULT = {
+    .transport        = EH_TRANSPORT_SDIO,
+    .max_buf_size     = ESP_TRANSPORT_SDIO_MAX_BUF_SIZE,
+    .hdr_version      = ESP_HOSTED_HDR_VERSION_V1,
+    .checksum_enabled = 1,
+}
+```
+
+即：**V1 头 + 校验和开启**。
+
+### V1 线上头（`struct esp_payload_header`，`common/eh_common/include/eh_common_header.h`）
+
+| 偏移 | 字段 | 位宽 | 说明 |
+|---|---|---|---|
+| 0 | `if_type` | 4 bit | 接口类型（WiFi STA / AP / BT / 私有 …）|
+| 0 | `if_num` | 4 bit | 同一类型下的接口号 |
+| 1 | `flags` | 8 | 帧标志 |
+| 2 | `len` | 16 | 负载长度 |
+| 4 | `offset` | 16 | 负载在缓冲里的偏移（通常 = 头长 12）|
+| 6 | `checksum` | 16 | 校验和（`checksum_enabled` 时有效）|
+| 8 | `seq_num` | 16 | 序号 |
+| 10 | `throttle_cmd` | 2 bit | 流控命令 |
+| 10 | `reserved2` | 6 bit | 保留 |
+| 11 | union { `reserved3` / `hci_pkt_type` / `priv_pkt_type` } | 8 | **必须放最后**（HCI 包类型要靠它）|
+
+**头长 = 12 字节**（`sizeof(struct esp_payload_header)`）。
+
+版本探测：`buf[0] == ESP_HOSTED_HDR_V2_MAGIC` → V2，否则 V1
+（`eh_frame_detect_version()`）。V2 头是 `eh_header_v2_t`，带 magic 与
+`hdr_version`，`offset` 同样指向负载起点。
+
+### 校验和
+
+`uint16_t eh_frame_checksum(const uint8_t *buf, uint16_t len)` —— 对**整帧**
+（含头）计算。解码侧校验失败返回 `EH_FRAME_CORRUPT`，长度越界返回
+`EH_FRAME_TOOBIG`，NULL/过短/偏移非法返回 `EH_FRAME_INVALID`。
+
+### 解码结果结构
+
+`eh_frame_decode()` 填充 `interface_buffer_handle_t`：
+`seq_num / payload / throttle_cmd / frag_seq / tlv_offset`。
+
+### NuttX 侧实现建议（低耦合）
+
+`eh_frame` 是纯逻辑，与总线无关。建议：
+
+1. 把它作为**独立组件**投放（`nuttx/arch/risc-v/src/common/espressif/eh_frame/`
+   或单独目录），不改一行上游代码；
+2. 传输层（SDIO）与帧层之间只通过「收一帧 / 发一帧」两个回调耦合；
+3. 帧层用主机侧 tarball 编译一个**本地单元测试**做 encode→decode 往返 ——
+   这条路不依赖 C6，可在还没烧固件时就验证正确性。
+
+这样第 2 层的正确性有独立证据，与"C6 是否能应答"解耦。

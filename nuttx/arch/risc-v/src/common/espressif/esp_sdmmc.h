@@ -59,6 +59,9 @@ struct esp_sdmmc_debug_s
   uint32_t rintsts;               /* Raw interrupt status                 */
   uint32_t bmod;                  /* Bus mode                             */
   uint32_t cmdarg;                /* Command argument as latched          */
+  uint32_t sys_clk_ctrl1;         /* HP_SYS_CLKRST.soc_clk_ctrl1          */
+  uint32_t peri_clk_ctrl01;       /* HP_SYS_CLKRST.peri_clk_ctrl01        */
+  uint32_t peri_clk_ctrl02;       /* HP_SYS_CLKRST.peri_clk_ctrl02        */
 };
 
 /****************************************************************************

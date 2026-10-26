@@ -95,6 +95,7 @@
 
 #include <hal/clk_gate_ll.h>
 #include <esp_rom_gpio.h>
+#include <soc/hp_sys_clkrst_struct.h>
 #include <soc/gpio_sig_map.h>
 
 /* The LL's clock/reset helpers expand this macro around a register update.
@@ -1619,6 +1620,15 @@ void esp_sdmmc_debug(FAR struct esp_sdmmc_debug_s *dbg)
   dbg->rintsts = hw->rintsts.val;
   dbg->bmod    = hw->bmod.val;
   dbg->cmdarg  = hw->cmdarg;
+
+  /* The system-clock block decides whether the SDMMC and the SDIO (slot 1)
+   * clock actually exist, and nothing in the SDMMC register window shows it.
+   * Reading these is how "is the clock enabled at all" stops being an inference.
+   */
+
+  dbg->sys_clk_ctrl1   = HP_SYS_CLKRST.soc_clk_ctrl1.val;
+  dbg->peri_clk_ctrl01 = HP_SYS_CLKRST.peri_clk_ctrl01.val;
+  dbg->peri_clk_ctrl02 = HP_SYS_CLKRST.peri_clk_ctrl02.val;
 }
 
 /****************************************************************************

@@ -319,6 +319,10 @@ int esp_hosted_sdio_initialize(void)
     syslog(LOG_INFO, "%s: ctrl=%08" PRIx32 " bmod=%08" PRIx32
            " rintsts=%08" PRIx32 " cmdarg=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.ctrl, dbg.bmod, dbg.rintsts, dbg.cmdarg);
+    syslog(LOG_INFO, "%s: CLKRST sys=%08" PRIx32 " peri01=%08" PRIx32
+           " peri02=%08" PRIx32 "\n",
+           HOSTED_TAG, dbg.sys_clk_ctrl1, dbg.peri_clk_ctrl01,
+           dbg.peri_clk_ctrl02);
   }
 
   /* Give the companion a real chance to come up before declaring failure.

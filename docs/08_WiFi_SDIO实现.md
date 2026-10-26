@@ -665,3 +665,50 @@ EH_FRAME_CFG_HOST_MCU_SDIO_DEFAULT = {
    这条路不依赖 C6，可在还没烧固件时就验证正确性。
 
 这样第 2 层的正确性有独立证据，与"C6 是否能应答"解耦。
+
+## E.8 第 2 层帧格式：**已经有可执行的验证证据**（不依赖 C6）
+
+把上游 `eh_frame.c`（一行未改）在主机上编译起来，配上往返测试：
+
+```sh
+tools/test/eh_frame/run.sh /tmp/esp-hosted-mcu
+```
+
+```
+hdr_version=1 checksum_enabled=1 hdr_size=12
+encoded hdr_len=12
+checksum stored=0x0250 computed(field zeroed)=0x0250
+decode=0 payload_len=8 seq=0x1234 if_type=1 throttle=3
+corrupted decode=2
+RESULT: all checks passed
+```
+
+这条测试的价值在于：**帧层的正确性与"C6 是否应答"完全解耦** ——
+不需要板子、不需要 SDIO、不需要从机固件，随时可以跑。
+
+### 测试同时抓出两个真实的接口约定（写下来免得再踩）
+
+**1）`eh_frame_encode()` 要求负载已经在缓冲区里。**
+`encode_v1()` 对 `sizeof(hdr) + payload_len` 计算校验和，所以如果先把空缓冲区
+编码、再 memcpy 负载进去，校验和实际覆盖的是一段还不存在的负载 ——
+**每一帧都会在对端校验失败**。正确顺序是先把负载写到 `buf + hdr_len`，再 encode。
+
+> 这个错误在本测试里第一次跑就复现了（`checksum mismatch` 配上
+> `decode=2`），说明测试确实咬得住东西，不是走过场。
+
+**2）校验和是在"校验和字段本身为 0"的前提下算的。**
+`encode_v1()` 先 `memset` 头（此时 `buf[6..7] == 0`）再求和，最后才写回字段。
+所以校验方**必须先把该字段清零再求和**，否则等于在求和里包含了被校验的值。
+
+### 已核对无误的部分
+
+- V1 头就是 **12 字节**，且逐字节偏移与 E.7 抄录的表完全一致
+  （if_type:4|if_num:4 / flags / len(le16) / offset(le16) / checksum(le16) /
+  seq_num(le16) / throttle:2|rsvd:6 / union 字节）
+- `if_type / if_num / seq_num / throttle_cmd / pkt_type / payload` 全部往返一致
+- 负载被篡改后解码返回 `EH_FRAME_CORRUPT`（不是静默接受）
+- `eh_frame_detect_version()` 版本探测规则与 E.7 记录一致
+
+**交付收录**：`tools/test/eh_frame/`（测试 + 三个最小 shim + `run.sh`）。
+shim 只有 `esp_err.h` / `linux/types.h` / `sdkconfig.h` 三个头，
+上游源码保持原样。

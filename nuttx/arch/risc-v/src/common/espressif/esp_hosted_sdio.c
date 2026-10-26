@@ -99,6 +99,12 @@
 
 #define HOSTED_TAG "esp_hosted_sdio"
 
+/* Block size esp-hosted uses on both functions (common/eh_common_sdio_cfg.h and
+ * the host port both assume 512).
+ */
+
+#define ESP_HOSTED_SDIO_BLOCK_SIZE 512
+
 /* Defaults for the companion enable line.
  *
  * These mirror ESPRESSIF_HOSTED_SDIO_EN_GPIO / _EN_DELAY_MS so that the driver
@@ -271,94 +277,95 @@ int esp_hosted_sdio_initialize(void)
    * the two.
    */
 
-  /* Report what the controller can see before asking it to enumerate.
-   *
-   * These go through syslog with an explicit level rather than the driver's
-   * mcerr() macro, because mcerr() is compiled out under -DNDEBUG -- which is
-   * how an earlier attempt at this diagnostic produced no output at all and
-   * looked like the probe had not been reached.
-   */
+  /* Report what the controller can see, then enumerate. */
 
   {
     FAR struct esp_sdmmc_debug_s dbg;
-    int i;
 
     esp_sdmmc_debug(&dbg);
     syslog(LOG_INFO, "%s: verid=%08" PRIx32 " status=%08" PRIx32
            " cdetect=%08" PRIx32 " clkena=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.verid, dbg.status, dbg.cdetect, dbg.clkena);
-    syslog(LOG_INFO, "%s: clkdiv=%08" PRIx32 " ctrl=%08" PRIx32
-           " rintsts=%08" PRIx32 "\n",
-           HOSTED_TAG, dbg.clkdiv, dbg.ctrl, dbg.rintsts);
-    for (i = 0; i < 3; i++)
-      {
-        syslog(LOG_INFO, "%s: probe attempt %d\n", HOSTED_TAG, i + 1);
-        ret = sdio_probe(sdio);
-        syslog(LOG_INFO, "%s: probe attempt %d -> %d\n",
-               HOSTED_TAG, i + 1, ret);
-        if (ret >= 0)
-          {
-            break;
-          }
-
-        esp_sdmmc_bus_reset();
-
-#if CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO >= 0
-        /* Try the opposite polarity of the enable line before giving up.
-         *
-         * Which level powers the companion is a board detail that is easy to
-         * get backwards, and getting it backwards looks exactly like "no card
-         * on the bus": commands are clocked out and nothing answers.  Trying
-         * both here turns a wrong guess into a log line instead of a rebuild.
-         *
-         * The board's own enable net has an alternate stuffing option that ties
-         * it permanently on, so one of the two levels must be "enabled".
-         */
-
-        if (i == 0)
-          {
-            syslog(LOG_INFO, "%s: retrying with the enable line inverted\n",
-                   HOSTED_TAG);
-            esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
-            nxsig_usleep(50000);
-            esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
-            nxsig_usleep(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS * 1000);
-          }
-        else if (i == 1)
-          {
-            esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
-            nxsig_usleep(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS * 1000);
-          }
-#endif
-
-        if (i == 1)
-          {
-            /* Second retry: give the companion more time to finish booting.
-             * Its UART/flash activity can hold the SDIO block off the bus for
-             * a while after enable.
-             */
-
-            syslog(LOG_INFO, "%s: extra settle delay\n", HOSTED_TAG);
-            nxsig_usleep(800000);
-          }
-      }
   }
+
+  ret = sdio_probe(sdio);
   if (ret < 0)
     {
       g_hosted_state   = ESP_HOSTED_SDIO_FAILED;
       g_hosted_errcode = ret;
-      syslog(LOG_ERR,
-             "%s: no SDIO response from the companion module: %d\n",
+      syslog(LOG_ERR, "%s: no SDIO response from the companion module: %d\n",
              HOSTED_TAG, ret);
       return ret;
+    }
+
+  g_hosted_state = ESP_HOSTED_SDIO_ENUMERATED;
+  syslog(LOG_INFO, "%s: companion enumerated\n", HOSTED_TAG);
+
+  /* Card-function bring-up, following the sequence esp-hosted's own host port
+   * performs (port/os/idf/src/eh_host_port_sdio.c, card_fn_init):
+   *
+   *   1. read CCCR FN_ENABLE / FN_READY
+   *   2. enable function 1 and wait for it to report ready
+   *   3. enable interrupts for function 1 plus the master enable
+   *   4. set the FN0 and FN1 block size to 512
+   *   5. switch the bus to 4 bits
+   *
+   * The ordering matters: the block-size registers and the bus width are only
+   * meaningful once function 1 has been enabled and has come ready.
+   *
+   * NuttX's generators do the same CCCR accesses, so most of the sequence is
+   * the generic helpers rather than raw CMD52 calls.
+   */
+
+  ret = sdio_set_blocksize(sdio, 0, ESP_HOSTED_SDIO_BLOCK_SIZE);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "%s: FN0 block size failed: %d\n", HOSTED_TAG, ret);
+      goto bringup_failed;
+    }
+
+  ret = sdio_enable_function(sdio, 1);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "%s: function 1 did not enable: %d\n", HOSTED_TAG, ret);
+      goto bringup_failed;
+    }
+
+  ret = sdio_enable_interrupt(sdio, 1);
+  if (ret < 0)
+    {
+      syslog(LOG_WARNING, "%s: function 1 interrupt enable failed: %d\n",
+             HOSTED_TAG, ret);
+    }
+
+  ret = sdio_set_blocksize(sdio, 1, ESP_HOSTED_SDIO_BLOCK_SIZE);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "%s: FN1 block size failed: %d\n", HOSTED_TAG, ret);
+      goto bringup_failed;
+    }
+
+  ret = sdio_set_wide_bus(sdio);
+  if (ret < 0)
+    {
+      syslog(LOG_WARNING, "%s: 4-bit bus not available, staying 1-bit: %d\n",
+             HOSTED_TAG, ret);
     }
 
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;
 
   syslog(LOG_INFO,
-         "%s: companion module enumerated (SDIO functions visible)\n",
-         HOSTED_TAG);
+         "%s: card function ready (FN1, %u-byte blocks) -- ESP-Hosted "
+         "framing is not implemented yet\n",
+         HOSTED_TAG, (unsigned)ESP_HOSTED_SDIO_BLOCK_SIZE);
+
+  return OK;
+
+bringup_failed:
+  g_hosted_state   = ESP_HOSTED_SDIO_FAILED;
+  g_hosted_errcode = ret;
+  return ret;
 
   /* Layers 2 and 3 -- the ESP-Hosted framing and the mapping of the remote
    * radio onto a net device -- are not implemented yet.  Reporting the

@@ -30,6 +30,19 @@
 > 收尾卡住的两个真因都在自检程序（`mq_msgsize` 设大导致每次 `mq_receive` 直接
 > `EMSGSIZE`；发流循环永远只用 `buffers[0]` 重复入队）—— 驱动侧一直是对的。
 >
+> **第 12 轮 —— 拿到 esp-hosted 上游源码并核对**：成功拉取
+> `espressif/esp-hosted-mcu`（从机固件 + 主机驱动 + 协议）。
+> **官方 P4 主机引脚表与本移植完全一致**（CLK18/CMD19/D0-17…/Reset 54），
+> 当初从原理图独立推出的结论得到印证。
+> 从机固件的构建路径已确认（`examples/wifi/sta/cp` + `eh.py set-target esp32c6`，
+> 实测 `CONFIG_EH_TRANSPORT_CP_SDIO=y` 默认选中）；构建目前只卡在
+> `protobuf-c` 子模块因网络 TLS 中断未拉全。
+> 已抄录 esp-hosted 主机的 **SDIO 卡功能合约**（CCCR 使能/就绪轮询/中断/
+> FN0·FN1 块大小 512/4-bit），并据此把 `esp_hosted_sdio.c` 从"只做 sdio_probe"
+> 补成**完整的卡功能 bring-up**（复用 NuttX 的 `sdio_enable_function` /
+> `sdio_set_blocksize` / `sdio_set_wide_bus`），编译 0 error。
+> 详见 `docs/08` 附录 E。
+>
 > **第 11 轮 —— WiFi 阻塞原因查明**：`/dev/ttyUSB1` 就是**板载 ESP32-C6-Mini-1
 > 的串口**（CP2102）。直接读它发现 C6 跑的是 **esp-hosted 从机，但走「串口」传输**：
 > `stats: ... serial : in: 0 rsp: 0 evt: 0`。

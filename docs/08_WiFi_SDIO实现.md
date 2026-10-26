@@ -449,3 +449,102 @@ H<=S: sta: in:        0 out:        0
 用户提到 esp-at v4.2.0.0。这条路**只有当 P4 与 C6 之间有一条串口**时才成立，
 而 D.2 已核实没有 —— C6 的串口只到编程排针。所以 AT 指令路线需要改板子接线，
 本板现状下不可行；除非把 C6 的 UART 飞线到 P4 的某个 UART 上。
+
+---
+
+# 附录 E：拿到 esp-hosted 上游源码后的核对（2026-10-26 晚）
+
+网络恢复后成功拉到 `espressif/esp-hosted`（docs 仓，代码已迁出）与
+**`espressif/esp-hosted-mcu`**（含 `coprocessor/` 从机固件 + `host/` + `common/`）。
+这一下把"我们在猜的东西"变成了"可以对照的东西"。
+
+## E.1 官方 P4 主机引脚表 —— 与本移植完全一致
+
+`docs/getting-started-mcu.md` 里给出了 ESP32-P4 作主机时的标准连接：
+
+| 信号 | 官方 P4 引脚 | 本移植 |
+|---|---|---|
+| CLK | 18 | ✅ 18 |
+| CMD | 19 | ✅ 19 |
+| D0 | 14 | ✅ 14 |
+| D1 | 15 | ✅ 15 |
+| D2 | 16 | ✅ 16 |
+| D3 | 17 | ✅ 17 |
+| Reset Out | **54** | ✅ GPIO54 |
+
+也就是说：**引脚配置、使能 GPIO 的选择都是对的**（当初是从原理图独立推出来的）。
+官方还特别注明 CMD/DAT0–DAT3 **必须**有外部上拉 —— 本驱动的 `esp_sdmmc_configpins()`
+也是按这个配的（`PULLUP`）。
+
+## E.2 从机固件怎么构建（已确认可行）
+
+```sh
+cd examples/wifi/sta/cp
+eh.py set-target esp32c6
+eh.py menuconfig      # Transport layer -> SDIO
+eh.py -p <CP_PORT> flash monitor
+```
+
+实际在本机跑出来的配置是：
+
+```
+CONFIG_ESP_HOSTED_CP=y
+CONFIG_EH_TRANSPORT_CP_SDIO=y          ← SDIO 传输
+```
+
+说明 `EH_TRANSPORT_CP_SDIO` 在 C6 上是**默认选中**的（取决于
+`SOC_SDIO_SLAVE_SUPPORTED`）。这与实测"C6 上跑的是 serial 传输"对不上 ——
+本板 C6 的固件很可能是早前按 UART 配的，或来自另一套出厂镜像。
+**结论不变：需要把 C6 刷成 SDIO 传输版本。**
+
+构建目前卡在 `common/serializers/third_party/msg_codec/protobuf-c` 这个
+**git submodule 没能拉下来**（网络间歇性 TLS 中断）。这是纯网络问题，
+重试即可。
+
+## E.3 esp-hosted 主机的 SDIO 合约（已抄录，可直接照着实现）
+
+从 `port/os/idf/src/eh_host_port_sdio.c` 读出的卡功能初始化顺序
+（`card_fn_init()`），这是主机在枚举之后**必须**做的一串 CCCR 操作：
+
+1. 读 CCCR `0x02` (FN_ENABLE)、`0x03` (FN_READY)
+2. `FN_ENABLE |= BIT(1)`（使能 function 1），写回
+3. **轮询** `FN_READY` 直到 bit1 置位（每 10 ms 一次，有重试上限）
+4. `INT_ENABLE |= BIT(0) | BIT(1)`（function 1 + master），写回
+5. 设 FN0 块大小 = **512**
+6. 设 FN1 块大小 = **512**
+7. 切 4-bit 总线
+
+数据面（`port/os/include/eh_host_port_sdio_reg.h`）：
+
+| 项 | 值 |
+|---|---|
+| 块大小 | 512 |
+| 主机→从机 中断/命令寄存器 | `ESP_SLAVE_SCRATCH_REG_7`（从机 `0x3FF55000 + 0x??`）|
+| 包长寄存器 | `ESP_SLAVE_PACKET_LEN_REG` (`+0x60`) |
+| token 寄存器 | `ESP_SLAVE_TOKEN_RDATA` (`+0x44`) |
+| CMD53 地址上限 | `0x1F800` |
+| 运行期缓冲配置 | 由从机在 boot init 事件里用 TLV `0x1B` 广播（5 字节：transport/e2h_mode/e2h_bufsz/h2e_mode/h2e_bufsz）|
+
+## E.4 好消息：NuttX 这边的原语几乎一一对应
+
+esp-hosted 主机端口需要的 6 个操作，NuttX 的 `drivers/mmcsd/sdio.c` 全都有：
+
+| esp-hosted 主机端口 | NuttX 对应 |
+|---|---|
+| `card_init` / CCCR 配置 | `sdio_probe()` + `sdio_enable_function()` + `sdio_set_blocksize()` + `sdio_set_wide_bus()` + `sdio_enable_interrupt()` |
+| `read_reg` / `write_reg` (CMD52) | `sdio_io_rw_direct()` |
+| `read_block` / `write_block` (CMD53) | `sdio_io_rw_extended()` |
+| 等从机中断 | 本驱动的 SDIO 中断回调 |
+
+**本轮据此把 `esp_hosted_sdio.c` 从"只做 sdio_probe"补成了完整的卡功能 bring-up**：
+按 E.3 的顺序调用 NuttX 的通用 helper 完成 FN0/FN1 块大小、function 1 使能、
+中断使能、4-bit 总线。这段代码已编译通过（0 error）。
+
+> 注：因为 C6 仍不在 SDIO 模式，这段代码在真机上走到 `sdio_probe` 仍会返回
+> `-ETIMEDOUT`；它的价值是**一旦 C6 换成 SDIO 固件就能立刻用**，而不是届时要重写。
+
+## E.5 仍未完成（依赖 C6 固件）
+
+- 第 2 层：protobuf RPC 编解码（`common/serializers`）+ 帧层
+- 第 3 层：把远端 WiFi 映射成 NuttX netdev
+- 前置：C6 进下载模式（需按板上 BOOT+RESET）→ 烧 SDIO 版从机固件

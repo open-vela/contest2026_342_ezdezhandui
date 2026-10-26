@@ -435,16 +435,30 @@ static void esp_sdmmc_configpins(void)
    * given line happen to be the same number.
    */
 
+  /* Select the GPIO function on each pad before connecting the matrix.
+   *
+   * Whether a pad is driven by its IOMUX peripheral or by the GPIO matrix is
+   * decided by the IO_MUX function-select field, and esp_configgpio() never
+   * touches it. So a pad left pointing at some peripheral function ignores the
+   * matrix connection entirely: the register write succeeds, the routing log
+   * line prints, and still nothing reaches the pin. Espressif's own path calls
+   * gpio_reset_pin() for the same reason.
+   */
+
+  esp_rom_gpio_pad_select_gpio(priv->clk_pin);
+
   esp_configgpio(priv->clk_pin, OUTPUT | DRIVE_3);
   esp_rom_gpio_connect_out_signal(priv->clk_pin, SD_CARD_CCLK_2_PAD_OUT_IDX,
                                   false, false);
 
+  esp_rom_gpio_pad_select_gpio(priv->cmd_pin);
   esp_configgpio(priv->cmd_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
   esp_rom_gpio_connect_out_signal(priv->cmd_pin, SD_CARD_CCMD_2_PAD_OUT_IDX,
                                   false, false);
   esp_rom_gpio_connect_in_signal(priv->cmd_pin, SD_CARD_CCMD_2_PAD_IN_IDX,
                                  false);
 
+  esp_rom_gpio_pad_select_gpio(priv->d0_pin);
   esp_configgpio(priv->d0_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
   esp_rom_gpio_connect_out_signal(priv->d0_pin, SD_CARD_CDATA0_2_PAD_OUT_IDX,
                                   false, false);
@@ -460,21 +474,27 @@ static void esp_sdmmc_configpins(void)
    */
 
   {
-    esp_configgpio(priv->d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+    esp_rom_gpio_pad_select_gpio(priv->d1_pin);
+    esp_rom_gpio_pad_select_gpio(priv->d1_pin);
+  esp_configgpio(priv->d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
       esp_rom_gpio_connect_out_signal(priv->d1_pin,
                                       SD_CARD_CDATA1_2_PAD_OUT_IDX, false,
                                       false);
       esp_rom_gpio_connect_in_signal(priv->d1_pin, SD_CARD_CDATA1_2_PAD_IN_IDX,
                                      false);
 
-      esp_configgpio(priv->d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+      esp_rom_gpio_pad_select_gpio(priv->d2_pin);
+    esp_rom_gpio_pad_select_gpio(priv->d2_pin);
+  esp_configgpio(priv->d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
       esp_rom_gpio_connect_out_signal(priv->d2_pin,
                                       SD_CARD_CDATA2_2_PAD_OUT_IDX, false,
                                       false);
       esp_rom_gpio_connect_in_signal(priv->d2_pin, SD_CARD_CDATA2_2_PAD_IN_IDX,
                                      false);
 
-      esp_configgpio(priv->d3_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+      esp_rom_gpio_pad_select_gpio(priv->d3_pin);
+    esp_rom_gpio_pad_select_gpio(priv->d3_pin);
+  esp_configgpio(priv->d3_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
       esp_rom_gpio_connect_out_signal(priv->d3_pin,
                                       SD_CARD_CDATA3_2_PAD_OUT_IDX, false,
                                       false);

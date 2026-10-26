@@ -330,7 +330,52 @@ int esp_hosted_sdio_initialize(void)
 
     for (attempt = 1; attempt <= ESP_HOSTED_SDIO_PROBE_TRIES; attempt++)
       {
-        ret = sdio_probe(sdio);
+        /* Sample the CLK pad as an input to find out whether the controller is
+   * actually driving it.
+   *
+   * Every register involved reads back correctly and yet nothing works, so the
+   * one thing worth establishing before anything else is whether the card clock
+   * physically exists. The pad is still routed to the SDMMC controller, but its
+   * input path can be enabled independently, so reading GPIO18 a few hundred
+   * times tells us what is really on the pin: a clock at ~400 kHz sampled
+   * asynchronously shows up as a mix of high and low, whereas a dead or stuck
+   * pad reads the same every time.
+   */
+
+  {
+    int hi = 0;
+    int lo = 0;
+    int i;
+
+    /* INPUT | OUTPUT, deliberately: esp_configgpio(..., INPUT) alone would
+     * disable the pad's output driver, which would disconnect the controller's
+     * clock from the pin and make the measurement say "no clock" no matter what
+     * the controller does. Keeping the output enabled and just adding the input
+     * path samples what the controller is really driving.
+     */
+
+    esp_configgpio(CONFIG_ESPRESSIF_SDMMC_CLK, INPUT | OUTPUT);
+
+    for (i = 0; i < 512; i++)
+      {
+        if (esp_gpioread(CONFIG_ESPRESSIF_SDMMC_CLK))
+          {
+            hi++;
+          }
+        else
+          {
+            lo++;
+          }
+      }
+
+    syslog(LOG_INFO,
+           "%s: CLK pin (GPIO%d) sampled 512x as input: %d high, %d low -- %s\n",
+           HOSTED_TAG, CONFIG_ESPRESSIF_SDMMC_CLK, hi, lo,
+           (hi && lo) ? "TOGGLING (clock is really running)"
+                      : "NOT toggling (no clock on the pad)");
+  }
+
+  ret = sdio_probe(sdio);
         if (ret >= 0)
           {
             break;

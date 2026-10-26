@@ -1481,3 +1481,56 @@ sdmmc_ll_set_din_delay_phase(hw, SDMMC_LL_DELAY_PHASE_0, SDMMC_LL_SPEED_MODE_HS)
 2. 系统侧的时钟门控（`HP_SYS_CLKRST`）里是否有额外的 SDMMC 时钟使能位没打开
    —— 本驱动只调了 `sdmmc_ll_enable_bus_clock(0, true)`；
 3. 对照 Espressif 的 `sd_host_setup()` 完整时钟初始化序列，逐条比对还差哪一步。
+
+## I.7 第 28 轮：三个假设，两个被否，一个确认是真缺口
+
+### 确认的缺口：**时钟源从未被使能**
+
+对照 Espressif 的 `sd_host_set_clk_div()`：
+
+```c
+ESP_ERROR_CHECK(esp_clk_tree_enable_src((soc_module_clk_t)src, true));  // ← 先使能
+sdmmc_ll_set_clock_div(...);
+sdmmc_ll_select_clk_source(ctlr->hal.dev, src);                        // ← 再选
+```
+
+`SDMMC_CLK_SRC_DEFAULT` = `SOC_MOD_CLK_PLL_F160M`，而 P4 上**每个参考时钟是独立门控的**，
+必须 `clk_gate_ll_ref_160m_clk_en(true)` 打开后 `CLKSRC` 才能路由它。
+本驱动此前**只 select、从未 enable**。
+
+已补（含 Espressif 那句 "wait for the clock to propagate" 的 10µs 延时）。
+**这是真缺口，虽然本轮没让枚举通过，但它必须存在。**
+
+### 否定 1：不是 80 时钟初始化序列
+
+把 CMD0 的 `send_init` 去掉后，命令字从 `a0018000` 变成 `a0010000`，
+**CMD0 依旧卡住**。所以卡住的不是那 80 个时钟。已把该改动撤回
+（保持标准 SD 初始化流程），不在未验证的改动上留残迹。
+
+### 否定 2：不是 PLL_F160M 没开
+
+补了 `clk_gate_ll_ref_160m_clk_en(true)` 后现象完全没变 —— 说明这个 PLL
+本来就在跑（P4 上它可能被别的模块用着）。
+
+### 现在的核心线索只有一个：**EBE 每次都出现**
+
+无论 CMD0 带不带 `send_init`，失败现场恒为：
+
+```
+cmd=a0010000 status=00000406 rintsts=00001000
+```
+
+`rintsts` bit 12 = **EBE（End Bit Error）**：控制器在 CMD 线上看到了一个起始位，
+但**结束位不是 1**。这不是"没人应答"（那会是 bit 15 的 RTO），而是
+**线上有信号、但电平/时序不对**。
+
+结合"卡时钟是否真的在输出"仍未确证，下一轮该做的判断是：
+
+1. **确认 CLK 脚是否真的在翻转** —— 这是唯一还没有直接证据的环节；
+2. 若 CLK 正常而 CMD 仍然 EBE，则是 CMD 线的采样/驱动问题
+   （相位、上拉实效、或 GPIO 矩阵信号号段选错）；
+3. 若 CLK 不翻转，则是时钟树/GPIO 矩阵的问题。
+
+`esp_sdmmc_configpins()` 里用的 GPIO 矩阵信号号（`sdmmc_periph_signal` 一类）
+是下一个应当逐条核对的地方 —— 若号段选错，引脚会被配置成功能态却**没有真正
+连到 SDMMC 外设**，症状与现在完全吻合。

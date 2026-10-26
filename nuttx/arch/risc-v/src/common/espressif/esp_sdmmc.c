@@ -93,6 +93,8 @@
 #include "esp_irq.h"
 #include "esp_sdmmc.h"
 
+#include <hal/clk_gate_ll.h>
+
 /* The LL's clock/reset helpers expand this macro around a register update.
  * It comes from an ESP-IDF private header (esp_private/periph_ctrl.h) that is
  * not part of the NuttX port.  NuttX calls the clock setup from thread context
@@ -1354,6 +1356,28 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
   /* Clock source and the system-side divider (HP_SYS_CLKRST), plus the
    * controller-side output phase.
    */
+
+  /* Enable the clock source itself before selecting it.
+   *
+   * SDMMC_CLK_SRC_DEFAULT is SOC_MOD_CLK_PLL_F160M, and on this part each
+   * reference clock is individually gated: it has to be switched on with
+   * clk_gate_ll_ref_160m_clk_en(true) before CLKSRC can route it. Espressif's
+   * own path does exactly this in sd_host_set_clk_div(), immediately before
+   * sdmmc_ll_select_clk_source().
+   *
+   * Selecting a gated-off source is silent: every register still reads back the
+   * value just written, CLKENA reports the card clock enabled, and yet no clock
+   * ever reaches the card -- which is what this driver was seeing. The symptom
+   * that finally gave it away was CMD0 hanging with send_initialization set:
+   * that command's 80 clocks can never be produced without a running card
+   * clock, so its start bit never clears and every later command is -EBUSY.
+   */
+
+  clk_gate_ll_ref_160m_clk_en(true);
+
+  /* Let the source propagate before it is routed to the card clock domain. */
+
+  up_udelay(10);
 
   sdmmc_ll_select_clk_source(hw, SDMMC_CLK_SRC_DEFAULT);
   sdmmc_ll_set_clock_div(hw, 1);

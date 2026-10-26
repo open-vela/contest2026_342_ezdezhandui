@@ -936,3 +936,99 @@ CIU 把命令**收下了却没有走完**。在真卡在场时出现这个现象
 1. 量 P4 `SD2_CMD`(GPIO19) 与 `SD2_D0`(GPIO14) 的静态电平 —— 上拉正常应为高；
 2. 量 C6 的 GPIO18/19/20/21/22/23 与 P4 的 `SD2_*` 是否一一连通；
 3. 若确认缺上拉，在 CMD/DAT0–3 上补 10k 上拉到 3V3 再测。
+
+---
+
+# 附录 G：`-16` 的真根因 —— 一个**取反了的判断**（2026-10-26 傍晚）
+
+用户确认"C6 的 SDIO 引脚 18/19/20/21/22/23 是对的、并且有 3.3V 上拉"之后，
+硬件层面的怀疑基本排除，于是回到主机侧把 `-16` 挖到底。
+
+## G.1 先让沉默的失败说话
+
+`-16` 来自 `esp_sdmmc_ciu_sendcmd()` 里"等 START 位自清"的超时分支，而那几个
+超时分支原本用的是 `mcerr()` —— **在 `-DNDEBUG` 下被编译掉**。改成 `syslog()`
+之后立刻看到真相：
+
+```
+esp_sdmmc: clock update did not complete (cmd=20212000)
+esp_sdmmc: previous command still pending after 100 ticks
+           (cmd=20212000 status=00000106 rintsts=00000000)
+```
+
+**`cmd=...2000000` 的第 21 位就是 `update_clk_reg`** —— 我为了让卡时钟真正生效
+而加的那条命令，它的 START 位从来没清过。
+
+## G.2 根因：`sdmmc_ll_is_command_taken()` 的语义是**反的**
+
+Espressif 的 LL 里：
+
+```c
+static inline bool sdmmc_ll_is_command_taken(sdmmc_dev_t *hw)
+{
+    return hw->cmd.start_command == 0;     /* ← 返回 true 表示"已被取走/空闲" */
+}
+```
+
+名字叫 "taken"，返回 `true` 却表示 **START 已自清 = 控制器空闲**。
+
+而我的等待循环写成了：
+
+```c
+while (sdmmc_ll_is_command_taken(hw))   /* 空闲时反而一直等！ */
+```
+
+**正好反了**：控制器空闲（`start_command == 0`）时它会一直转，直到超时返回
+`-EBUSY`。只有当正好有一条命令在飞（`start_command == 1`）时循环才会立刻退出 ——
+所以这个缺陷表现得时好时坏，极难从现象上认出来。
+
+对照 Espressif 自己的用法（`sd_host_slot_start_command()`），两处等待都是
+`while (!sdmmc_ll_is_command_taken(hw))`，即**等到 START 清零**。
+
+修好这一处之后：
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 探测返回 | `-16` (EBUSY) | **`-110` (ETIMEDOUT)** |
+| "clock update did not complete" | 每次都报 | **不再出现** |
+| "previous command still pending" | 每次都报 | **不再出现** |
+
+也就是说：**命令现在是真的发出去了，时钟提交也真的生效了**。
+
+## G.3 顺带修掉的第二处：时钟更新命令缺三个字段
+
+对照 `sd_host_slot_clock_update_command()`，我的版本 `memset` 成 0 之后只设了
+`update_clk_reg` 和 `start_command`，漏了：
+
+| 字段 | 为什么必须有 |
+|---|---|
+| `card_num` | 命令要寻址**正在配时钟的那个 slot**。清零后 card_num=0（slot 0），而配的是 slot 1 —— CIU 完不成 |
+| `use_hold_reg` | 输出要与 `cclk_out` 同步（Espressif 注释：*Outputs should be synchronized to cclk_out*）|
+| `wait_complete` | 更新要等 CIU 报告完成 |
+
+Espressif 的原话就是 `cmd.card_num = slot->slot_id`。补上后命令字从
+`00200000` 变成 `20212000`（card_num=1 + update_clk_reg + wait_complete +
+use_hold_reg）。
+
+## G.4 本轮排除的
+
+- **不是复位卡住**：给 DMA/FIFO/controller 三处复位超时都加了 `syslog`，
+  真机上**一条都没触发** —— 三个复位都正常完成。
+- **不是引脚/上拉**：用户已确认。
+- **不是"C6 没启动"**：esptool 已连不上，`/dev/ttyUSB1` 静默，说明在跑应用。
+
+## G.5 现在的状态
+
+主机侧现在是**干净的**：
+
+```
+verid=5342270a status=00000106 cdetect=00000000 clkena=00000002
+probe 1/12 -> -110
+```
+
+`-110` = 命令发出去了、对端不应答。**主机侧不再有内部缺陷**，
+剩下的问题是对端没有回应 CMD5。
+
+下一步方向：核对 C6 侧从机固件的 SDIO 配置（从机固件用的是默认引脚
+18/19/20/21/22/23 与 `CONFIG_EH_TRANSPORT_CP_SDIO_GPIO_RESET=-1`），
+以及 C6 是否真的把 SDIO 从机初始化起来了（可考虑在 C6 侧打开 SDIO 相关日志）。

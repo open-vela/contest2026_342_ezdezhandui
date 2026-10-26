@@ -117,6 +117,17 @@ void esp_sdmmc_debug(FAR struct esp_sdmmc_debug_s *dbg);
 
 void esp_sdmmc_bus_reset(void);
 
+/****************************************************************************
+ * Name: esp_sdmmc_skip_clk_update
+ *
+ * Description:
+ *   Bring-up aid: run without the update_clk_reg command. See the comment on
+ *   g_sdmmc_skip_clk_update in esp_sdmmc.c.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_skip_clk_update(bool skip);
+
 #endif /* CONFIG_ESPRESSIF_SDMMC */
 
 #undef EXTERN

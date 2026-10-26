@@ -80,6 +80,7 @@
 #include <errno.h>
 
 #include <nuttx/arch.h>
+#include <syslog.h>
 #include <nuttx/clock.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/mutex.h>
@@ -235,6 +236,9 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev);
 static sdio_capset_t esp_sdmmc_capabilities(struct sdio_dev_s *dev);
 static sdio_statset_t esp_sdmmc_status(struct sdio_dev_s *dev);
 static void esp_sdmmc_widebus(struct sdio_dev_s *dev, bool enable);
+/* Bring-up switch: skip the update_clk_reg command (see header). */
+static bool g_sdmmc_skip_clk_update;
+
 static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate);
 static int  esp_sdmmc_attach(struct sdio_dev_s *dev);
 
@@ -356,11 +360,26 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
   clock_t start = clock_systime_ticks();
   sdmmc_dev_t *hw = g_sdmmc.hw;
 
-  while (sdmmc_ll_is_command_taken(hw))
+  /* Careful with this predicate: despite the name it reads
+   *
+   *     return hw->cmd.start_command == 0;
+   *
+   * so it is TRUE when the command has been taken (the start bit has
+   * self-cleared), i.e. TRUE means idle, not busy. Waiting on it directly would
+   * therefore spin while the controller is idle and return -EBUSY before a
+   * single command went out -- which is exactly the failure this driver showed.
+   * Both waits below are "wait until the start bit clears".
+   */
+
+  while (!sdmmc_ll_is_command_taken(hw))
     {
       if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
         {
-          mcerr("ERROR: timed out waiting for the previous command\n");
+          syslog(LOG_ERR,
+                 "esp_sdmmc: previous command still pending after %d ticks "
+                 "(cmd=%08" PRIx32 " status=%08" PRIx32 " rintsts=%08" PRIx32
+                 ")\n", (int)SDMMC_CMDTIMEOUT, hw->cmd.val, hw->status.val,
+                 hw->rintsts.val);
           return -EBUSY;
         }
     }
@@ -457,21 +476,47 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
    * so its START bit never cleared.
    */
 
+  if (!g_sdmmc_skip_clk_update)
   {
     sdmmc_hw_cmd_t upd;
 
     memset(&upd, 0, sizeof(upd));
+
+    /* These three fields are what make the command complete.
+     *
+     * card_num: the command must address the slot whose clock is being
+     *   programmed. Zeroing the struct leaves card_num = 0, i.e. slot 0, while
+     *   the clock being enabled is slot 1's -- and the CIU then never clears
+     *   START, so this command hangs and every later command fails with -EBUSY.
+     *   Espressif's own path sets exactly this field
+     *   (sd_host_slot_start_command(): `cmd.card_num = slot->slot_id`).
+     * use_hold_reg: outputs are synchronised to cclk_out.
+     * wait_complete: the update finishes only once the CIU reports complete.
+     */
+
+    upd.card_num       = priv->slot;
+    upd.use_hold_reg   = 1;
+    upd.wait_complete  = 1;
     upd.update_clk_reg = 1;
     upd.start_command  = 1;
     sdmmc_ll_set_command(hw, upd);
 
-    while (sdmmc_ll_is_command_taken(hw))
+    while (!sdmmc_ll_is_command_taken(hw))
       {
         /* Bounded: on a working controller this clears within a few cycles. */
 
         if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
           {
-            mcerr("ERROR: clock update never completed\n");
+            /* Visible through syslog, not mcerr: under -DNDEBUG mcerr is
+             * compiled out, and this path decides whether every later command
+             * is able to run at all. Leaving START set here makes
+             * esp_sdmmc_ciu_sendcmd() return -EBUSY for the rest of time, which
+             * looks exactly like "the card is broken" when in fact the host
+             * never cleared its own command register.
+             */
+
+            syslog(LOG_ERR, "esp_sdmmc: clock update did not complete "
+                            "(cmd=%08" PRIx32 ")\n", hw->cmd.val);
             break;
           }
       }
@@ -506,7 +551,8 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev)
     {
       if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
         {
-          mcerr("ERROR: DMA reset timed out\n");
+          syslog(LOG_ERR, "esp_sdmmc: DMA reset did not complete "
+                          "(ctrl=%08" PRIx32 ")\n", hw->ctrl.val);
           break;
         }
     }
@@ -517,7 +563,14 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev)
     {
       if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
         {
-          mcerr("ERROR: FIFO reset timed out\n");
+          /* A stuck fifo_reset is fatal and silent: while CTRL.fifo_reset is
+           * still 1 the CIU cannot finish any command, so every later command
+           * returns -EBUSY and the card looks dead. Say so out loud.
+           */
+
+          syslog(LOG_ERR, "esp_sdmmc: FIFO reset did not complete "
+                          "(ctrl=%08" PRIx32 " status=%08" PRIx32 ")\n",
+                 hw->ctrl.val, hw->status.val);
           break;
         }
     }
@@ -528,7 +581,8 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev)
     {
       if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
         {
-          mcerr("ERROR: controller reset timed out\n");
+          syslog(LOG_ERR, "esp_sdmmc: controller reset did not complete "
+                          "(ctrl=%08" PRIx32 ")\n", hw->ctrl.val);
           break;
         }
     }
@@ -1315,6 +1369,11 @@ void esp_sdmmc_bus_reset(void)
    */
 
   esp_sdmmc_clock(&g_sdmmc.dev, CLOCK_IDMODE);
+}
+
+void esp_sdmmc_skip_clk_update(bool skip)
+{
+  g_sdmmc_skip_clk_update = skip;
 }
 
 #endif /* CONFIG_ESPRESSIF_SDMMC */

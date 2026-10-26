@@ -94,6 +94,8 @@
 #include "esp_sdmmc.h"
 
 #include <hal/clk_gate_ll.h>
+#include <esp_rom_gpio.h>
+#include <soc/gpio_sig_map.h>
 
 /* The LL's clock/reset helpers expand this macro around a register update.
  * It comes from an ESP-IDF private header (esp_private/periph_ctrl.h) that is
@@ -410,17 +412,82 @@ static void esp_sdmmc_configpins(void)
 {
   struct esp_sdmmc_dev_s *priv = &g_sdmmc;
 
-  esp_configgpio(priv->clk_pin, OUTPUT | DRIVE_3);
-  esp_configgpio(priv->cmd_pin, OUTPUT | PULLUP | DRIVE_3);
-  esp_configgpio(priv->d0_pin,  OUTPUT | PULLUP | DRIVE_3);
+  /* On this part slot 0 has fixed IOMUX pins and slot 1 has none at all --
+   * sdmmc_pins.h says so outright ("SLOT1 doesn't go through IOMUX") and
+   * sdmmc_ll.h agrees, defining
+   *
+   *   SDMMC_LL_SLOT_SUPPORT_GPIO_MATRIX(slot)  ((slot == 0) ? 0 : 1)
+   *
+   * So every slot-1 signal has to be routed through the GPIO matrix, one call
+   * per direction: CLK is output only, while CMD and DAT are driven by the
+   * controller and read back by it, so they need both.
+   *
+   * Configuring the pad alone is not enough, and the failure it produces is
+   * thoroughly misleading: the pads look right, every controller register reads
+   * back what was written, CLKENA reports the card clock enabled -- and yet
+   * nothing appears on the pins. The controller then reads its own idle pads
+   * back and reports an end-bit error (RINTSTS bit 12, EBE), and the companion
+   * simply never sees a command. See docs/08 section I.8.
+   *
+   * The signal indices are the ones Espressif's own P4 tables use
+   * (components/esp_hal_sd/esp32p4/sdmmc_periph.c): for slot 1 they are the
+   * SD_CARD_*_2_PAD_{IN,OUT}_IDX values, where the IN and OUT indices of a
+   * given line happen to be the same number.
+   */
 
-  if (priv->widebus)
-    {
-      esp_configgpio(priv->d1_pin, OUTPUT | PULLUP | DRIVE_3);
-      esp_configgpio(priv->d2_pin, OUTPUT | PULLUP | DRIVE_3);
-      esp_configgpio(priv->d3_pin, OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(priv->clk_pin, OUTPUT | DRIVE_3);
+  esp_rom_gpio_connect_out_signal(priv->clk_pin, SD_CARD_CCLK_2_PAD_OUT_IDX,
+                                  false, false);
+
+  esp_configgpio(priv->cmd_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_rom_gpio_connect_out_signal(priv->cmd_pin, SD_CARD_CCMD_2_PAD_OUT_IDX,
+                                  false, false);
+  esp_rom_gpio_connect_in_signal(priv->cmd_pin, SD_CARD_CCMD_2_PAD_IN_IDX,
+                                 false);
+
+  esp_configgpio(priv->d0_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_rom_gpio_connect_out_signal(priv->d0_pin, SD_CARD_CDATA0_2_PAD_OUT_IDX,
+                                  false, false);
+  esp_rom_gpio_connect_in_signal(priv->d0_pin, SD_CARD_CDATA0_2_PAD_IN_IDX,
+                                 false);
+
+  /* D1..D3 are routed unconditionally, not only in 4-bit mode.
+   *
+   * This function runs during initialisation, and the bus width is only
+   * decided later (espressif_sdmmc_widebus), so guarding on priv->widebus here
+   * would silently leave three pads unrouted for the rest of the session. The
+   * extra routing is harmless in 1-bit mode and removes the ordering trap.
+   */
+
+  {
+    esp_configgpio(priv->d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+      esp_rom_gpio_connect_out_signal(priv->d1_pin,
+                                      SD_CARD_CDATA1_2_PAD_OUT_IDX, false,
+                                      false);
+      esp_rom_gpio_connect_in_signal(priv->d1_pin, SD_CARD_CDATA1_2_PAD_IN_IDX,
+                                     false);
+
+      esp_configgpio(priv->d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+      esp_rom_gpio_connect_out_signal(priv->d2_pin,
+                                      SD_CARD_CDATA2_2_PAD_OUT_IDX, false,
+                                      false);
+      esp_rom_gpio_connect_in_signal(priv->d2_pin, SD_CARD_CDATA2_2_PAD_IN_IDX,
+                                     false);
+
+      esp_configgpio(priv->d3_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+      esp_rom_gpio_connect_out_signal(priv->d3_pin,
+                                      SD_CARD_CDATA3_2_PAD_OUT_IDX, false,
+                                      false);
+      esp_rom_gpio_connect_in_signal(priv->d3_pin, SD_CARD_CDATA3_2_PAD_IN_IDX,
+                                     false);
     }
+
+  syslog(LOG_INFO, "esp_sdmmc: slot %d pads routed via the GPIO matrix "
+                   "(CLK=%d CMD=%d D0..D3=%d,%d,%d,%d)\n",
+         priv->slot, priv->clk_pin, priv->cmd_pin, priv->d0_pin, priv->d1_pin,
+         priv->d2_pin, priv->d3_pin);
 }
+
 
 /****************************************************************************
  * Name: esp_sdmmc_clock

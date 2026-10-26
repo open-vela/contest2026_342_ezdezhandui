@@ -1600,3 +1600,61 @@ esp_gpio_matrix_out(cmd_pin, SDMMC_SLOT1_CMD_OUT_IDX, 0, 0);
 本轮查过 `components/soc/esp32p4/include/soc/gpio_sig_map.h` —— 里面**没有**
 SDMMC 条目，所以索引应当来自别处（可能随 IO_MUX/矩阵的 P4 专属定义，
 或需要从 IDF 的 `sdmmc_periph.c` 信号表里取）。这是下一轮要解决的第一件事。
+
+## I.9 第 30 轮：GPIO 矩阵路由**已实现并确认生效**，但 EBE 依旧
+
+### 实现内容
+
+按 I.8 的结论补齐了 slot 1 的矩阵路由，信号索引取自 Espressif 自己的
+`components/esp_hal_sd/esp32p4/sdmmc_periph.c`（slot 1 那一组）：
+
+| 信号 | 输出索引 | 输入索引 |
+|---|---|---|
+| CLK  | `SD_CARD_CCLK_2_PAD_OUT_IDX`   | 仅输出 |
+| CMD  | `SD_CARD_CCMD_2_PAD_OUT_IDX`   | `SD_CARD_CCMD_2_PAD_IN_IDX` |
+| D0   | `SD_CARD_CDATA0_2_PAD_OUT_IDX` | `..._IN_IDX` |
+| D1..D3 | 同理 | 同理 |
+
+CLK 只输出；CMD 与 DAT 由控制器驱动又要回读，所以两个方向都接。
+真机确认生效：
+
+```
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+```
+
+顺带修掉一个顺序陷阱：`esp_sdmmc_configpins()` 在 `priv->widebus` 还是 false 时
+就执行了，若按 4-bit 条件路由，**D1–D3 会整个会话都不被路由**。改为无条件路由
+（1-bit 下多接几条无害）。
+
+### 但枚举仍未通过
+
+```
+probe 1/12 -> -110
+previous command still pending (cmd=a0018000 status=00000406 rintsts=00001000)
+probe 2/12 -> -16
+```
+
+`rintsts` 的 **bit 12 = EBE** 依旧出现，`start_command` 依旧不自清。
+
+### 现在的判断：问题只剩"引脚复用功能的设置次序"
+
+对照 Espressif 的 `configure_pin_gpio_matrix()`：
+
+```c
+gpio_reset_pin(gpio_num);              /* ← 先把引脚复位成普通 GPIO */
+gpio_set_direction(gpio_num, mode);
+esp_rom_gpio_connect_in_signal(...);
+esp_rom_gpio_connect_out_signal(...);
+```
+
+**关键在那个 `gpio_reset_pin()`**：它把管脚的 IO_MUX 功能选择置回"GPIO"。
+若管脚的 IO_MUX 仍指向某个外设功能，**GPIO 矩阵的连接会被忽略**。
+
+本驱动的次序是 `esp_configgpio(...)` → `esp_rom_gpio_connect_*_signal(...)`，
+但 NuttX 的 `esp_configgpio()` 内部会把 IO_MUX 设成什么，**没有核实过**。
+如果它把 IO_MUX 选到了别的功能上，那么矩阵连接虽然写进了寄存器、
+真机也打印了"routed"，**信号仍然到不了引脚**。
+
+**下一轮第一件事**：在 `esp_sdmmc_configpins()` 里、`esp_configgpio()` 之前，
+显式把管脚置成"普通 GPIO / 矩阵输入输出"（等价于 `gpio_reset_pin`），
+然后再做矩阵连接。这是目前唯一还没对齐的环节。

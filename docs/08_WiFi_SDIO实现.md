@@ -1820,3 +1820,63 @@ esp_sdmmc: CLK during cmd=a0018000: 0 high, 256 low
 **下一步第一件事**：把 `sd_host_setup()` / `sd_host_slot_init()` 的完整时钟
 初始化序列逐条抄下来，与本驱动逐条比对 —— 现在的证据表明**一定还差某一步**，
 而不是某一步写错了值（因为所有读写回来的值都是对的）。
+
+## I.13 第 34 轮：`set_clock_div` 的分支差异（真差异，但不是本因）
+
+逐条比对 Espressif 的 `sd_host_set_clk_div()` 时发现一处**实质差异**：
+
+```c
+static inline void sdmmc_ll_set_clock_div(sdmmc_dev_t *hw, uint32_t div)
+{
+    if (div > 1) {
+        HP_SYS_CLKRST.peri_clk_ctrl02.reg_sdio_ls_clk_edge_h = div / 2 - 1;
+        HP_SYS_CLKRST.peri_clk_ctrl02.reg_sdio_ls_clk_edge_n = div - 1;
+        HP_SYS_CLKRST.peri_clk_ctrl02.reg_sdio_ls_clk_edge_l = div - 1;
+        HP_SYS_CLKRST.peri_clk_ctrl02.reg_sdio_ls_clk_edge_cfg_update = 1;
+        HP_SYS_CLKRST.peri_clk_ctrl02.reg_sdio_ls_clk_edge_cfg_update = 0;
+    } else {
+        HP_SYS_CLKRST.peri_clk_ctrl01.reg_sdio_hs_mode = 1;
+        /* 三个 edge 字段清零，且不发 cfg_update 脉冲 */
+    }
+}
+```
+
+**`div > 1` 与 `div <= 1` 走的是完全不同的两条路**：前者会配置 SDIO 时钟的
+**上升/下降沿位置**并**脉冲 `cfg_update` 把它锁存**；后者只置 HS 模式、
+把三个 edge 字段清零、**完全没有更新脉冲**。
+
+本驱动传的是 **`1`**，而 Espressif 的
+`sd_host_set_clk_div(ctlr, SDMMC_CLK_SRC_DEFAULT, 2)` 用的是 **`2`**。
+
+**已改为 2。** 这是一个真差异，也符合"寄存器全对却没有波形"的表现 ——
+边沿从未配置、更新脉冲从未发出。但真机上**时钟仍未出现**：
+
+```
+CLK pin sampled 512x: 0 high, 512 low
+CLK pad as plain GPIO: wrote 1 -> read 1 -- pad works
+CLK during cmd=a0018000: 0 high, 256 low
+probe 1/12 -> -110
+```
+
+所以它是真差异，**但不是本因**。保留该改动（与 IDF 一致）。
+
+### 已确认无关的两处
+
+- `sdmmc_hal_init()`：只是 `hal->dev = SDMMC_LL_GET_HW(0)`，没有额外初始化；
+- `HP_SYS_CLKRST` 里与 SDMMC 相关的门控**只有一个**
+  （`soc_clk_ctrl1.reg_sdmmc_sys_clk_en`，bit 14），本驱动已通过
+  `sdmmc_ll_enable_bus_clock(0, true)` 打开。**不存在"还有一个功能时钟没开"**。
+
+### 现在的处境（说实话）
+
+主机侧已经逐条对齐到：总线时钟 ✅、时钟源门控 ✅、系统分频 ✅（本轮改成 2）、
+卡时钟分频与使能（寄存器值正确）、GPIO 矩阵路由 ✅、管脚功能 ✅、引脚本身 ✅ ——
+**而引脚上依然没有任何波形**。
+
+这说明问题不在"某个寄存器写错"，也不在"某个门控没开"，而更可能在
+**这一组引脚 + 这一个 slot 的组合本身**。下一轮值得换一个方向验证：
+
+> 把 slot 1 换成 **slot 0**（IOMUX 引脚 43/44/39-42）试一次。
+> 如果 slot 0 能出波形，就证明**控制器与时钟本身是好的，问题特定于 slot 1 的
+> GPIO 矩阵通路**；如果 slot 0 也不出波形，那就是控制器/时钟层面的问题。
+> 这是一次能把"slot 1 通路"与"控制器本体"彻底分开的判定性实验。

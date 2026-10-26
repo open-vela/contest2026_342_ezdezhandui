@@ -1504,7 +1504,19 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
   up_udelay(10);
 
   sdmmc_ll_select_clk_source(hw, SDMMC_CLK_SRC_DEFAULT);
-  sdmmc_ll_set_clock_div(hw, 1);
+  /* div must be > 1, and 2 is what Espressif uses.
+   *
+   * sdmmc_ll_set_clock_div() has two entirely different branches: for div > 1
+   * it programs the low-speed clock edge registers (H/N/L) and pulses
+   * reg_sdio_ls_clk_edge_cfg_update to latch them; for div <= 1 it only sets
+   * HS mode and zeroes those three edge fields, with no update pulse at all.
+   *
+   * This driver passed 1, so the clock's edge/shape was never configured and the
+   * update never happened -- which matches what the pads showed: registers
+   * "correct", no waveform anywhere, and CMD0 unable to emit its 80 clocks.
+   */
+
+  sdmmc_ll_set_clock_div(hw, 2);
   sdmmc_ll_init_phase_delay(hw);
 
   /* Output phase 0 is the reset default, so it is stated rather than merely

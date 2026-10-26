@@ -1,13 +1,102 @@
 # 项目状态（STATUS）
 
-> 最后更新：**2026-10-23** · **摄像头出帧已修复（10/22）**：根因 = ESP32-P4 的 **CSI bridge 与 ISP 共享**
+> 最后更新：**2026-10-23** · **ES8311 音频（I2S+GDMA）驱动链路已打通并编入固件**：
+> 新增板级粘合 `board/esp32p4/esp32p4-function-ev-board/{include,src}/esp32p4_audio_es8311.*`
+> （唯一入口 + 功放控制两个函数），`/dev/audio/pcm0` 经 `pcm_decode` 注册，
+> 语音播放入口用 NSH 内置 `nxplayer`；引脚取自**官方原理图**
+> （MCLK13/BCLK12/WS10/DOUT9/DIN11/PA53，⚠️ 两个数据脚按 codec 视角命名、与主机相反）。
+> 过程中修复 **4 处上游潜伏缺陷**（`esp_i2s.c` 缺 wqueue/kmalloc/mutex 三个头、
+> `es8311.c` 缺 mutex.h、板级 Kconfig `select` 穿透不了 `menuconfig`、
+> 陈旧 `config.h` 引发的假象）——详见 `docs/07_ES8311音频驱动实现.md`。
+> 构建实测：0 error，`nuttx.bin` 1,835,008 B，音频 5 个符号 + `nxplayer_main` 全部落位，
+> 调用链 `esp_bringup → esp32p4_audio_es8311_initialize` 已反汇编核实。
+> **用标准播放器复核发现第二个缓存缺陷（10/26 下午，已修）**：`audiotest -w`
+> 生成真 WAV → `nxplayer` 播放，暴露出 `esp_i2s.c` 的发送缓存回写长度
+> （8148 字节）不是 cache line（64）的整数倍，`esp_cache_msync()` 直接拒绝 →
+> DMA 可能读到未回写的陈旧数据。已修（分配与回写都按整条 line 对齐）。
+> ✅ **`nxplayer` 崩溃已定位并修复（10/26 晚）**：上一轮"`device` 子命令崩溃"的
+> 结论**是错的** —— 真因是**任何不带参数的命令**（`q`/`h`/`stop`/`pause`）都会崩：
+> `strtok_r()` 在"令牌后无内容"时把 `*saveptr` 置 NULL，而
+> `nxplayer_main.c` 紧接着 `while (*arg == ' ')` 直接解引用 → NULL 解引用
+> （反汇编指认：`lbu a3,0(a5)`，`a5=arg=NULL`，MTVAL=0）。之前的 panic 全部来自
+> 脚本末尾那个 `q`，被误读成 `device` 的问题。
+> 已修 `nxplayer_main.c`；同一缺陷在 `nxrecorder_main.c` 也一并修了（未编入配置，
+> 属预防性修复）。真机复验：`nxplayer` → `device pcm0` → `play` → `q`
+> **0 panic / 0 error 干净退出**，`h` 也正常。这是 `apps/system/nxplayer` 的
+> 通用缺陷，影响面远大于本项目。详见 `docs/07` §B.2。
+>
+> **音频真机全链路跑通（10/26）**：`audiotest` 完整播放 192044 字节
+> （2 秒 / 24 kHz / 16bit 立体声）并正常收尾，扫频/880Hz/16kHz/3 秒等变体全部通过。
+> 收尾卡住的两个真因都在自检程序（`mq_msgsize` 设大导致每次 `mq_receive` 直接
+> `EMSGSIZE`；发流循环永远只用 `buffers[0]` 重复入队）—— 驱动侧一直是对的。
+>
+> **第 11 轮 —— WiFi 阻塞原因查明**：`/dev/ttyUSB1` 就是**板载 ESP32-C6-Mini-1
+> 的串口**（CP2102）。直接读它发现 C6 跑的是 **esp-hosted 从机，但走「串口」传输**：
+> `stats: ... serial : in: 0 rsp: 0 evt: 0`。
+> **这就是 SDIO 永远 -110 的原因 —— C6 根本不在 SDIO 传输模式上。**
+> 原理图核实：P4→协处理器只有 `P4_WAKEUP_C5` 一条信号，C6 的串口只到编程排针/
+> CP2102（**没接到 P4**），所以 P4↔C6 的数据通道只有 SD2_* 这组 SDIO。
+> 结论：**必须把 C6 刷成 SDIO 传输的 esp-hosted 从机固件**。
+> 但 esptool 在 ttyUSB1 上无法自动进入下载模式（DTR/RTS 未接 EN/BOOT，
+> 三种极性组合均失败）→ **需要人工按 BOOT+RESET**。详见 `docs/08` 附录 D。
+>
+> **第 10 轮**：麦克风采集定位到具体环节 —— 加 `syslog` 打点（`-DNDEBUG` 会编掉
+> `mcerr`/`audinfo`）后确认真机走的是 `mode=1`（ADC，方向正确）、4 个缓冲区全部
+> 入队，但 **`inflight` 再不回落** → `I2S_RECEIVE` 的完成回调从未触发、**RX DMA
+> 从未完成**。已排除配置（RX=1、DIN=11）、方向、入队逻辑、`rxdma_start` 未启动通道；
+> 缩小到 master 模式下 RX 通道拿不到时钟（本板 TX/RX 同时使能，走"两者都开"的
+> 配置路径）。仍**未注册** `/dev/audio/pcm_in0`（会卡 console），播放复测正常。
+> 详见 `docs/07` §C.5。
+>
+> **本轮（第 8 轮）**：WiFi 侧继续排除 —— `C5_BOOT` 未连到 P4（原理图确认）、
+> 使能复位脉冲无效（真机三次仍 -110），软件侧手段已用尽。
+> 音频侧尝试**麦克风采集**：修掉 `es8311.c` INPUT 分支同款 `ERANGE` 缺陷
+> （`input CONFIGURE failed: 34` → 通过），但**采集数据流仍不通**（入队缓冲区
+> 不归还、会占住 console），因此**未注册** `/dev/audio/pcm_in0`
+> —— 播放路径复测正常，非回归。详见 `docs/07` 附录 C。
+>
+> **SDIO 卡时钟未提交 —— -EBUSY 真根因已定位并修复（10/26 晚）**：
+> DesignWare MSHC 的 CLKDIV/CLKSRC/CLKENA 只写进 BIU，必须再发一条
+> `update_clk_reg=1` 的命令才提交到卡时钟域 —— 原实现漏了这一步，
+> **卡时钟从未真正启动**，命令发不出去、START 位永不自清 → 恒 -EBUSY。
+> 欺骗性在于三个寄存器读回来全都"正确"（`clkena=0x2`、`clkdiv=0x9f00`、
+> `verid=0x5342270a` 正常），但 `rintsts=0` 一次完成都没有。
+> 修复后真机返回码 **-16 → -110**：命令通道已通，变成"对端不应答"。
+> 另排除使能极性（高低都试）、使能时长（3 次尝试含 +800ms）。
+> 新增 `esp_sdmmc_debug()` / `esp_sdmmc_bus_reset()` 与三次带极性对调的枚举探测。
+> 详见 `docs/08` 附录 C。
+>
+> **SDMMC/SDIO 驱动首次上板（10/26）**：P4 SDMMC 控制器在真机**成功初始化**
+> （`SDIO host ready on slot 1`），协处理器使能 GPIO54 可正常驱动。
+> 上板暴露并修复了 2 个问题：探测前未使能卡时钟/未挂中断（→ 命令永远完不成，
+> 表现为 -EBUSY）、协处理器需先上电。**枚举仍未成功**（仍 -16），
+> 最可能的原因是 C5 模组上没有 esp-hosted 从机固件（这是阶段 B 的既定前置条件）。
+> 详见 `docs/08` §B。
+>
+> **音频已上板验证（10/23）**：ES8311 在真机注册成功（`/dev/audio/pcm0`），
+> I2C 0x18 应答、I2S 时钟正确（MCLK 6.144 MHz = 24000×256）、`AUDIOIOC_CONFIGURE`
+> 成功、DMA 传输完成并归还缓冲区（`AUDIO_MSG_COMPLETE` 实测出现）。
+> 上板过程中定位并修复了 **4 个只在真机上才暴露的驱动缺陷**（详见 `docs/07` 附录）：
+> ① `es8311.c` 用 `ERANGE` 拒绝合法配置（三元表达式丢弃 `OK`，INPUT/OUTPUT 两处）
+> ② `esp_i2s.c` cache 对齐循环 uint32 下溢到 ~13 亿（**任何 WAV 播放必踩**）
+> ③ `esp_i2s.c` carry 缓冲区仅 4 字节却最多拷 64 字节，**写坏自己的长度字段**
+> ④ DMA 缓冲区按 `nbytes` 分配却按 `samp_size` 写入 → 堆越界
+> 另新增板端自检程序 `audiotest`（NSH 内置，在 RAM 里合成 PCM 直接喂 codec）。
+> ⚠️ 自检程序本身仍在收尾记账上卡住（不影响音频通路，详见 `docs/07` §A.4）。
+>
+> **WiFi 第 1 层已实现**：板载为 **ESP32-C5-MINI-1 + SDIO + ESP-Hosted**（**非 C6**，此前记载有误）。
+> 新增 P4 SDMMC/SDIO host 驱动 `esp_sdmmc.c`（完整 `sdio_dev_s` 方法表 + IDMAC 描述符链 +
+> CLIC 中断 + 双 slot 引脚路由）与枚举层 `esp_hosted_sdio.c`；
+> 开启开关后实测 **0 error**、5 个符号落位、调用链
+> `esp_bringup → esp_hosted_sdio_initialize → esp_sdmmc_initialize → sdio_probe` 已反汇编核实。
+> 顺带修掉 `drivers/mmcsd/CMakeLists.txt` 漏编 `sdio.c` 的上游 CMake 移植缺陷。
+> ⚠️ **第 2/3 层（ESP-Hosted 协议 + 远端 netdev）未实现**，故默认关闭、打开也上不了网；
+> 联网仍靠 eth0。详见 `docs/08_WiFi_SDIO实现.md`。
+> **摄像头出帧已修复（10/22）**：根因 = ESP32-P4 的 **CSI bridge 与 ISP 共享**
 > （`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 从未初始化 ISP 输入模块；修复见
 > `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`（`esp_csi_isp_bypass_init()`），
 > 验收 `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15（逐段结论修正史见 §四.4）。
 > 新增板端 V4L2 工具 `v4l2ctl`（`app/apps/system/v4l2ctl/`，manifest → `apps/system/v4l2ctl/`）。
-> 工程整理（10/23）：删除改造期文档 `docs/08`、`docs/09`（结论与证据已收进 §四.4 本文）、
-> 过期交接文档 `docs/CSI_INTEGRATOR_HANDOFF.md`、废弃脚本 `tools/engineering/export-legacy.sh`
-> 与模板样例 `quickapp/`；AI 日志补导至 **29 会话 / 37,968 事件**（8/21–10/23）。
 > 2026-09-18 提交前基线（保留）：**「agent 一启动整机失聪」已定位并修复**：`riscv_doirq()` 的早期引导保护
 > 吞掉了 `up_exit()` 的 `SYS_restore_context` ECALL（任何任务退出都会死机），修复后 agent 启动完成
 > 板子照常在线（ping/TCP 28789 均通）—— 根因、证据、验证见 `docs/06` §26.7 与 `logs/verify-2026-09-17/wedge_fix.txt`；
@@ -32,6 +121,7 @@
 | LVGL demo（显示+触摸）| ✅ | 最终固件上运行 `lvgldemo`（GT911 上电 + `/dev/fb0 1024x600 RGB565`），JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4，与首采一致；存档 `logs/verify-2026-09-17/lvgl_demo_final.png`）|
 | **摄像头出帧（赛题③前置）** | ✅ | SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定出帧：**PASS 13/13**、抓帧 15/15、连跑两轮一致（`tools/test/camera_verify.sh`）。根因 = CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 未初始化 ISP 输入模块 → 修复 `esp_csi_isp_bypass_init()`（`nuttx/arch/risc-v/src/common/espressif/esp_csi.c`）；结论三次修正的全过程见 §四.4 |
 | **自定义 Skill ×2（赛题②）** | ✅ | `center-assistant` / `quick-note`；`Skills system ready (12 built-in)` |
+| **ES8311 音频 + 语音播放** | ✅ **驱动链路已编入固件** | 板级粘合 `esp32p4_audio_es8311.c`（唯一入口 + 功放控制），经 `es8311.c` + `esp_i2s.c`(GDMA) + `pcm_decode` 注册为 `/dev/audio/pcm0`；NSH `nxplayer` 播 WAV。构建 0 error、5 个音频符号 + `nxplayer_main` 落位、调用链反汇编核实。**上板出声待复测**（见 `docs/07`）|
 | **cron 定时主动（赛题③）** | ✅ | `cron_service`/`tool_cron` 真实编入，`[cron] Cron started` |
 | AI Coding 日志 | ✅ | **29 会话 / 37,968 事件**（`logs/ez-xu/`，汇总见 `logs/ez-xu/manifest.json`；claude-code 18 + dsh 11，覆盖 8/21–10/23）|
 
@@ -143,6 +233,8 @@ python3 tools/test/board.py run "free" "ps"    # 任意 NSH 命令并断言
 | GT911 触摸 | ✅ **已修** | 真因：**产品 ID 校验吃掉 NUL 补齐字节**，控制器一直被误判为"未检测到"（commit `6499860`）。显示修好后需复测触摸是否随之恢复（`docs/06` §23.5(c)） |
 | MIPI-CSI SC2336 → `/dev/video0` | ✅ **已出帧（2026-10-22）** | 早期两个坏因已修：`VIDIOC_S_FMT: errno=22` 真因是 `v4l2_cap.c` 在驱动未声明 `frmintervals` 时**回退写死 15 fps**，而 SC2336 只接受 1/30 → 已显式声明 `g_sc2336_frmintervals[]`；随后暴露的 DW_GDMA 中断分配失败也已修（改 `ESP_INTR_FLAG_SHARED` + 补 `up_enable_irq` 的 CLIC IE，commit `3d7b1f25`）。最终出帧根因与修复见 §四.4（CSI bridge 与 ISP 共享 → `esp_csi_isp_bypass_init()`）|
 | 网络 / DNS | ✅ **已打通且开机全自动** | 三个叠加原因：① `CONFIG_NET_UDP` 未开（`dns_*` 符号数为 0）② `CONFIG_NETINIT_DHCPC` 未开（注意 `NETUTILS_DHCPC` 只是"编进来"、`NETINIT_DHCPC` 才是"去跑它"）③ netinit 不等链路就发 DHCP。修复后真机：`eth0 192.168.1.105 DRaddr 192.168.1.1`、`nslookup api.xiaomimimo.com → 202.69.4.22`；顺带把 MTU 从 576 对齐到 1500 |
+| **ES8311 音频（I2S0 + GDMA）** | ✅ **驱动链路通（10/23）** | 板级只做粘合：`I2C0@0x18` 控制、`I2S0` 数据（MCLK13/BCLK12/WS10/DOUT9/DIN11）、`GPIO53` 使能 NS4150B 功放；`pcm_decode` 注册 `/dev/audio/pcm0`，NSH `nxplayer` 播 16bit 立体声 WAV。⚠️ 原理图两个数据脚按 **codec 视角**命名、与主机方向**相反**（`I2S_DSDIN`=主机出、`I2S_ASDOUT`=主机入），填反则完全无声且无任何报错；MCLK 必须开（codec 按 MCLK÷采样率 查分频表，24kHz 为语音推荐值）。详见 `docs/07` |
+| **WiFi 第 1 层（SDIO host + 枚举）** | ✅ **已实现并编入固件（10/23）** | 板上是 **ESP32-C5-MINI-1**（**非 C6**）；P4 无射频（`SOC_WIFI_SUPPORTED` 不存在），故 WiFi 只能经 SDIO 到协处理器。新增 `esp_sdmmc.c`（~700 行：方法表 + IDMAC + CLIC + 双 slot 路由）与 `esp_hosted_sdio.c`。**开关默认关闭**（`ESPRESSIF_SDMMC` / `ESPRESSIF_HOSTED_SDIO` / `MMCSD_SDIO`）；开启后 0 error、符号落位、调用链核实。⚠️ 真机未跑、第 2/3 层未实现 —— 打开也上不了网，eth0 仍是联网路径。详见 `docs/08` |
 | ✅ ~~ai_agent 启动后整机冻结~~ **已修复（9/17 晚）** | 真因：`riscv_doirq()` 的早期引导保护吞掉了 `up_exit()` 的 `SYS_restore_context` ECALL —— **任何任务退出都会死机**（子 shell `exit` 可复现）。修复：保护只对硬件中断生效；实测 agent 启动完成后 ping/TCP 28789 均正常。证据 `logs/verify-2026-09-17/wedge_fix.txt`，详见 §四.1 与 `docs/06` §26.7 |
 | 运维通道 | ⚠️ 注意 | CP2102（`/dev/ttyUSB0`）不在时可用 USJ 口：`python3 tools/test/board.py run "…" --port /dev/ttyACM0`；但 USJ 的 **DTR/RTS 直接控制复位/下载模式**，被串口软件占用会造成"板子假死"的假象（`docs/06` §23.6） |
 

@@ -19,13 +19,20 @@
     <copyfile src="app/apps/crypto/mbedtls/CMakeLists.txt" dest="apps/crypto/mbedtls/CMakeLists.txt"/>
     <copyfile src="app/apps/crypto/mbedtls/Kconfig" dest="apps/crypto/mbedtls/Kconfig"/>
     <copyfile src="app/apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h" dest="apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h"/>
+    <copyfile src="app/apps/examples/audiotest/CMakeLists.txt" dest="apps/examples/audiotest/CMakeLists.txt"/>
+    <copyfile src="app/apps/examples/audiotest/Kconfig" dest="apps/examples/audiotest/Kconfig"/>
+    <copyfile src="app/apps/examples/audiotest/Make.defs" dest="apps/examples/audiotest/Make.defs"/>
+    <copyfile src="app/apps/examples/audiotest/Makefile" dest="apps/examples/audiotest/Makefile"/>
+    <copyfile src="app/apps/examples/audiotest/audiotest_main.c" dest="apps/examples/audiotest/audiotest_main.c"/>
     <copyfile src="app/apps/examples/camera/camera_main.c" dest="apps/examples/camera/camera_main.c"/>
+    <copyfile src="app/apps/netutils/netinit/Kconfig" dest="apps/netutils/netinit/Kconfig"/>
+    <copyfile src="app/apps/netutils/netinit/netinit.c" dest="apps/netutils/netinit/netinit.c"/>
+    <copyfile src="app/apps/system/nxplayer/nxplayer_main.c" dest="apps/system/nxplayer/nxplayer_main.c"/>
+    <copyfile src="app/apps/system/nxrecorder/nxrecorder_main.c" dest="apps/system/nxrecorder/nxrecorder_main.c"/>
     <copyfile src="app/apps/system/v4l2ctl/CMakeLists.txt" dest="apps/system/v4l2ctl/CMakeLists.txt"/>
     <copyfile src="app/apps/system/v4l2ctl/Kconfig" dest="apps/system/v4l2ctl/Kconfig"/>
     <copyfile src="app/apps/system/v4l2ctl/Makefile" dest="apps/system/v4l2ctl/Makefile"/>
     <copyfile src="app/apps/system/v4l2ctl/v4l2ctl.c" dest="apps/system/v4l2ctl/v4l2ctl.c"/>
-    <copyfile src="app/apps/netutils/netinit/Kconfig" dest="apps/netutils/netinit/Kconfig"/>
-    <copyfile src="app/apps/netutils/netinit/netinit.c" dest="apps/netutils/netinit/netinit.c"/>
     <copyfile src="nuttx/CMakeLists.txt" dest="nuttx/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/Kconfig" dest="nuttx/arch/risc-v/Kconfig"/>
     <copyfile src="nuttx/arch/risc-v/include/esp32p4/chip.h" dest="nuttx/arch/risc-v/include/esp32p4/chip.h"/>
@@ -64,6 +71,8 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_head.S" dest="nuttx/arch/risc-v/src/common/espressif/esp_head.S"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hr_timer.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hr_timer.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c.h"/>
@@ -115,6 +124,8 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sdm.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_sdm.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sdm.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_sdm.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_serial.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_serial.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sha.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_sha.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sha.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_sha.h"/>
@@ -178,7 +189,9 @@
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch"/>
     <copyfile src="nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
+    <copyfile src="nuttx/drivers/audio/es8311.c" dest="nuttx/drivers/audio/es8311.c"/>
     <copyfile src="nuttx/drivers/input/gt9xx.c" dest="nuttx/drivers/input/gt9xx.c"/>
+    <copyfile src="nuttx/drivers/mmcsd/CMakeLists.txt" dest="nuttx/drivers/mmcsd/CMakeLists.txt"/>
     <copyfile src="nuttx/drivers/video/CMakeLists.txt" dest="nuttx/drivers/video/CMakeLists.txt"/>
     <copyfile src="nuttx/drivers/video/Kconfig" dest="nuttx/drivers/video/Kconfig"/>
     <copyfile src="nuttx/drivers/video/Make.defs" dest="nuttx/drivers/video/Make.defs"/>
@@ -290,11 +303,13 @@
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/watchdog/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/watchdog/defconfig"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/webpanel/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/webpanel/defconfig"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/include/board.h" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/include/board.h"/>
+    <copyfile src="board/esp32p4/esp32p4-function-ev-board/include/esp32p4_audio_es8311.h" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/include/esp32p4_audio_es8311.h"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/scripts/Make.defs" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/scripts/Make.defs"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/CMakeLists.txt" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/CMakeLists.txt"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/Make.defs" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/Make.defs"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/esp32p4-function-ev-board.h" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/esp32p4-function-ev-board.h"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/esp32p4_appinit.c" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/esp32p4_appinit.c"/>
+    <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/esp32p4_audio_es8311.c" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/esp32p4_audio_es8311.c"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/esp32p4_boot.c" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/esp32p4_boot.c"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/esp32p4_bringup.c" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/esp32p4_bringup.c"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/src/esp32p4_buttons.c" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/esp32p4_buttons.c"/>
@@ -346,8 +361,4 @@
     <copyfile src="board/esp32p4/esp32p4-tab5/src/esp32p4_reset.c" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5/src/esp32p4_reset.c"/>
     <copyfile src="board/esp32p4/esp32p4-tab5/src/esp32p4_touch.c" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5/src/esp32p4_touch.c"/>
   </project>
-
-  <!-- AI 技能集仓库：挂到工作区 .agents/（评审可读本项目使用的 AI Skills 源码） -->
-  <project path=".agents" name="openvela-skills" remote="ezxu"
-         revision="203b8e645a2a2af4330ba4518dbdfd5fe62f13e4"/>
 </manifest>

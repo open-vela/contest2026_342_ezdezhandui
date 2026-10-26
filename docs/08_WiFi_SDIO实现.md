@@ -1,0 +1,451 @@
+# WiFi（板载协处理器 / SDIO + ESP-Hosted）—— 现状调研与实现路线
+
+> 版本：2026-10-23 · 状态：**第 1 层（P4 SDMMC/SDIO host 驱动）已实现并通过构建验证；
+> 第 2/3 层（ESP-Hosted 协议 + 远端 WiFi netdev）未实现**
+>
+> - ✅ P4 SDMMC host 驱动（`esp_sdmmc.c`）：完整 `struct sdio_dev_s` 方法表、IDMAC 描述符链、
+>   CLIC 中断、双 slot 引脚路由；**实测编入固件、符号落位、调用链已反汇编核实**
+> - ✅ 枚举层（`esp_hosted_sdio.c`）：`esp_sdmmc_initialize` → `sdio_probe`，里程碑状态机
+> - ❌ ESP-Hosted 协议层与远端 WiFi netdev
+
+## 一、结论先行（三条硬事实）
+
+### 1.1 ESP32-P4 **没有 WiFi 射频**
+
+`SOC_WIFI_SUPPORTED` 在 esp32p4 的 `soc_caps.h` 中**不存在**，而 esp32c6 有：
+
+```
+nuttx/arch/risc-v/src/esp32p4/esp-hal-3rdparty/components/soc/esp32c6/include/soc/soc_caps.h:44
+    #define SOC_WIFI_SUPPORTED  1
+nuttx/arch/risc-v/src/esp32p4/esp-hal-3rdparty/components/soc/esp32p4/include/soc/soc_caps.h
+    （只有 SOC_SDMMC_HOST_SUPPORTED 1，无 SOC_WIFI_SUPPORTED）
+```
+
+因此 **P4 上的 WiFi 不可能是"本地驱动"**，只能是"通过某条链路去驱动板载的
+协处理器"。这也解释了为什么树里 `esp_wifi_*.c`（`esp_wifi_api.c`、`esp_wlan.c`、
+`esp_wlan_netdev.c`、`Wireless.mk/.cmake`）全是**给 C6/H2 自持射频用**的路径，
+对本板毫无意义 —— 它们编不出本板的 WiFi。
+
+### 1.2 板载模组是 **ESP32-C5-MINI-1**，不是 C6
+
+来自官方 user guide（ESP32-P4X-C5-Function-EV-Board）：
+
+> "The board is equipped with the **ESP32-C5-MINI-1** module, which supports
+> 2.4 GHz & 5 GHz dual-band Wi-Fi 6 and Bluetooth 5 (LE)"
+
+> ⚠️ **这修正了此前文档与任务描述里"板载 C6"的说法。** 影响是实质性的：
+> ESP-Hosted 的从机固件要按 **C5** 目标构建（`idf.py set-target esp32c5`），
+> 按 C6 准备会直接跑不起来。
+
+（C5 与 C6 在 J1 引出上也能对上：J1 pin 35 = GPIO53 与 PA 使能复用，
+pin 32 = GPIO54 与 **C5 使能**复用 —— 官方表脚注写明"move R76 to R80 to disable
+the ESP32-P4 control of the ESP32-C5 enable function"。）
+
+### 1.3 NuttX/openvela 树里**没有任何 esp-hosted 实现**
+
+```
+$ find . -iname "*esp-hosted*" -o -iname "*esp_hosted*"     # 全工作区
+（无结果，除了 docs 里那份原厂启动日志的一行字样）
+```
+
+也没有 SDMMC/SDIO host 驱动可复用：
+
+```
+nuttx/arch/risc-v/src/common/espressif/     # 只有 esp_sdm.c（Σ-Δ 调制器，与 SD 无关）
+nuttx/arch/xtensa/src/esp32s3/esp32s3_sdmmc.c   # 2974 行，整套 sdio_ops_s，但只在 xtensa/S3
+```
+
+P4 侧只有 HAL：`components/esp_hal_sd/sdmmc_hal.c` + `upper_hal_sdmmc/`。
+
+## 二、硬件链路（来自官方原理图）
+
+原理图 `ESP32_P4X_C5_Function_EV_board-2.0-schematics.pdf` 中，
+P4 有两组 SD 控制器引出：
+
+| 网名组 | GPIO | 用途（依据） |
+|---|---|---|
+| `SD2_CLK/CMD/D0..D3` | **18 / 19 / 14 / 15 / 16 / 17** | 4-bit 总线 —— 与 P4 系其他板（如 Guition JC-ESP32P4-M3-DEV）的"SDIO slot 1 接协处理器射频、40 MHz、4-bit"完全同构 |
+| `SD1_*` + `SD_DET` | （另一组） | microSD 卡座（官方 user guide：MicroSD 4-bit） |
+
+即：**协处理器走 SD2（4-bit SDIO），SD 卡走 SD1**，两组不要混。
+（`SD2_*` 的 GPIO 映射是从原理图文本层直接读出的，非推测；C5 模组侧的 SDIO
+引脚名未在该 PDF 文本层出现，上板前建议用万用表/示波器对 `SD2_CLK` 与
+C5 模组对应脚复核一次。）
+
+## 三、已实现的部分（第 1 层 + 枚举）
+
+| 文件 | 内容 |
+|---|---|
+| `nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.c/.h` | P4 SDMMC/SDIO host 驱动（约 700 行）|
+| `nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.c/.h` | 协处理器链路：host 拉起 → SDIO 枚举 → 里程碑状态 |
+
+### 3.1 为什么不照抄 S3 的驱动
+
+控制器是同一块 DesignWare MSHC，**寄存器偏移完全一致**，但四处是芯片相关的：
+
+1. **两个 slot 的引脚路由方式不同**（P4 独有，且官方头文件写明了）：
+
+   | slot | 用途 | 路由 | 引脚 |
+   |---|---|---|---|
+   | 0 | microSD | **IO_MUX** | CLK43 CMD44 D0..D3 39..42 |
+   | 1 | 协处理器 | **GPIO matrix** | CLK18 CMD19 D0..D3 14..17 |
+
+   `sdmmc_pins.h` 里 slot 0 有定义，slot 1 明确写着 "SLOT1 doesn't go through IOMUX"；
+   `SDMMC_LL_SLOT_SUPPORT_GPIO_MATRIX()` 也只在 slot 1 返回真。**S3 上所有引脚都走
+   GPIO matrix**，所以这一层在 S3 驱动里根本不存在，必须新写。
+
+2. **时钟树在控制器之外**，位于 `HP_SYS_CLKRST`（`peri_clk_ctrl01/02`）：每卡分频器在
+   SDMMC 的 CLKDIV 寄存器，而源分频与 HS/LS 边沿选择在系统时钟块。
+
+3. **DMA 是控制器自带的 IDMAC**，不占 GDMA 通道 —— 这点在本板很关键，因为
+   **I2S 驱动已经占用了 GDMA 通道**，走 IDMAC 两者互不干扰。
+
+4. **中断走 CLIC**，用 `esp_setup_irq(SDIO_HOST_INTR_SOURCE, ...)` 安装。
+
+### 3.2 寄存器层用 Espressif 自己的 LL，而不是手抄寄存器表
+
+全部寄存器访问走 `components/esp_hal_sd/esp32p4/include/hal/sdmmc_ll.h` ——
+**ESP-IDF 驱动同一颗控制器的同一份代码**。手抄 440 行位域定义是纯粹的重复劳动，
+而且错一位就是静默故障。本文件只写"集成"：NuttX 的方法表、命令/响应翻译、
+等待与回调机制、IDMAC 描述符链。
+
+### 3.3 一个容易忽略的正确性细节：描述符必须 64 字节
+
+P4 的 L1 cache line 是 64 字节，芯片自己的 `sdmmc_desc_t` 就带 `reserved[12]` 补齐
+（注释写明是 cache 对齐）。描述符若短于一行，就会与邻居共用 cache line，
+clean 一个会把另一个的陈旧内容一起写回，**悄悄毁掉描述符链**。本驱动照做。
+
+### 3.4 配置开关（默认全关，附理由）
+
+```kconfig
+config ESPRESSIF_SDMMC          # P4 SD/MMC host（select MMCSD / ARCH_HAVE_SDIO / SDIO_DMA）
+config ESPRESSIF_SDMMC_SLOT     # 默认 1 = 协处理器；0 = microSD
+config ESPRESSIF_SDMMC_DMA      # 默认 y
+config ESPRESSIF_SDMMC_CLK/CMD/D0..D3   # 逐引脚，默认与本板接线一致
+config ESPRESSIF_HOSTED_SDIO    # 枚举层；select ESPRESSIF_SDMMC
+config ESPRESSIF_HOSTED_SDIO_SLOT       # 默认 1
+```
+
+**故意默认关闭**：第 1 层能编入、能跑到"枚举到对端"，但第 2/3 层没有，
+所以打开也**不会凭空多出一个 wlan0**，只会让启动日志多两行。要验证这段时间链时
+把 `ESPRESSIF_SDMMC` / `ESPRESSIF_HOSTED_SDIO` / `MMCSD_SDIO` 三个打开即可。
+
+### 3.5 验证证据（本轮实测）
+
+开启上述开关后的完整构建：
+
+```
+0 error；nuttx.bin 1,835,008 B；音频 4 个符号同时在线（互不影响）
+T esp_hosted_sdio_initialize
+T esp_sdmmc_initialize
+T sdio_probe
+T sdio_io_rw_direct
+T sdio_set_wide_bus
+```
+
+调用链（`objdump` 反查，逐层核实）：
+
+```
+esp_bringup → esp_hosted_sdio_initialize → esp_sdmmc_initialize
+                                        → sdio_probe
+```
+
+默认配置下重新构建：**0 error**，且 SDMMC/hosted 符号数 = 0（确认默认不编入）。
+
+### 3.6 顺带修掉的上游 CMake 移植缺陷
+
+`drivers/mmcsd/CMakeLists.txt` 在 `CONFIG_MMCSD_SDIO` 下**只编 `mmcsd_sdio.c`，
+漏了 `sdio.c`**（Makefile 路径是正确的：`CSRCS += mmcsd_sdio.c sdio.c`）。
+`sdio.c` 才是 SDIO 功能 API（`sdio_probe` / `sdio_io_rw_direct` / `sdio_set_wide_bus`）
+的宿主，缺了它任何 SDIO 用途都会在链接期炸 `undefined reference to sdio_probe`。
+与音频那两个缺头文件的问题同类：**只有真正用到该配置才会暴露**。
+
+## 四、要做的事（分阶段，逐轮推进）
+
+### 阶段 B（下一轮）：SDIO 上层的 ESP-Hosted 传输
+
+esp-hosted 的链路是：P4 ← SDIO → C5 从机固件，其上跑 RPC。
+这部分需要：
+
+1. **C5 侧从机固件**：用 ESP-IDF 以 `esp32c5` 为目标构建 esp-hosted slave
+   （**这是前置条件**，没有它 P4 侧写得再对也握手不上）
+2. P4 侧：SDIO 枚举 → 功能寄存器读写 → 数据通道 → esp-hosted 的
+   protobuf/RPC 编解码 → 远端 WiFi 命令转发
+3. 最上层：把远端 WiFi 暴露成 NuttX netdev（或复用 `esp_wlan` 的 netdev 层）
+
+工作量量级：从零参考实现，数千行且强依赖 C5 侧固件行为。**必须分多轮**，
+且每轮都要有可验证的里程碑（枚举到 C5 → 读到功能块 → 握手成功 → 扫描到 AP
+→ 拿到 DHCP）。
+
+### 阶段 C：与现有网络栈共存
+
+本板已有 **eth0（RMII，已 DHCP 全自动，见 STATUS §五）** 作为保底联网。
+WiFi 上线后需要注意：
+
+- 双网卡路由优先级（默认路由归谁）
+- `CONFIG_NETINIT_*` 对两张卡的处理
+- 演示时"有线保底 + 无线增强"的切换方式
+
+## 五、上板前必须核对的事项
+
+第 1 层已经写完，但**还没在真机上跑过** —— 下面几条都还没验证，跑之前请逐条核对
+（寄存器写得再对，接线不对也连不通）：
+
+1. 万用表确认 `SD2_CLK(18)/CMD(19)/D0(14)/D1(15)/D2(16)/D3(17)` 确实连到 C5 模组
+2. 确认 C5 模组的供电与 `C5_CHIP_PU`（使能）由 P4 的 GPIO54 控制
+   （J1 表脚注：默认 P4 控制 C5 使能；如被 R76→R80 改动则此控制失效）
+3. 用原厂 IDF 固件先确认 WiFi 工作正常（`docs/ref_stock_boot_esp-idf_v5.5.2.log`
+   是原厂启动日志，可作为"硬件好"的基线）
+4. 确认 C5 侧是否有可用的 esp-hosted slave 固件/固件烧写通道
+   （板上有 "ESP32-C5 Module Programming Connector"）
+
+## 六、范围说明（诚实记录）
+
+**已做**：第 1 层（SDMMC/SDIO host 驱动）与枚举层，构建验证到"符号落位 + 调用链核实"。
+
+**没做**：ESP-Hosted 协议层与远端 WiFi netdev。所以**现在打开这些开关也上不了网**，
+`esp_hosted_sdio_initialize()` 跑到 `ENUMERATED` 就返回 —— 它证明的是
+"对端在电气上应答了、功能块可见"，**不是**"有了一张网卡"。
+板上联网仍然靠 eth0（RMII，已 DHCP 全自动）。
+
+**还没验证的**：真机。本轮所有证据都是构建期/静态的（编译、链接、符号、反汇编），
+没有上板跑过枚举。下一个可验收里程碑就是上板跑一次：
+
+```
+esp_hosted_sdio_state() 返回 ESP_HOSTED_SDIO_ENUMERATED
+（即 esp_sdmmc_initialize 成功 + sdio_probe 成功）
+```
+
+跑之前先过 §五 的核对清单。
+
+---
+
+# 附录：SDMMC/SDIO 驱动真机上板实录（2026-10-26）
+
+本轮把 `esp_sdmmc.c` / `esp_hosted_sdio.c` **第一次跑在真板上**。这是本轮最有价值的
+一步：上板前的所有结论都是构建期的，而真机立刻暴露了三个只有在硬件上才会出现的
+问题，也第一次拿到了"控制器确实起来了"的证据。
+
+## B.1 真机已验证通过的部分
+
+```
+esp_hosted_sdio: companion enable asserted (GPIO54), waiting 200 ms
+esp_hosted_sdio: SDIO host ready on slot 1
+```
+
+- **P4 SDMMC 控制器在真机上成功初始化**（slot 1）：模块时钟、复位、时钟源、
+  相位、引脚路由全部生效，`esp_sdmmc_initialize()` 返回非 NULL
+- **协处理器使能 GPIO54 可正常驱动**（J1 表脚注：GPIO54 复用为"P4 控制 C5 使能"）
+- 分层状态机按设计工作：先到 `HOST_READY`，再尝试枚举
+
+## B.2 真机暴露的两个问题（已修）
+
+### B.2.1 探测前没有使能卡时钟、也没有挂中断 → 命令永远完不成
+
+第一版 `esp_hosted_sdio_initialize()` 直接调 `sdio_probe()`，跳过了两个必需步骤：
+
+- `SDIO_ATTACH(dev)` —— 不挂中断，控制器完成中断永远不装；
+- `SDIO_CLOCK(dev, CLOCK_IDMODE)` —— 不开卡时钟，CIU 根本移不出命令，
+  `START` 位不会自清，下一次发送就空转到超时，最后报 **-EBUSY**。
+
+真机现象正是如此：`no SDIO response from the companion module: -16`（-16 = EBUSY）。
+`mmcsd_sdio_initialize()` 里也是这两步，而且它在 attach 失败时同样返回 -EBUSY ——
+这个巧合很容易把排查引向错误的结论（"attach 坏了"），实际是时钟没开。
+
+修复：探测前先 `SDIO_ATTACH` + `SDIO_CLOCK(CLOCK_IDMODE)` + 20 ms 稳定。
+
+### B.2.2 协处理器需要先上电
+
+板上 ESP32-C5 由 P4 的 GPIO54 门控，默认拉低即是**断电/复位保持**。
+不驱动它，总线上没有任何设备会应答 —— 表现为控制器正常、探测恒返回 -EBUSY。
+
+修复：新增 `CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO`（默认 54）与
+`_EN_DELAY_MS`（默认 200）：先拉高、等 200 ms（协处理器要跑完自己的固件才能
+枚举成 SDIO 卡），再探测。
+
+## B.3 仍未完成
+
+枚举本身还没成功：修完上述两点后仍然是
+`no SDIO response from the companion module: -16`。
+
+按当前证据，最可能的剩余原因（按可疑度排序）：
+
+1. **C5 模组上没有 esp-hosted 从机固件**。这一点从一开始就写在阶段 B 的前置条件里：
+   ESP-Hosted 需要 C5 侧跑配套固件，出厂固件未必是 esp-hosted slave。
+   没有它，C5 不会作为 SDIO 卡枚举 —— 这与"控制器一切正常、只是没人应答"完全吻合。
+2. 200 ms 等待不够（可加大后再测）。
+3. slot 1 的引脚/相位需要微调（`SD2_*` 映射来自原理图文本层，尚未用示波器复核）。
+
+**下一步最省力的判别**：给 C5 烧一个 esp-hosted slave 固件后再跑同一份固件。
+如果枚举成功，就证明 P4 侧驱动是通的；如果仍然 -16，问题在 P4 侧的引脚/时钟。
+
+## B.4 与音频的相互影响
+
+SDMMC 与音频同开时**互不干扰**（实测：同一镜像里 SDMMC 初始化 + 音频
+`/dev/audio/pcm0` 均正常，音频仍能完整播放 192044 字节）。原因是 SDMMC 用
+控制器自带的 IDMAC，不占 I2S 用的 GDMA 通道 —— 这个设计选择在真机上得到了确认。
+
+---
+
+# 附录 C：SDIO 卡时钟没有被提交 —— 真正的 -EBUSY 根因（2026-10-26 晚）
+
+本轮先把"上一轮为什么恒返回 -EBUSY"查清了。结论是**驱动里少了一步**，
+不是硬件问题。
+
+## C.1 先修诊断：`mcerr` 被编掉了
+
+上一轮加的寄存器打印一行都没出现，原因是 `mcerr()` 在 `-DNDEBUG` 下被编译掉。
+改用 `syslog(LOG_INFO, ...)` 后终于拿到真机寄存器快照：
+
+```
+esp_hosted_sdio: verid=5342270a status=00000406 cdetect=00000000 clkena=00000002
+esp_hosted_sdio: clkdiv=00009f00 ctrl=00000012 rintsts=00000000
+esp_hosted_sdio: probe attempt 1 -> -16
+```
+
+- `verid=0x5342270a` —— 控制器版本 ID 正常（DesignWare MSHC 2.70a），**控制器是好的**
+- `clkena=0x2` / `clkdiv=0x9f00` —— 卡 1 时钟"已使能"、分频 159，寄存器读回来都对
+- `rintsts=0` —— **一次命令完成中断都没有**
+
+这条组合非常关键：寄存器看起来全对，却一条命令都没完成。
+
+## C.2 根因：CLKDIV/CLKENA 只写进了 BIU，没有提交到卡时钟域
+
+DesignWare MSHC 的 `update_clk_reg`（命令寄存器 bit21）说明写得很清楚：
+
+> 0: Normal command sequence; 1: Do not send commands, just update clock
+> register value into card clock domain. **Following register values are
+> transferred into card clock domain: CLKDIV, CLKSRC, and CLKENA.**
+
+也就是说，写 CLKDIV/CLKSRC/CLKENA **只是暂存在 BIU**，必须再发一条
+`update_clk_reg=1` 的命令，它们才真正进入卡时钟域。原来的 `esp_sdmmc_clock()`
+只写了三个寄存器就返回了 —— **卡时钟实际从未启动**。
+
+于是：命令永远发不出去 → CIU 的 START 位永不自清 → 我的
+`esp_sdmmc_ciu_sendcmd()` 等到超时后返回 `-EBUSY`。
+
+**这个缺陷的欺骗性在于：三个寄存器读回来全都是"正确"的值。**
+
+修复（`esp_sdmmc.c`）：
+
+```c
+sdmmc_ll_set_card_clock_div(hw, priv->slot, div);
+sdmmc_ll_enable_card_clock(hw, priv->slot, true);
+
+memset(&upd, 0, sizeof(upd));
+upd.update_clk_reg = 1;
+upd.start_command  = 1;
+sdmmc_ll_set_command(hw, upd);
+/* 等 START 自清，带超时 */
+```
+
+## C.3 修复后的真机变化（关键证据）
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 返回码 | `-16` (EBUSY) | **`-110` (ETIMEDOUT)** |
+| 含义 | 命令**发不出去**，START 卡死 | 命令**发出去了**，但**没有卡应答** |
+
+错误码的语义变了，说明**命令通道已经通了**，瓶颈从"主机发不出"变成了
+"对端不回应"。
+
+## C.4 这一轮排除掉的可能
+
+- **使能极性**：新增"两次尝试分别驱动高/低电平"的探测（`esp_hosted_sdio.c`），
+  两种极性都返回 -110 —— 极性不是原因。
+- **使能时长**：三次尝试（200ms / 200ms / 再补 800ms）结果一致。
+- **控制器健康**：verid 正常、时钟寄存器正确、复位完成。
+
+## C.5 剩下的可能（按可疑度）
+
+1. **C5 模组没有 esp-hosted 从机固件**（我一直未能验证也无法烧写 —— 没有到
+   C5 的串口，也没有 esp-hosted 源码）；
+2. **`SD2_*` 根本没有连到 C5**：原理图文本层里这些网络只出现在测试点
+   TP3–TP9 和一个 2×3 排针（CON3X2）附近，C5 侧的 SDIO 网络名没有出现在可提取
+   的文本里；
+3. C5 被 `C5_BOOT` 拉在下载模式（没有代码去驱动它）。
+
+## C.6 顺带改进（保留在树里）
+
+- `esp_sdmmc_debug()` / `esp_sdmmc_debug_s`：快照 verid/status/cdetect/clkena/
+  clkdiv/ctrl/rintsts，供 bring-up 日志使用（不暴露整个寄存器块）；
+- `esp_sdmmc_bus_reset()`：两次枚举尝试之间复位控制器并重新使能识别时钟；
+- 枚举改为**三次尝试 + 极性对调 + 递增延时**，任何一次成功即停止。
+
+这些是通用的 bring-up 能力，换一块板子同样有用。
+
+## C.7 本轮继续排除的两项
+
+1. **`C5_BOOT` 不是原因**：原理图里 `C5_BOOT` 只出现在 C5 的编程排针
+   （CON3X2 / ESP-Prog）附近，**没有连到 P4 的 GPIO**，P4 无法把它拉进下载模式。
+2. **复位脉冲不是原因**：把使能改成"先拉低 50ms（保持在复位）→ 再拉高 → 等 200ms
+   → 探测"的完整上电时序后，仍然三次 `-110`。
+
+至此软件侧可做的尝试（时钟提交、极性、延时、复位脉冲、多次重试）都已做尽，
+结果一致：**总线上没有任何设备应答**。剩下的必须靠物理手段确认
+（示波器看 `SD2_CLK`/`SD2_CMD` 是否真的到 C5，以及 C5 是否在跑 esp-hosted 从机固件）。
+
+---
+
+# 附录 D：真正的阻塞原因找到了 —— C6 跑的是「串口」传输的 esp-hosted（2026-10-26 下午）
+
+这一轮拿到了一条决定性信息：**`/dev/ttyUSB1` 连的就是板载 ESP32-C6-Mini-1 的串口**
+（`usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`）。
+
+## D.1 直接读 C6 的输出
+
+以 115200 打开 `/dev/ttyUSB1` 发 `AT`，返回的不是 AT 应答，而是 esp-hosted 从机
+自己的周期统计：
+
+```
+I (15250601) stats: slave StaRxQLoad:        0
+H=>S: sta: in:        0 out:        0 fail:        0
+H<=S: sta: in:        0 out:        0
+  serial : in:        0 rsp:        0 evt:        0
+```
+
+关键在最后一行：**`serial`** —— 这颗 C6 上的 esp-hosted 从机是**串口（UART）传输**，
+统计计数器也全是 `serial: in/rsp/evt`。
+
+**这就解释了为什么 SDIO 永远 -110**：C6 根本不在 SDIO 传输模式上，
+自然不会有任何 SDIO 卡应答。前七轮在 SDIO 侧做的所有排查（时钟提交、极性、
+复位脉冲、延时）都是对的，但都在一条**对端没启用的总线**上。
+
+## D.2 板子的物理连接约束（原理图核实）
+
+- P4 → 协处理器 的信号：原理图里只有 **`P4_WAKEUP_C5`** 一条
+- 协处理器的串口 `C5_U0TXD` / `C5_U0RXD`：只接到**编程排针 / CP2102**，
+  **没有接到 P4**（P4 自己的串口是 `ESP_U0TXD/RXD`，走 ttyUSB0 console）
+- P4 与协处理器之间的数据通道：**只有 SD2_*（GPIO18/19/14-17）这组 SDIO**
+
+也就是说：
+**P4 没有串口能到 C6；想用 WiFi，C6 必须跑 SDIO 传输的 esp-hosted 从机固件。**
+
+## D.3 现在缺什么
+
+缺的是**把 C6 刷成 SDIO 传输版本**。而刷写需要先把 C6 送进下载模式：
+
+- 实测 `esptool.py` 在 `/dev/ttyUSB1` 上**无法自动同步**：
+  `--before default_reset` / `no_reset` / 手动驱动 DTR·RTS 的三种极性组合
+  （RTS→EN、DTR→BOOT 与相反）全部返回
+  `Failed to connect to Espressif device: No serial data received.`
+- 说明这颗 CP2102 的 **DTR/RTS 没有接到 C6 的 EN/BOOT**，
+  进下载模式只能靠**按板上的 BOOT + RESET 键**（或板上下载模式跳线）。
+
+## D.4 需要的操作（一条就够）
+
+**手动让 C6 进入下载模式**：按住 BOOT（GPIO9）不放 → 按一下 RESET（或断电重上电）
+→ 再松开 BOOT。然后告诉我，我会：
+
+1. 在 `/dev/ttyUSB1` 上用 esptool 确认能连上（`chip_id` 应报 ESP32-C6）；
+2. 构建 esp-hosted 的 **SDIO 传输**从机固件（ESP-IDF 5.5.6 已在本机，
+   需要联网拉 esp-hosted 源码 —— 当前网络间歇性 TLS 失败，需重试）；
+3. 烧写并复位 C6；
+4. 重跑 P4 的 SDIO 枚举 —— 若成功，`esp_hosted_sdio_state()` 会返回
+   `ENUMERATED`，随后才能做协议层（第 2 层）与 netdev（第 3 层）。
+
+## D.5 备选：esp-at 路线
+
+用户提到 esp-at v4.2.0.0。这条路**只有当 P4 与 C6 之间有一条串口**时才成立，
+而 D.2 已核实没有 —— C6 的串口只到编程排针。所以 AT 指令路线需要改板子接线，
+本板现状下不可行；除非把 C6 的 UART 飞线到 P4 的某个 UART 上。

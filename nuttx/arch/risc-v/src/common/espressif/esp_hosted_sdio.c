@@ -247,6 +247,18 @@ int esp_hosted_sdio_initialize(void)
     }
 #endif
 
+  /* Do not issue the update_clk_reg command from the generic clock path.
+   *
+   * That command never completes in this driver, and issuing it also triggers a
+   * controller reset -- both of which run after the initialisation above has
+   * correctly programmed CLKDIV/CLKSRC/CLKENA. The reference implementation for
+   * this same board programs the clock once at init and never needs the command
+   * during bring-up, so the generic path is disabled here and the clock set up
+   * in esp_sdmmc_initialize() is left untouched.
+   */
+
+  esp_sdmmc_skip_clk_update(true);
+
   /* Step 1: the host controller.
    *
    * Slot 1 is the companion radio.  Slot 0 is the microSD card, which is a

@@ -94,6 +94,7 @@
 #include "esp_sdmmc.h"
 
 #include <hal/clk_gate_ll.h>
+#include <esp_clk_tree.h>
 #include <esp_rom_gpio.h>
 #include <soc/hp_sys_clkrst_struct.h>
 #include <soc/gpio_sig_map.h>
@@ -1508,11 +1509,16 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * clock, so its start bit never clears and every later command is -EBUSY.
    */
 
+  /* Enable the clock source through the official API rather than poking the
+   * gate directly. Espressif's own P4 SDIO path calls exactly this
+   * (esp_clk_tree_enable_src(SDMMC_CLK_SRC_DEFAULT, true)) before touching
+   * CLKSRC, and a reference implementation for this same board does the same.
+   */
+
+  esp_clk_tree_enable_src((soc_module_clk_t)SDMMC_CLK_SRC_DEFAULT, true);
   clk_gate_ll_ref_160m_clk_en(true);
 
   /* Let the source propagate before it is routed to the card clock domain. */
-
-  up_udelay(10);
 
   sdmmc_ll_select_clk_source(hw, SDMMC_CLK_SRC_DEFAULT);
   /* div must be > 1, and 2 is what Espressif uses.
@@ -1527,8 +1533,15 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * "correct", no waveform anywhere, and CMD0 unable to emit its 80 clocks.
    */
 
-  sdmmc_ll_set_clock_div(hw, 2);
   sdmmc_ll_init_phase_delay(hw);
+
+  /* Let the selected controller clock propagate before the controller is
+   * reset. The reset bits self-clear in the controller-clock domain, so
+   * resetting before the clock exists leaves them stuck -- the reference
+   * implementation for this board waits here for exactly this reason.
+   */
+
+  up_udelay(10);
 
   /* Output phase 0 is the reset default, so it is stated rather than merely
    * assumed: it is the value the P4X-C5 board is known good with, and a board
@@ -1586,6 +1599,7 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    */
 
   sdmmc_ll_init_dma(hw);
+  sdmmc_ll_enable_dma(hw, false);
 
   sdmmc_ll_enable_global_interrupt(hw, true);
 

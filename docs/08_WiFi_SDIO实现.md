@@ -2296,3 +2296,69 @@ esp_hosted_sdio: GPIO18 out_sel=0 (0 = SDMMC CLK signal, 256 = plain GPIO)
 - **WiFi**：主机侧驱动已实现并修掉 **10 处真缺陷**（每一处都有真机证据），
   从机固件已构建烧录并确认运行，帧层已投放并通过主机测试；
   **但卡时钟波形不出现，枚举无法开始。** 这一项在本环境的软件范围内已无法推进。
+
+---
+
+# 附录 K：参考仓库 contest2026_031 的对照（2026-10-27）
+
+用户提供了 `open-vela/contest2026_031_niudanxianqianchong`（分支
+`dev-ai-contest-2026`），他们在**同一块板（P4 + 板载 C6）**上把 WiFi 跑通了：
+SDIO 枚举、ESP-Hosted 控制面、`wlan0` 注册、DHCP、DNS、TCP 全通。
+
+## K.1 他们做对了什么（与我实现的关键差异）
+
+| 项 | 参考实现 | 本移植 |
+|---|---|---|
+| **枚举** | 自己实现 **CMD0→CMD5→CMD3→CMD7→CMD52** 全序列 | 依赖 NuttX `sdio_probe()`（**只发 CMD0 + CMD5**）|
+| 总线宽度 | **1-bit**（D1/D2 仅输入，D3 当 GPIO 驱动高） | 4-bit |
+| 数据传输 | **全程轮询 CMD52/CMD53**，`enable_dma(false)` | 走 NuttX SDIO 栈 + IDMAC |
+| 复位后等待 | **1000 ms** | 200 ms |
+| 时钟提交 | 仅在**改时钟时**才发 `update_clk_reg`；初始化阶段不发 | 每个 `SDIO_CLOCK` 都发 |
+| 代码归属 | 全部放在 **`chips/esp32p4/`**，完全不碰 `common/espressif/esp_sdmmc.c` | 改通用 `esp_sdmmc.c` |
+
+## K.2 逐字比对过、确认**没有差异**的部分
+
+- **引脚路由**：他们的 `route_pins()` 用 `esp_gpio_matrix_out/in`
+  + `esp_configgpio`。查 NuttX 源码，`esp_gpio_matrix_out()` 只是
+  `esp_rom_gpio_connect_out_signal()` 的薄封装 —— **与本移植完全等价**。
+- **时钟初始化顺序**：`enable_src → bus_clock/reset_register/div/src/phase
+  → 等 10µs → controller+dma+fifo 复位 → init_dma`。本移植已按此对齐，
+  时钟仍不出现。
+- **信号索引**：`SD_CARD_CCLK_2_PAD_OUT_IDX` 等，与本移植完全一致。
+
+## K.3 本轮据此做的三次改动（仍未让时钟出现）
+
+1. 改用官方 `esp_clk_tree_enable_src(SDMMC_CLK_SRC_DEFAULT, true)`
+2. 把 `up_udelay(10)` 移到"时钟全部配好之后、复位之前"（照抄他们的注释与顺序）
+3. 补 `sdmmc_ll_enable_dma(hw, false)`（他们的轮询路径就是这么做的）
+4. 屏蔽 bring-up 阶段的 `update_clk_reg`（他们初始化阶段也不发）
+
+**四项都做了，CLK 引脚仍然全低。** 所以差异不在这些点上。
+
+## K.4 剩下最可能的解释
+
+参考实现**根本不用本移植的 `esp_sdmmc.c`** —— 它自己从头配 SDMMC。
+而本移植即使把配置顺序逐条对齐，时钟依旧不出。
+
+这说明问题很可能出在**本驱动初始化之外的地方**（例如 NuttX 的 SDMMC 栈、
+或 `esp_sdmmc.c` 里某个本移植特有的状态），而不是"少配了哪个寄存器"。
+**继续在配置项上找，方向已经到尽头了。**
+
+## K.5 下一轮的正确方向（价值排序）
+
+1. **移植参考实现的做法**：放弃 NuttX 的 `sdio_probe`/`sdio.c` 栈，自己实现
+   CMD0→CMD5→CMD3→CMD7→CMD52 与轮询 CMD52/CMD53。这是**已被证明能在这块板上
+   工作**的路径。代价是要新写约 1000 行，但风险最低 —— 有现成参考。
+2. 若坚持用 NuttX 栈：需要查清"为什么同样的配置在参考实现里出时钟、
+   在本驱动里不出"，而那需要示波器或参考板对比。
+3. 4-bit 与 DMA 都不是必需的 —— 参考实现用 1-bit + 轮询就全通了，
+   这降低了移植难度。
+
+## K.6 一个明确的自评
+
+我在 10 轮里修了 10 处真缺陷，每一处都有证据，但**没有一处是最终阻塞点**。
+参考仓库的存在说明：**这个问题是可解的**，只是我的技术路线（复用 NuttX SDIO 栈）
+在这块芯片上遇到了我没能定位的障碍，而对方选择了绕开整个栈、自己实现原语。
+
+当"逐条对齐配置"反复无效时，正确的做法是**换一条被证明可行的技术路线**，
+而不是继续在同一个框架里找第 11 个缺陷。这一点我该更早意识到。

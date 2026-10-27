@@ -336,6 +336,8 @@ int esp_hosted_sdio_initialize(void)
            " peri02=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.sys_clk_ctrl1, dbg.peri_clk_ctrl01,
            dbg.peri_clk_ctrl02);
+    syslog(LOG_INFO, "%s: ref_clk2=%08" PRIx32 " (bit0 = PLL_F160M gated on)\n",
+           HOSTED_TAG, dbg.ref_clk_ctrl2);
   }
 
   /* Give the companion a real chance to come up before declaring failure.

@@ -1643,6 +1643,7 @@ void esp_sdmmc_debug(FAR struct esp_sdmmc_debug_s *dbg)
   dbg->sys_clk_ctrl1   = HP_SYS_CLKRST.soc_clk_ctrl1.val;
   dbg->peri_clk_ctrl01 = HP_SYS_CLKRST.peri_clk_ctrl01.val;
   dbg->peri_clk_ctrl02 = HP_SYS_CLKRST.peri_clk_ctrl02.val;
+  dbg->ref_clk_ctrl2   = HP_SYS_CLKRST.ref_clk_ctrl2.val;
 }
 
 /****************************************************************************

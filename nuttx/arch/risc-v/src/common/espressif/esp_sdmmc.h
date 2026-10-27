@@ -62,6 +62,7 @@ struct esp_sdmmc_debug_s
   uint32_t sys_clk_ctrl1;         /* HP_SYS_CLKRST.soc_clk_ctrl1          */
   uint32_t peri_clk_ctrl01;       /* HP_SYS_CLKRST.peri_clk_ctrl01        */
   uint32_t peri_clk_ctrl02;       /* HP_SYS_CLKRST.peri_clk_ctrl02        */
+  uint32_t ref_clk_ctrl2;         /* HP_SYS_CLKRST.ref_clk_ctrl2          */
 };
 
 /****************************************************************************

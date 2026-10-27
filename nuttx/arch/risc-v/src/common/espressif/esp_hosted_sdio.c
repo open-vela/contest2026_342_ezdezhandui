@@ -88,6 +88,9 @@
 #include "esp_sdmmc.h"
 #include "hosted_ref_sdio.h"
 
+#include <soc/io_mux_reg.h>
+#include <soc/sdmmc_pins.h>
+#include <soc/soc.h>
 #include <soc/gpio_sig_map.h>
 #include <soc/gpio_struct.h>
 #include "eh_frame.h"
@@ -248,61 +251,11 @@ int esp_hosted_sdio_initialize(void)
     }
 #endif
 
-  /* Decisive cross-check: run the reference implementation (borrowed from
-   * contest2026_031, which reaches full Wi-Fi operation on this exact board)
-   * on this controller, and sample the CLK pad straight afterwards.
-   *
-   * If a waveform appears here, the board and the pin plan are fine and the
-   * obstacle is specific to this driver's own initialisation. If it does not,
-   * the problem is earlier than both drivers.
+  /* The reference-implementation cross-check that used to sit here has been
+   * removed: it hard-coded the slot-1 pins and its conclusion (both
+   * implementations fail identically) is now explained -- the companion is
+   * wired to slot 0, so nothing was ever driven on the slot-1 pads.
    */
-
-  {
-    struct refsdio_pins_s rpins =
-      {
-        18, 19, 14, 15, 16, 17
-      };
-
-    struct refsdio_config_s rcfg =
-      {
-        1,   /* slot     */
-        1,   /* 1-bit    */
-        400  /* kHz      */
-      };
-
-    FAR struct refsdio_s *rhost = NULL;
-    int rret;
-
-    rret = refsdio_route_pins(&rpins);
-    syslog(LOG_INFO, "%s: REF route_pins -> %d\n", HOSTED_TAG, rret);
-
-    rret = refsdio_initialize(&rcfg, &rhost);
-    syslog(LOG_INFO, "%s: REF initialize -> %d\n", HOSTED_TAG, rret);
-
-    {
-      int hi = 0;
-      int lo = 0;
-      int i;
-
-      for (i = 0; i < 512; i++)
-        {
-          if (esp_gpioread(18))
-            {
-              hi++;
-            }
-          else
-            {
-              lo++;
-            }
-        }
-
-      syslog(LOG_INFO,
-             "%s: REF CLK sample: %d high, %d low -- %s\n",
-             HOSTED_TAG, hi, lo,
-             (hi && lo) ? "CLOCK RUNNING under the reference implementation"
-                        : "still no clock under the reference implementation");
-    }
-  }
 
   /* Do not issue the update_clk_reg command from the generic clock path.
    *
@@ -435,7 +388,7 @@ int esp_hosted_sdio_initialize(void)
      * path samples what the controller is really driving.
      */
 
-    esp_configgpio(CONFIG_ESPRESSIF_SDMMC_CLK, INPUT | OUTPUT);
+    /* Purely passive: never reconfigure the pad here. */
 
     for (i = 0; i < 512; i++)
       {
@@ -456,69 +409,26 @@ int esp_hosted_sdio_initialize(void)
                       : "NOT toggling (no clock on the pad)");
   }
 
-  /* Isolation test: does the CLK pad itself work?
-   *
-   * Driving it as a plain GPIO and reading it back separates two very different
-   * failures. If the pad follows the value written, the pad, its output driver
-   * and its input path are all fine, and the missing clock must come from
-   * either the matrix routing or the controller's clock generation. If the pad
-   * does not follow, the problem is at the pad and no amount of controller
-   * configuration will matter.
+  /* The pad-level diagnostics that used to live here (drive the CLK pad as a
+   * plain GPIO, then route it back) are gone: they reconfigured the pad, and
+   * "routing it back" pointed it at the slot-1 matrix signal, which silently
+   * undid the IO_MUX attachment that slot 0 depends on.
    */
 
-  {
-    int drove_hi;
-    int drove_lo;
-
-    esp_configgpio(CONFIG_ESPRESSIF_SDMMC_CLK, INPUT | OUTPUT);
-
-    /* Point the pad's output mux back at the GPIO output register first.
-     * Without this the pad is still driven by the SDMMC CLK signal (the routing
-     * done in esp_sdmmc_configpins), so writing the GPIO register changes
-     * nothing and the test reports a pad fault that is really its own doing.
-     */
-
-    esp_rom_gpio_connect_out_signal(CONFIG_ESPRESSIF_SDMMC_CLK,
-                                    SIG_GPIO_OUT_IDX, false, false);
-
-    esp_gpiowrite(CONFIG_ESPRESSIF_SDMMC_CLK, true);
-    drove_hi = esp_gpioread(CONFIG_ESPRESSIF_SDMMC_CLK);
-    esp_gpiowrite(CONFIG_ESPRESSIF_SDMMC_CLK, false);
-    drove_lo = esp_gpioread(CONFIG_ESPRESSIF_SDMMC_CLK);
-
-    syslog(LOG_INFO,
-           "%s: CLK pad as plain GPIO: wrote 1 -> read %d, wrote 0 -> read %d -- %s\n",
-           HOSTED_TAG, drove_hi, drove_lo,
-           (drove_hi && !drove_lo) ? "pad works"
-                                   : "pad does NOT follow (pad-level fault)");
-
-    /* Hand the pad back to the controller. */
-
-    esp_rom_gpio_connect_out_signal(CONFIG_ESPRESSIF_SDMMC_CLK,
-                                    SD_CARD_CCLK_2_PAD_OUT_IDX, false, false);
-  }
-
-  /* Enable the in-flight CLK sampling for this bring-up.
+  /* Read back the IO_MUX function selection for the two pins that matter.
    *
-   * The pad's input path is already enabled by the isolation test above, and the
-   * output is routed back to the controller, so a read now returns whatever the
-   * SDMMC is really driving during a command.
+   * For a slot-0 (IOMUX) attachment the pad's MCU_SEL must be the SDMMC
+   * function (SDMMC_SLOT0_FUNC == 0). If it still reads as the GPIO function,
+   * the controller is connected to nothing no matter how correct the clock and
+   * command registers look.
    */
 
-  esp_sdmmc_probe_clk(true);
-
-  /* Confirm the matrix output selection actually took effect.
-   *
-   * GPIO.func_out_sel_cfg[pin].out_sel defaults to 256 (SIG_GPIO_OUT_IDX) and
-   * this driver routes the CLK pad to SD_CARD_CCLK_2_PAD_OUT_IDX, which is 0.
-   * Reading the field back is the difference between "the routing call was made"
-   * and "the pad is really driven by the SDMMC clock".
-   */
-
-  syslog(LOG_INFO, "%s: GPIO%d out_sel=%" PRIu32
-                   " (0 = SDMMC CLK signal, 256 = plain GPIO)\n",
-         HOSTED_TAG, CONFIG_ESPRESSIF_SDMMC_CLK,
-         (uint32_t)GPIO.func_out_sel_cfg[CONFIG_ESPRESSIF_SDMMC_CLK].out_sel);
+  syslog(LOG_INFO, "%s: IO_MUX MCU_SEL: GPIO43=%" PRIu32 " GPIO44=%" PRIu32
+                   " (SDMMC_SLOT0_FUNC=%d)\n",
+         HOSTED_TAG,
+         (uint32_t)REG_GET_FIELD(IO_MUX_GPIO43_REG, MCU_SEL),
+         (uint32_t)REG_GET_FIELD(IO_MUX_GPIO44_REG, MCU_SEL),
+         SDMMC_SLOT0_FUNC);
 
   ret = sdio_probe(sdio);
         if (ret >= 0)

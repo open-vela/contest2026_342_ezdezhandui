@@ -2560,3 +2560,89 @@ esp_hosted_sdio: REF CLK sample: 0 high, 512 low
 - 万用表量 P4 GPIO18/19/14~17 ↔ C6 19/18/20~23 的连通性；
 - 示波器看 GPIO18；
 - 或与参考队确认板子型号/revision 是否一致。
+
+---
+
+# 附录 L：**slot 搞错了** —— C6 接的是 slot 0（IOMUX），不是 slot 1（2026-10-27）
+
+用户提供了这块板真实的 SDIO 走线：
+
+```
+P4 GPIO44 → C6 IO18 → SD2_CMD
+P4 GPIO43 → C6 IO19 → SD2_CLK
+P4 GPIO39 → C6 IO20 → SD2_D0
+P4 GPIO40 → C6 IO21 → SD2_D1
+P4 GPIO41 → C6 IO22 → SD2_D2
+P4 GPIO42 → C6 IO23 → SD2_D3
+```
+
+## L.1 这与 slot 0 的 IOMUX 引脚**完全吻合**
+
+`components/esp_hal_sd/esp32p4/include/soc/sdmmc_pins.h`：
+
+```c
+#define SDMMC_SLOT0_IOMUX_PIN_NUM_CLK  43      ← 对上 GPIO43
+#define SDMMC_SLOT0_IOMUX_PIN_NUM_CMD  44      ← 对上 GPIO44
+#define SDMMC_SLOT0_IOMUX_PIN_NUM_D0   39      ← 对上 GPIO39
+#define SDMMC_SLOT0_IOMUX_PIN_NUM_D1   40
+#define SDMMC_SLOT0_IOMUX_PIN_NUM_D2   41
+#define SDMMC_SLOT0_IOMUX_PIN_NUM_D3   42
+```
+
+**结论：C6 接在 SDMMC slot 0 上，走 IOMUX。**
+
+而本移植从第 1 轮起就用 **slot 1 + GPIO 矩阵 + 引脚 18/19/14-17** ——
+那是从 NuttX 的 `sdmmc_pins.h` SLOT1 定义反推的，而那个定义在这块板上是错的。
+
+**这解释了此前全部现象：**
+
+| 现象 | 解释 |
+|---|---|
+| 引脚 18 上永远没有时钟 | 控制器根本在驱动 43，不是 18 |
+| 换实现（参考仓库）也失败 | 参考仓库同样按 slot 1/18 号脚配置 |
+| 引脚本体测试正常 | 引脚本身没坏，只是接错了 |
+| 所有时钟寄存器"正确" | 它们**确实正确** —— 只是输出到另一组引脚 |
+
+**这是我四十多轮里最大的一个方向性错误。**
+
+## L.2 已实施的修正
+
+1. `esp_sdmmc_configpins()` 改为 **slot 感知**：
+   - slot 0 → 用 IO_MUX 功能（新增导出的 `esp_gpio_func_sel()`，
+     因为 `esp_configgpio()` 无法表达功能号 0）
+   - slot 1 → 原来的 GPIO 矩阵路径（保留，其它板可能用得上）
+2. defconfig：`SDMMC_SLOT=0`、引脚 `CLK=43 CMD=44 D0..D3=39,40,41,42`、
+   `HOSTED_SDIO_SLOT=0`
+3. 移除 `esp_hosted_sdio.c` 里所有**会改动引脚**的诊断代码（引脚采样、
+   GPIO 试写、"恢复矩阵路由"）—— "恢复"那一步会把引脚接回 **slot 1** 的
+   矩阵信号，等于把 IOMUX 配置整个废掉。**这是我自己的诊断代码引入的 bug。**
+
+## L.3 真机确认（主机侧现在完全正确）
+
+```
+esp_sdmmc: slot 0 pads attached via IO_MUX (CLK=43 CMD=44 D0..D3=39,40,41,42)
+esp_hosted_sdio: clkena=00000001                 ← slot 0 卡时钟已使能
+esp_hosted_sdio: IO_MUX MCU_SEL: GPIO43=0 GPIO44=0   ← 引脚确实切到 SDMMC 功能
+```
+
+## L.4 但枚举仍返回 -110
+
+```
+esp_hosted_sdio: probe 1/12 -> -110, retrying
+```
+
+主机侧现在**每一环都有读数确认正确**（slot、IO_MUX 功能、卡时钟使能、时钟链），
+对端 C6 也确认在运行 —— 仍无应答。
+
+> 注意：此前的"CLK 引脚采样"诊断对 slot 0 **已失效** —— 引脚处于 IO_MUX 外设
+> 模式时，其输入通路接给 SDMMC 外设，`esp_gpioread()` 读不到。所以现在的
+> "全低"不代表没有时钟，不再有诊断意义。
+
+## L.5 下一轮要查的
+
+1. **slot 0 的卡时钟分频**：`sdmmc_ll_set_card_clock_div(hw, 0, div)` 是否真的
+   写进了 `clkdiv.card0_div`（读回确认）；
+2. **命令的 `card_num`**：是否应为 0（现已改为 `priv->slot`=0，需读回确认）；
+3. **CMD 线的响应类型配置**：CMD5 需要 R4 响应（OCR，48 位），若响应类型
+   配错，命令可能根本不发出去；
+4. C6 侧是否真的在这组脚上（用户已确认，但可再交叉验证）。

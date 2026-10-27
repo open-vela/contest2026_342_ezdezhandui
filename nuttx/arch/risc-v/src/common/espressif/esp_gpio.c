@@ -454,3 +454,27 @@ int esp_gpio_irq(int id, xcpt_t irqhandler, void *arg)
   return OK;
 }
 #endif
+
+/****************************************************************************
+ * Name: esp_gpio_func_sel
+ *
+ * Description:
+ *   Select the IO_MUX function of a pad.
+ *
+ *   esp_configgpio() can only express a function number >= 1, because a
+ *   FUNCTION attribute of 0 is indistinguishable from "no attribute". That is
+ *   exactly the value SDMMC slot 0 needs (SDMMC_SLOT0_FUNC is 0), so the plain
+ *   helper is exported here rather than worked around at the call site.
+ *
+ ****************************************************************************/
+
+int esp_gpio_func_sel(int pin, uint32_t func)
+{
+  if (pin < 0 || pin >= SOC_GPIO_PIN_COUNT)
+    {
+      return -EINVAL;
+    }
+
+  gpio_hal_func_sel(&g_gpio_hal, pin, func);
+  return OK;
+}

@@ -151,6 +151,17 @@ extern "C"
 int esp_configgpio(int pin, gpio_pinattr_t attr);
 
 /****************************************************************************
+ * Name: esp_gpio_func_sel
+ *
+ * Description:
+ *   Select the IO_MUX function of a pad (0 is a valid function number here,
+ *   which esp_configgpio cannot express).
+ *
+ ****************************************************************************/
+
+int esp_gpio_func_sel(int pin, uint32_t func);
+
+/****************************************************************************
  * Name: esp_gpio_matrix_in
  *
  * Description:

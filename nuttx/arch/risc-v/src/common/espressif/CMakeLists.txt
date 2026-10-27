@@ -609,3 +609,10 @@ if(CONFIG_ESPRESSIF_HOSTED_SDIO)
     ${CMAKE_CURRENT_LIST_DIR}/eh_frame/include
     ${CMAKE_CURRENT_LIST_DIR}/eh_frame/shim)
 endif()
+
+# The proven SDIO implementation borrowed from contest2026_031 (see docs/08
+# appendix K). Kept as a separate translation unit while it is being validated
+# against the existing esp_hosted_sdio.c.
+if(CONFIG_ESPRESSIF_HOSTED_SDIO)
+  target_sources(arch PRIVATE ${CMAKE_CURRENT_LIST_DIR}/hosted_ref_sdio.c)
+endif()

@@ -86,6 +86,7 @@
 #include "esp_gpio.h"
 #include "esp_hosted_sdio.h"
 #include "esp_sdmmc.h"
+#include "hosted_ref_sdio.h"
 
 #include <soc/gpio_sig_map.h>
 #include <soc/gpio_struct.h>
@@ -246,6 +247,62 @@ int esp_hosted_sdio_initialize(void)
       nxsig_usleep(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS * 1000);
     }
 #endif
+
+  /* Decisive cross-check: run the reference implementation (borrowed from
+   * contest2026_031, which reaches full Wi-Fi operation on this exact board)
+   * on this controller, and sample the CLK pad straight afterwards.
+   *
+   * If a waveform appears here, the board and the pin plan are fine and the
+   * obstacle is specific to this driver's own initialisation. If it does not,
+   * the problem is earlier than both drivers.
+   */
+
+  {
+    struct refsdio_pins_s rpins =
+      {
+        18, 19, 14, 15, 16, 17
+      };
+
+    struct refsdio_config_s rcfg =
+      {
+        1,   /* slot     */
+        1,   /* 1-bit    */
+        400  /* kHz      */
+      };
+
+    FAR struct refsdio_s *rhost = NULL;
+    int rret;
+
+    rret = refsdio_route_pins(&rpins);
+    syslog(LOG_INFO, "%s: REF route_pins -> %d\n", HOSTED_TAG, rret);
+
+    rret = refsdio_initialize(&rcfg, &rhost);
+    syslog(LOG_INFO, "%s: REF initialize -> %d\n", HOSTED_TAG, rret);
+
+    {
+      int hi = 0;
+      int lo = 0;
+      int i;
+
+      for (i = 0; i < 512; i++)
+        {
+          if (esp_gpioread(18))
+            {
+              hi++;
+            }
+          else
+            {
+              lo++;
+            }
+        }
+
+      syslog(LOG_INFO,
+             "%s: REF CLK sample: %d high, %d low -- %s\n",
+             HOSTED_TAG, hi, lo,
+             (hi && lo) ? "CLOCK RUNNING under the reference implementation"
+                        : "still no clock under the reference implementation");
+    }
+  }
 
   /* Do not issue the update_clk_reg command from the generic clock path.
    *

@@ -2457,3 +2457,64 @@ esp_hosted_sdio: ref_clk2=00000101 (bit0 = PLL_F160M gated on)
 
 **风险与收益**：新写约 600–1000 行；但这是同一块板上已被证明可行的路径，
 而且 1-bit + 轮询让复杂度显著低于当前的 IDMAC 路径。
+
+## K.13 第 42 轮：**把参考实现原样跑在本板上 —— 它也失败**
+
+这是十几轮来最重要的一次对照实验。
+
+### 做法
+
+把参考仓库的 `esp_hosted_sdio.c` / `.h` **原样拷入**（仅重命名符号避免冲突，
+逻辑一行未改），在板级 bring-up 里先用他们的引脚路由 + 初始化，
+**紧接着采样 CLK 引脚**：
+
+```c
+rret = refsdio_route_pins(&rpins);      /* 18,19,14,15,16,17 */
+rret = refsdio_initialize(&rcfg, &rhost);   /* slot=1, 1-bit, 400 kHz */
+/* 紧接着采样 GPIO18 512 次 */
+```
+
+### 结果
+
+```
+esp_hosted_sdio: REF route_pins -> 0
+esp_hosted_sdio: REF initialize -> -110
+esp_hosted_sdio: REF CLK sample: 0 high, 512 low
+                 -- still no clock under the reference implementation
+```
+
+**他们那份在他们板上能跑到完整 Wi-Fi 的实现，在本板上：**
+- 引脚路由成功（返回 0）
+- 初始化返回 **-110（超时）** —— 与本移植自己实现的错误码**完全相同**
+- **CLK 引脚同样全低**
+
+### 这个结果的意义
+
+参考仓库的板级文件里，引脚定义与本移植**完全一致**：
+
+```c
+#define BOARD_ESP_HOSTED_SDIO_CLK_GPIO   18
+#define BOARD_ESP_HOSTED_SDIO_CMD_GPIO   19
+#define BOARD_ESP_HOSTED_SDIO_D0_GPIO    14
+...（D1=15 D2=16 D3=17）
+```
+
+所以：**同一套代码、同一组引脚，在他们板上出时钟，在本板上不出。**
+
+**结论：问题不在驱动实现，而在本板这一侧（硬件/环境）。**
+
+这也解释了为什么我在 10 轮里修了 10 处真缺陷却始终看不到波形 ——
+那些缺陷都真实存在，但它们都不是本板上"没有时钟"的原因。
+
+### 下一步应该查什么（需要硬件手段或用户协助）
+
+1. **本板的 C6 与参考板是否为同一型号/同一批次**
+   （用户说是 ESP32-C6-Mini-1；参考仓库也用同一型号）；
+2. **P4 的 SDMMC 在这块板上是否真的连到了 C6** ——
+   两边引脚定义相同不代表走线连通，需要万用表量 GPIO18/19/14~17 到 C6 对应脚；
+3. **C6 当前是否在正常运行**（不在 ROM 下载模式）——
+   这会决定 CMD5 有没有应答，但**不会影响主机是否产生时钟**；
+4. 是否存在**板级版本差异**（不同 revision 的走线不同）。
+
+> 注：即使 C6 完全不接，主机作为 master 也应产生 CLK。而本板连 CLK 都没有，
+> 这指向 P4 的 SDMMC 输出这一侧，而非 C6 侧。

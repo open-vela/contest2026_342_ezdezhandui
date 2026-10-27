@@ -185,6 +185,8 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/idf_additions.h" dest="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/idf_additions.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/queue.h" dest="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/queue.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/task.h" dest="nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/task.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/hosted_ref_sdio.c" dest="nuttx/arch/risc-v/src/common/espressif/hosted_ref_sdio.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/hosted_ref_sdio.h" dest="nuttx/arch/risc-v/src/common/espressif/hosted_ref_sdio.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/platform_include/sys/lock.h" dest="nuttx/arch/risc-v/src/common/espressif/platform_include/sys/lock.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/ulp.cmake" dest="nuttx/arch/risc-v/src/common/espressif/ulp.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/ulp_makefile" dest="nuttx/arch/risc-v/src/common/espressif/ulp_makefile"/>

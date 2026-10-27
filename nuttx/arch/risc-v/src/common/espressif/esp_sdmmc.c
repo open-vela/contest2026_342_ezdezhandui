@@ -574,6 +574,12 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
   sdmmc_ll_set_card_clock_div(hw, priv->slot, div);
   sdmmc_ll_enable_card_clock(hw, priv->slot, true);
 
+  /* A probe that pointed slot 0 at the cclk_in_sdio source was tried here and
+   * made no difference, so the per-card source mapping is not what stops the
+   * clock. Removed rather than left in as an unexplained deviation.
+   */
+
+
   /* Commit the clock registers into the card-clock domain.
    *
    * Writing CLKDIV / CLKSRC / CLKENA only stages the values in the BIU.  The

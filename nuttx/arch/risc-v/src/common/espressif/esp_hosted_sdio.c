@@ -531,7 +531,14 @@ int esp_hosted_sdio_initialize(void)
       goto bringup_failed;
     }
 
-  ret = sdio_set_wide_bus(sdio);
+  /* Stay in 1-bit mode.
+   *
+   * The reference implementation for this board runs the link in 1-bit mode
+   * (D1/D2 unused on the host side) and reaches full Wi-Fi operation that way,
+   * so 4-bit is not required and may itself be part of what is not coming up.
+   */
+
+  ret = -ENOSYS;
   if (ret < 0)
     {
       syslog(LOG_WARNING, "%s: 4-bit bus not available, staying 1-bit: %d\n",

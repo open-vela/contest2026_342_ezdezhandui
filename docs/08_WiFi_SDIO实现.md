@@ -2646,3 +2646,51 @@ esp_hosted_sdio: probe 1/12 -> -110, retrying
 3. **CMD 线的响应类型配置**：CMD5 需要 R4 响应（OCR，48 位），若响应类型
    配错，命令可能根本不发出去；
 4. C6 侧是否真的在这组脚上（用户已确认，但可再交叉验证）。
+
+## L.6 第 44 轮：slot 0 配置已逐项读回验证，仍无应答
+
+### 主机侧读数（全部正确）
+
+```
+verid=5342270a status=00000106 cdetect=00000000 clkena=00000001
+clkdiv=0000009f cmd=4ff688c8
+IO_MUX MCU_SEL: GPIO43=0 GPIO44=0 (SDMMC_SLOT0_FUNC=0)
+```
+
+| 项 | 值 | 判断 |
+|---|---|---|
+| `clkena` | `0x1` | slot 0 卡时钟已使能 ✓ |
+| `clkdiv` | `0x9f` = 159 | slot 0 分频 160MHz/(2×159) ≈ 503 kHz ✓ |
+| IO_MUX `MCU_SEL` | GPIO43=0、GPIO44=0 | 引脚确实切到 SDMMC 功能 ✓ |
+| `cmd` | `0x4ff688c8` | `start_command` 未置位（命令已结束），不是卡死 |
+
+### 从机侧（同步抓取，完全正常）
+
+```
+rst:0x1 (POWERON),boot:0xc (SPI_FAST_FLASH_BOOT)
+SDIO_SLAVE: Using SDIO interface (TX_MODE=0)
+SDIO_SLAVE: [mem:sdio_init] free=290352 min=290352 largest=270336
+ehcp_core: ESP-Hosted core initialized
+wifi_mcu_example: ESP-Hosted MCU ESP-Hosted MCU WiFi Example Starting...
+```
+
+**从机启动到 SDIO 就绪约 960 ms**（日志时间戳）。
+
+### 据此又改了两处（都照参考实现）
+
+1. **复位后等待从 200 ms 改为 1000 ms** —— 参考实现就是这个值，
+   而实测从机要约 960 ms 才把 SDIO 从机拉起来；
+2. **重试之间不再做控制器复位** —— 每次 `bus_reset` 会重跑时钟/复位序列，
+   在从机正在稳定时反而有破坏性。
+
+改完仍是 `-110`（12 次探测全超时）。
+
+### 现在唯一还没查的：**CMD5 的响应类型**
+
+NuttX 的 `sdio_probe()` 发 CMD5 时期望 **R4 响应**（48 位 OCR）。
+若 `esp_sdmmc_sendcmd()` 里的 `response_expect` / 响应长度位配错，
+命令可能**根本没被发到线上**（或发出的响应类型不对），表现就是"永远超时"。
+
+**下一轮第一件事**：把发出的 CMD5 命令字逐位解码，核对
+`cmd_index=5`、`response_expect=1`、响应类型位（R4 = 48 位 OCR）是否正确。
+这一项此前从未核对过。

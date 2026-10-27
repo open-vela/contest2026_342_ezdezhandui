@@ -55,6 +55,7 @@ struct esp_sdmmc_debug_s
   uint32_t cdetect;               /* Card detect                          */
   uint32_t clkena;                /* Card clock enable                    */
   uint32_t clkdiv;                /* Clock dividers                       */
+  uint32_t cmd;                   /* Command register                     */
   uint32_t ctrl;                  /* Control                              */
   uint32_t rintsts;               /* Raw interrupt status                 */
   uint32_t bmod;                  /* Bus mode                             */

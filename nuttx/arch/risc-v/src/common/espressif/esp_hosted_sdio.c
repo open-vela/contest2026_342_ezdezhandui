@@ -241,13 +241,25 @@ int esp_hosted_sdio_initialize(void)
       esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
       nxsig_usleep(50000);
 
+      /* Pulse the companion for this run so its boot log can be captured at the
+       * same time as the host enumerates.
+       */
+
+      esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
+      nxsig_usleep(50000);
       esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
       syslog(LOG_INFO,
              "%s: companion enable held high (GPIO%d), settling %d ms\n",
              HOSTED_TAG, CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO,
              CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS);
 
-      nxsig_usleep(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS * 1000);
+      /* The companion's own log shows its SDIO slave is not up until roughly
+       * 960 ms after release, so probing before that only measures its boot
+       * time. The reference implementation for this board waits 1000 ms here
+       * for exactly this reason.
+       */
+
+      nxsig_usleep(1000000);
     }
 #endif
 
@@ -346,8 +358,9 @@ int esp_hosted_sdio_initialize(void)
            " peri02=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.sys_clk_ctrl1, dbg.peri_clk_ctrl01,
            dbg.peri_clk_ctrl02);
-    syslog(LOG_INFO, "%s: ref_clk2=%08" PRIx32 " (bit0 = PLL_F160M gated on)\n",
-           HOSTED_TAG, dbg.ref_clk_ctrl2);
+    syslog(LOG_INFO, "%s: ref_clk2=%08" PRIx32 " clkdiv=%08" PRIx32
+           " cmd=%08" PRIx32 "\n",
+           HOSTED_TAG, dbg.ref_clk_ctrl2, dbg.clkdiv, dbg.cmd);
   }
 
   /* Give the companion a real chance to come up before declaring failure.
@@ -439,7 +452,11 @@ int esp_hosted_sdio_initialize(void)
         syslog(LOG_INFO, "%s: probe %d/%d -> %d, retrying\n",
                HOSTED_TAG, attempt, ESP_HOSTED_SDIO_PROBE_TRIES, ret);
 
-        esp_sdmmc_bus_reset();
+        /* No bus reset between attempts: re-running the controller reset
+         * re-does the clock and reset sequence, which is disruptive while the
+         * companion is settling. Just wait and ask again.
+         */
+
         nxsig_usleep(ESP_HOSTED_SDIO_PROBE_INTERVAL_MS * 1000);
       }
   }

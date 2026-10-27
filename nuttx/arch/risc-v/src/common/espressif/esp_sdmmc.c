@@ -1517,6 +1517,7 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * "correct", no waveform anywhere, and CMD0 unable to emit its 80 clocks.
    */
 
+  sdmmc_ll_set_clock_div(hw, 2);
   sdmmc_ll_init_phase_delay(hw);
 
   /* Let the selected controller clock propagate before the controller is

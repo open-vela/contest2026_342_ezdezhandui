@@ -2886,3 +2886,59 @@ sdmmc_ll_init_phase_delay(hw);      ← 注释在，set_clock_div 那行没了
 
 探测窗口缩短的依据：那 960 ms 已经在等待里花掉了，之后只需要一个短的确认窗口。
 一个永不应答的协处理器应该让开机多花两秒，而不是四秒。
+
+## M.5 第 51 轮：PXView 逻辑分析仪已可驱动，首次采集结果
+
+### M.5.1 怎么连上的
+
+DSH 的 MCP 客户端（`mcp-pxview`，配置见 `~/.dsh/profiles/web/cordis.patch.yml`）
+显示 `server is disconnected` —— 因为它挂在 SSH 隧道后面，隧道断过一次之后客户端
+放弃了重连（配置里 `reconnect.maxAttempts: 100` 也没救回来）。
+
+但服务端本身是活的：`http://127.0.0.1:10110/mcp` 返回 HTTP 200。
+所以改用 **直接走 HTTP 的 MCP 调用**绕过客户端，脚本在 `/tmp/px.py`：
+
+```python
+init()                      # initialize + notifications/initialized
+call("tools/list")          # 45 个工具
+call("get_devices")         # -> PX_Tool PX-Logic U2 channel 32（id=2，硬件）
+call("set_sample_config", sampleRate=4000000, sampleLimit=8000000)
+call("start_capture"); call("wait_capture")
+call("find_next_edge", channelIndex=0, fromSample=0, risingEdge=True)
+```
+
+设备确认：`PX_Tool PX-Logic U2 channel 32`（`driver_name: pxlogic`，
+`is_hardware: true`），工作模式 = Logic(0)。
+
+### M.5.2 首次采集结果（2 秒 @ 4 MS/s）
+
+```
+CH0..CH5 全部：唯一一次跳变在 sample 64（低→高），此后恒为高
+末端 100 个样本：六条线全部为高
+CH0(CLK) 第 2 个上升沿：不存在
+```
+
+**六条线全部空闲高电平、没有任何翻转。**
+
+### M.5.3 这条结果说明什么（以及它不能说明什么）
+
+**能说明**：采集窗口内总线上没有任何活动 —— 既没有 CLK 翻转，也没有 CMD 突发。
+
+**不能说明**：这 2 秒里板子**没有启动过**（驱动的探测只发生在启动阶段）。
+如果板子早已启动完、处于空闲，那么"无活动"是预期的。
+
+**但有一个值得注意的矛盾**：驱动配置的是 `clkena=1` 且 `lp_enable=0`
+（卡时钟常开）。若该配置生效，CLK 应该**持续**输出约 500 kHz 方波，
+即使总线空闲。而实测是恒高不动 —— 这与"卡时钟没有真正输出"的判断一致。
+（前提是板子当时运行的是本固件；因串口不可达，这一点无法当场确认。）
+
+### M.5.4 目前缺的一环：抓一次"启动中"的波形
+
+需要让采集窗口覆盖 P4 复位后那 2 秒。两条路：
+
+1. **把板子串口接到本 VM** → 我可以自己复位并同步采集（最省事）；
+2. 或者用触发采集（等 CLK 出现跳变再开始录）—— 但 PXView 的
+   `configure_trigger` 在 Logic 模式下要求 `stageCount + configJson`，
+   而 `stages` 的字段名试了 `value/mask`、`cv/msk/edg`、`trigger_value/trigger_type`
+   三种都无法写入（GET 回来 `stages` 恒为空，采集也立即完成，证明触发未真正布防）。
+   **这个 schema 还需要再找**（可试 `list_analyzers` 或厂商文档）。

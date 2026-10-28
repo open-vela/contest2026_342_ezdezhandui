@@ -792,35 +792,54 @@ int esp_hosted_sdio_initialize(void)
                 syslog(LOG_INFO, "%s: PACKET_LEN after read = %08" PRIx32 "\n",
                        HOSTED_TAG, after);
 
-                for (scan = 0x1f000u; scan <= 0x1f800u; scan += 0x200u)
-                  {
-                    static uint8_t probe[512] __attribute__((aligned(64)));
-                    int pr;
-                    int nz = 0;
-                    int k;
+                /* Write a known pattern into the CMD53 window and read it back.
+                 *
+                 * This tests the data path and the address semantics on their
+                 * own, with no dependence on the companion's packet protocol: if
+                 * a block written to an address comes back from that same
+                 * address, both the transfer and the addressing are sound and
+                 * the empty receive must be the companion's doing. If it does
+                 * not, the fault is here.
+                 */
 
-                    memset(probe, 0, sizeof(probe));
-                    pr = sdio_io_rw_extended(sdio, false, 1, scan, true, probe,
-                                             512u, 1);
+                {
+                  static uint8_t out[512] __attribute__((aligned(64)));
+                  static uint8_t in[512]  __attribute__((aligned(64)));
+                  uint32_t target = 0x1f000u;
+                  int rw;
+                  int rr;
+                  int k;
+                  int match = 0;
 
-                    for (k = 0; k < 512; k++)
-                      {
-                        if (probe[k] != 0)
-                          {
-                            nz++;
-                          }
-                      }
+                  for (k = 0; k < 512; k++)
+                    {
+                      out[k] = (uint8_t)(0xa5 ^ (k & 0xff));
+                    }
 
-                    if (pr != 0 || nz != 0)
-                      {
-                        syslog(LOG_INFO,
-                               "%s: block %05" PRIx32 ": ret %d nonzero %d "
-                               "first %02x %02x %02x %02x\n",
-                               HOSTED_TAG, scan, pr, nz,
-                               probe[0], probe[1], probe[2], probe[3]);
-                      }
-                  }
+                  memset(in, 0, sizeof(in));
 
+                  rw = sdio_io_rw_extended(sdio, true, 1, target, true, out,
+                                           512u, 1);
+                  rr = sdio_io_rw_extended(sdio, false, 1, target, true, in,
+                                           512u, 1);
+
+                  for (k = 0; k < 512; k++)
+                    {
+                      if (in[k] == out[k])
+                        {
+                          match++;
+                        }
+                    }
+
+                  syslog(LOG_INFO,
+                         "%s: CMD53 loopback @%05" PRIx32 ": write ret %d, "
+                         "read ret %d, matching bytes %d/512 "
+                         "in[0..3]=%02x %02x %02x %02x\n",
+                         HOSTED_TAG, target, rw, rr, match,
+                         in[0], in[1], in[2], in[3]);
+                }
+
+                (void)scan;
                 syslog(LOG_INFO, "%s: window scan done\n", HOSTED_TAG);
               }
             }

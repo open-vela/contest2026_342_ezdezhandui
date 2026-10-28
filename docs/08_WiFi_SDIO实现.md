@@ -2999,3 +2999,77 @@ static int event_handler(uint8_t val) {
 
 `ESP_OPEN_DATA_PATH` 是**枚举成功之后**的握手步骤，所以它不可能是失败原因。
 **这个猜想排除。**
+
+---
+
+# 附录 O：查官方资料后的结论 —— **走线是 GPIO18/19/14-17（slot 1）**
+
+## O.1 板子型号的确认
+
+C6 的 console 里明确是 ESP32-C6：
+
+```
+I (24) boot: chip revision: v0.2
+I (24) boot.esp32c6: SPI Speed      : 80MHz
+I (24) boot.esp32c6: SPI Mode       : DIO
+```
+
+所以板子是 **ESP32-P4-Function-EV-Board**（板载 ESP32-C6-MINI-1 的版本），
+**不是** ESP32-P4X-C5-Function-EV-Board。
+
+这条区分很重要，因为两块板的无线模块接法完全不同。查 P4X-C5 的官方原理图
+（`ESP32_P4X_C5_Function_EV_board-2.0-schematics.pdf`）可以看到，那块板上
+模块只有 `C5_EN`、`C5_BOOT`、`C5_U0TXD/U0RXD`、`C5_IO2..IO6` ——
+**根本没有 SDIO 网络**，它是 UART 接法。
+
+## O.2 P4X-C5 原理图里 SD2_* 的真正归属
+
+顺带把一直困扰的 `SD2_*` 查清楚了：
+
+```
+SD2_D0  -> GPIO14        SD2_CLK -> GPIO18
+SD2_D1  -> GPIO15        SD2_CMD -> GPIO19
+SD2_D2  -> GPIO16
+SD2_D3  -> GPIO17
+```
+
+配套证据：`GPIO45 -> SD_PWRn`（SD 卡供电使能），原理图注记
+"MicroSD Card SPI mode: 1. DAT3 works as CS(chip select)"。
+
+**即 `SD2_*` 是 microSD 卡槽的 4 位总线**，落在 GPIO14-19 上。
+
+## O.3 这组引脚恰好就是 SDMMC **slot 1** 的矩阵引脚
+
+而 ESP32-P4-Function-EV-Board 上，**C6 就是挂在这同一组引脚上**
+（参考仓库 `BOARD_ESP_HOSTED_SDIO_{CLK,CMD,D0..D3}_GPIO = 18,19,14,15,16,17`
+且 `BOARD_ESP_HOSTED_SDIO_SLOT = 1`，他们在同型号板上跑通）。
+
+## O.4 所以：此前"GPIO44/43/39-42"的说法与实际不符
+
+用户给出的映射（P4 GPIO44/43/39-42 → C6 IO18/19/20-23）与官方资料不一致。
+我据此把驱动改成 slot 0 + IO_MUX 43/44/39-42，并花了好几轮验证那套配置 ——
+**方向是错的**。
+
+**正确配置**：
+
+| 项 | 值 |
+|---|---|
+| SDMMC slot | **1** |
+| CLK | GPIO18 |
+| CMD | GPIO19 |
+| D0..D3 | GPIO14,15,16,17 |
+| 路由 | GPIO 矩阵（slot 1 不支持 IO_MUX）|
+
+## O.5 但这个正确配置也已经实测过，仍然 -110
+
+第 59 轮用当前驱动烧入 slot 1 + 18/19/14-17：
+
+```
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_hosted_sdio: clkena=00000002  clkdiv=00009f00
+probe 1/4..4/4 -> -110
+```
+
+**引脚对了、slot 对了、驱动是最新的，仍然不通。**
+所以问题不在"选错引脚"，而在更深处 —— 而判定"主机有没有真的输出时钟"
+只能靠逻辑分析仪。

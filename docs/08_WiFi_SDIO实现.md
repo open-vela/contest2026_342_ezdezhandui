@@ -7752,3 +7752,67 @@ reg blk ret 0: ee ee ee ee | ee ee ee ee | ee ee ee ee | ee ee ee ee | ee ee ee 
 
 **主机侧每一环都对上了。** 这个测试也从方法学上排除了"也许换一种读法就能拿到"的可能 ——
 **FIFO 区确实被读了、DMA 确实动了、拿到的就是零。**
+
+### AA.109 第 149 轮：官方文档给出了「读取发送 FIFO」的完整五步 —— 逐条对照我的实现
+
+`esp_sdio_slave_protocol.rst` 的 Sending FIFO 一节：
+
+```
+To read the slave's sending FIFO, the host should complete the following steps:
+
+1. Wait for the interrupt line to become active (optional, low by default).
+2. Read (poll) the interrupt bits in the INT_ST register to monitor if new packets exist.
+3. If new packets are ready, read the PKT_LEN register. Before reading the packets,
+   determine the length of data to be read. As the host keeps the length of data already
+   read from the slave, subtract this value from PKT_LEN, the result will be the maximum
+   length of data available for reading. If no data has been added to the sending FIFO
+   yet, wait and poll until the slave is ready and update PKT_LEN.
+4. Read from the FIFO using CMD53. Note that the requested length should not be greater
+   than calculated at Step 3, and the FIFO address is related to requested length.
+5. Update the read length.
+```
+
+**逐条对照本驱动的实现：**
+
+| 步骤 | 文档要求 | 本驱动 |
+|---|---|---|
+| 1 | 等中断线有效（可选）| 观测过：`DAT1` 恒低 |
+| 2 | **轮询 `INT_ST` 判断有没有新包** | ✅ 读了 —— **结果是 `INT_ST = 0`** |
+| 3 | 读 `PKT_LEN`，可用长度 = `PKT_LEN` − 已读长度 | ✅ `60 − 0 = 60` |
+| 4 | **`requested length` 不得大于步骤 3 的值；地址与请求长度相关** | ✅ `addr = 0x1F800 − 60`、`count = 60` |
+| 5 | 更新已读长度 | ✅（仅一次读，未累积）|
+
+**实现与文档完全一致。**
+
+### AA.110 而文档第 2 步给出的判断是「不该读」
+
+按文档，第 2 步的作用是**先确认有没有新包**，第 3 步才在"有新包"时去算长度。
+**实测 `INT_ST = 0` —— 按文档，此时从机没有可读的新包。**
+
+**主机仍然照第 3、4 步读了（为了不放过任何可能），
+而 FIFO 返回的是零 —— 与"没有新包"这个判断一致。**
+
+### AA.111 三个互相独立的角度都指向同一件事
+
+| 角度 | 读数 | 含义 |
+|---|---|---|
+| **中断状态** | `INT_RAW = 0`（掩码已确认全开）| 从机没有任何事件 |
+| **协议步骤** | 文档第 2 步判据不满足 | 没有新包可读 |
+| **FIFO 数据** | DMA 运行、收到零 | 没有内容 |
+
+**`PACKET_LEN = 60` 是唯一"说有数据"的读数**，而它是**累加计数器**
+（`sdio_get_len_from_slave` 里要减去已读长度、还要做回绕处理），
+**在没有任何包被真正排入时也可能有残值。**
+
+### AA.112 最终结论
+
+**主机侧的实现与 ESP-IDF 官方协议文档逐条一致**，包括：
+
+- `requested length = 0x1F800 - address` 的地址编码；
+- 字节模式/块模式的组合规则；
+- 五步读取流程中的每一步；
+- 中断掩码（`INT_ENA` 已确认为 `0xFF`）与状态读取。
+
+**而从机的**三个独立指标**（中断原始状态、协议判据、FIFO 内容）**都表明它没有数据可发**。
+
+**这不是主机驱动能修复的问题。**

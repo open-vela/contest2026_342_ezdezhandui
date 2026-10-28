@@ -4377,3 +4377,52 @@ A fatal error occurred: Failed to connect to ESP32-C6: No serial data received.
 3. 然后复跑主机侧探测，看这份"干净重建 + 逐项匹配配置"的从机是否应答。
 
 若这份固件仍不应答，那基本可以排除"C6 固件内容"这个方向，把问题归到硬件。
+
+## S.19 第 84 轮：确认 C6 的 BOOT 无法由 P4 驱动（必须人工按键）
+
+### S.19.1 查原理图的结论
+
+想找一条"不用人工按键就能让 C6 进下载模式"的路，于是查了 C6 那几个控制/启动脚
+在板上的连接（ESP32-P4-Function-EV-Board 原理图）：
+
+| C6 网络 | 出现的次数 | 附近的 P4 GPIO |
+|---|---|---|
+| `C6_EN` | 2 | **GPIO54** ✓（P4 可控）|
+| `C6_CHIP_PU` | 3 | 无 |
+| `C6_IO9`（即 BOOT）| 2 | **无** |
+
+**即：P4 能控制 C6 的复位（GPIO54），但拿不到它的 BOOT（IO9）。**
+
+所以"用软件把 C6 打进下载模式"这条路**在硬件上就不存在** ——
+必须人工按住 BOOT + 按 RESET。
+
+### S.19.2 已准备好一键烧录脚本
+
+`tools/build_flash/c6_hosted_new/flash.sh`，偏移按 `flasher_args` 的方式：
+
+```
+0x0      bootloader.bin
+0x8000   partition-table.bin
+0xd000   ota_data_initial.bin
+0x10000  eh_cp_network_split_station.bin
+```
+
+脚本开头也写清了"连接失败时该怎么办"，下次不用再翻文档。
+
+### S.19.3 当前只差一个动作
+
+| 步骤 | 状态 |
+|---|---|
+| C6 固件构建（v3.0.10，配置逐项匹配）| ✅ |
+| 镜像收进交付树 | ✅ `tools/build_flash/c6_hosted_new/` |
+| 一键烧录脚本 | ✅ 本轮完成 |
+| **人工按键进入下载模式** | ⏸ **等用户操作** |
+| 烧录 + 复测 | ⏸ 待上一步 |
+
+一旦 C6 进入下载模式，运行：
+
+```
+tools/build_flash/c6_hosted_new/flash.sh
+```
+
+即可烧入这份"干净重建 + 配置逐项核对过"的固件，然后复跑主机侧探测。

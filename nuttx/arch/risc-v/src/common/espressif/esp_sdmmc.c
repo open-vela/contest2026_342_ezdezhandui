@@ -1726,6 +1726,17 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
         return -EIO;
       }
   }
+
+  /* The completion was seen and no response error is flagged. Falling off the
+   * end instead of returning here is what made this function hand back an
+   * indeterminate value: the caller treated a garbage non-zero result as a
+   * failed command while the caller above it treated the same non-zero value as
+   * success, so enumeration was reported as passing while it had actually
+   * bailed out before CMD3.
+   */
+
+  syslog(LOG_INFO, "esp_sdmmc: waitresponse -> OK\n");
+  return OK;
 }
 
 static int esp_sdmmc_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,

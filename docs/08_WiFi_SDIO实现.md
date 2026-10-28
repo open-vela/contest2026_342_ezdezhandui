@@ -5443,3 +5443,74 @@ CMD52（`FN0 block size failed: -5`）。
 （`sdio_sendcmdpoll(dev, SDIO_CMD5, data)`）之后，而该函数的返回值只会来自
 `SDIO_SENDCMD`（本驱动的 `sendcmd`）或 `SDIO_WAITRESPONSE`（本驱动的
 `waitresponse`）。两者目前都被认为只返回 `OK` 或负值，所以 53 的来源需要打点确认。
+
+## W.6 **根因找到了：`waitresponse()` 末尾的 `return OK` 被我删掉了**
+
+检查该函数的结尾：
+
+```c
+    if (sdmmc_ll_get_intr_status(hw) & SDMMC_ERR_RE)
+      {
+        ...
+        return -EIO;
+      }
+  }
+}          <- 函数在这里结束，没有 return
+```
+
+**这是我之前"整块替换等待逻辑"时留下的** —— 那次替换把函数末尾的
+`return OK;` 一起删掉了，之后我又试图用字符串匹配给它加日志，因为匹配不上
+（本来就没有那行）而静默失败。
+
+于是函数**执行到末尾后返回一个不确定的值** —— 日志里那个 `53` 就是它。
+
+**因果链完全闭合：**
+
+```
+waitresponse 末尾缺 return
+  -> 第 2 条 CMD5 之后返回不确定值（53）
+  -> sdio_probe 判为失败，goto err（CMD3/CMD7 从未发出）
+  -> 但上层用 ret < 0 判断，53 被当成成功 -> 打印"companion enumerated"
+  -> 卡未被选中，后续 CMD52 读到的是 CMD5 的旧 OCR
+  -> NuttX 把旧值当 R5，flags 全 1 -> error=1 -> -EIO
+```
+
+## W.7 修复后的效果：CMD3 / CMD7 / CMD52 全部发出
+
+补回 `return OK;` 之后，完整序列：
+
+```
+waitresponse -> OK
+short response raw=20ffff00 (cmd=00000145)      <- CMD5 #1 的 R4
+issue CMD5 arg=0x00000300
+waitresponse -> OK
+issue CMD3 arg=0x00000000                       <-- CMD3 发出了
+R4 raw=20ffff00 (cmd=000001c3)                  <- CMD3 的响应读取
+issue CMD7 arg=0x20ff0000                       <-- CMD7 发出了
+R4 raw=20ffff00 (cmd=00000087)                  <- CMD7 的响应读取
+issue CMD52 arg=0x00000e00                      <-- 总线宽度 CMD52
+waitresponse -> OK
+probe 1/4 -> -5, retrying
+```
+
+**整条 `CMD0 → CMD5 → CMD5 → CMD3 → CMD7 → CMD52` 序列首次全部执行。**
+
+## W.8 新的（也是最后一个）问题
+
+**`RESP0` 对所有后续命令都是 `20ffff00 -> 20ffff00 unchanged`。**
+
+也就是说：**只有第 1 条 CMD5 真正写过 `RESP0`，之后的 CMD3/CMD7/CMD52 都没有
+更新它** —— 而 `waitresponse` 每次都返回 OK（Command Done 置起了，
+响应错误位 RE 也没置起）。
+
+于是：
+
+- CMD3 读到的 R6 是旧值 → 算出的 RCA = `0x20ff0000`（垃圾）；
+- CMD7 用这个垃圾 RCA 发出去；
+- CMD52 读到的 R5 还是旧值，flags 全 1 → `-EIO`。
+
+**下一步：查清为什么后续命令不更新 `RESP0`。**
+最可能的方向是 `waitresponse` 的"Command Done"判据太宽 ——
+**命令即使没收到响应，控制器也会置起 Command Done**（响应超时同样算"完成"）。
+需要改成看 **`RINTSTS` 的响应超时位（RTO）是否置起**，
+以此区分"真收到响应"与"命令结束但没响应"。

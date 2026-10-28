@@ -6847,3 +6847,85 @@ payload[60] = 00 00 00 ... (全零)
 
 **若要继续，需要从 C6 固件一侧入手**（`sdio_slave` 的发送通路是否真的被填充），
 或用一个已知良好的 SDIO 从机做对照实验 —— 这两者都超出本会话的范围。
+
+### AA.73 第 129 轮：读 C6 固件的数据通路 —— **发现两个具体机制**
+
+#### 机制一：发送被 `datapath` 标志把关，为 0 时**直接丢弃帧**
+
+`coprocessor/eh_cp_transport/src/eh_cp_transport_sdio.c` 的发送路径：
+
+```c
+if (!datapath || !buf.payload || !buf.payload_len ||
+    buf.payload_len + SDIO_HDR_SIZE > sdio_rx_buf_size) {
+        free_tx_buf(&buf);
+        continue;                       /* <- 帧在这里被丢掉 */
+}
+...
+sdio_slave_send_queue(sendbuf, aligned, sendbuf, portMAX_DELAY);
+```
+
+**`datapath == 0` 时，任何要发给主机的帧都会被静默丢弃 —— 不会调用
+`sdio_slave_send_queue()`，因此 SDIO 从机外设的发送队列里根本没有东西，
+数据阶段自然一个字节都不驱动。**
+
+这与观测完全吻合：**从机受理命令（扣配额）、`PACKET_LEN` 有值、
+但数据线上没有任何负载。**
+
+#### 机制二：`ESP_OPEN_DATA_PATH = 0`、`ESP_CLOSE_DATA_PATH = 1`
+
+`coprocessor/eh_cp_core/src/eh_cp_core.c`：
+
+```c
+case ESP_OPEN_DATA_PATH:
+        if (if_handle) { if_handle->state = ACTIVE; datapath = 1; ... }
+        break;
+
+case ESP_CLOSE_DATA_PATH:
+        datapath = 0;                   /* <- 一次 CLOSE 就把通路关掉 */
+        ...
+        break;
+```
+
+而枚举定义（`adapter.h`）：
+
+```c
+typedef enum {
+        ESP_OPEN_DATA_PATH,             /* = 0 */
+        ESP_CLOSE_DATA_PATH,            /* = 1 */
+        ESP_RESET,                      /* = 2 */
+        ...
+} ESP_HOST_INTERRUPT;
+```
+
+**`sdio_generate_slave_intr()` 是 `EH_SET_BIT(intr_no + ESP_SDIO_CONF_OFFSET)`
+—— 即按位号置位。所以 `BIT(0)|BIT(1)` = `0x03` 会同时送出"打开"和"关闭"两条信号，
+最终 `datapath` 停在 0。**
+
+**我在第 116 轮最早写的就是 `0x03`**（当时理由是"NEW_PACKET | ..."，
+纯属猜测），到第 121 轮才改成 `0x01`。
+
+### AA.74 这解释了什么
+
+把两条机制和观测放在一起：
+
+| 观测 | 解释 |
+|---|---|
+| `PACKET_LEN` 有 60 字节 | 从机准备了一份要发的帧 |
+| `TOKEN` 从 0 变 2 | 从机开放了发送缓冲区 |
+| **数据阶段一条数据线都不动** | **帧在 `datapath == 0` 时被丢弃，从未进入 SDIO 发送队列** |
+| 命令阶段一切正常 | 命令路径不经过 `datapath` 判断 |
+
+**即：主机已经把"打开数据通路"的信号发出去了（CP 计数 +1），
+但 `datapath` 在从机侧可能没有稳定停在 1** —— 因为它自己的启动流程里也有
+一次 `Close Data Path`（CP 日志里基线就有 20 次）。
+
+### AA.75 下一轮要验证的
+
+**从机日志里 `Open Data Path` 与 `Close Data Path` 是一对一对出现的
+（基线 20 对，加上我的一次 `Open` 变成 21/20）。**
+
+**如果 `datapath` 在从机要发帧的那一刻是 0，帧就会被丢掉。**
+下一轮要确认的是：**从机在收到 `OPEN_DATA_PATH` 之后，`datapath` 是否稳定保持为 1**
+—— 这可以从它日志里 `Open`/`Close` 的**时序**判断（而不是只数总数）：
+把 C6 console 的日志按时间顺序打印出来，看 `Close Data Path` 出现在
+`Send slave up event` 的**之前还是之后**。

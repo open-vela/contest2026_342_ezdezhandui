@@ -421,6 +421,27 @@ int esp_hosted_sdio_initialize(void)
 
   for (attempt = 1; attempt <= ESP_HOSTED_SDIO_PROBE_TRIES; attempt++)
     {
+      /* Halfway through, reset the companion again -- this time with the card
+       * clock already running.
+       *
+       * The companion is released from reset before esp_sdmmc_initialize()
+       * starts the clock, so it boots with CLK idle. An SDIO slave that latches
+       * its interface state at boot would then be waiting for something that
+       * never comes, and no later command could revive it. Releasing it a second
+       * time now that CLK is running is the cheapest way to test that.
+       */
+
+      if (attempt == 3 && CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO != -1)
+        {
+          syslog(LOG_INFO, "%s: re-releasing the companion with the clock "
+                 "already running\n", HOSTED_TAG);
+
+          esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
+          nxsig_usleep(50000);
+          esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
+          nxsig_usleep(1500000);
+        }
+
       ret = sdio_probe(sdio);
       if (ret >= 0)
         {

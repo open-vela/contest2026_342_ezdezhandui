@@ -740,6 +740,52 @@ int esp_hosted_sdio_initialize(void)
           }
         }
 
+      /* Test the write direction while the registers are still responsive.
+       *
+       * The previous attempt ran after the FIFO read and hit the 0x32 window
+       * where every register access is invalid, so its -5 proved nothing. Do it
+       * here instead: the poll above just read LEN and TOKEN successfully, which
+       * means the companion is answering registers right now.
+       */
+
+      {
+        static uint8_t txbuf[512] __attribute__((aligned(64)));
+        uint8_t  t4[4];
+        uint32_t before = 0;
+        uint32_t after  = 0;
+        int wr;
+        int k;
+
+        for (k = 0; k < 4; k++)
+          {
+            sdio_io_rw_direct(sdio, false, 1, 0x00044 + k, 0, &t4[k]);
+          }
+
+        before = (uint32_t)t4[0] | ((uint32_t)t4[1] << 8) |
+                 ((uint32_t)t4[2] << 16) | ((uint32_t)t4[3] << 24);
+
+        for (k = 0; k < 512; k++)
+          {
+            txbuf[k] = (uint8_t)(0x5a ^ k);
+          }
+
+        wr = sdio_io_rw_extended(sdio, true, 1, 0x1f800u - 512u, true,
+                                 txbuf, 512u, 1);
+
+        for (k = 0; k < 4; k++)
+          {
+            sdio_io_rw_direct(sdio, false, 1, 0x00044 + k, 0, &t4[k]);
+          }
+
+        after = (uint32_t)t4[0] | ((uint32_t)t4[1] << 8) |
+                ((uint32_t)t4[2] << 16) | ((uint32_t)t4[3] << 24);
+
+        syslog(LOG_INFO,
+               "%s: clean-window TX write ret %d, TOKEN %08" PRIx32
+               " -> %08" PRIx32 "\n",
+               HOSTED_TAG, wr, before, after);
+      }
+
       /* Read the queued packet.
        *
        * esp-hosted hands the payload over at the END of the CMD53 window and

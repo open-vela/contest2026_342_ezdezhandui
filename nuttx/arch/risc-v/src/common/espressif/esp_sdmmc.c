@@ -1303,15 +1303,26 @@ static void esp_sdmmc_widebus(struct sdio_dev_s *dev, bool enable)
   sdmmc_ll_set_card_width(priv->hw, priv->slot,
                           enable ? SD_BUS_WIDTH_4_BIT : SD_BUS_WIDTH_1_BIT);
 
-  /* DAT1..3 only need to be driven once the bus is four bits wide; leaving
-   * them unconfigured in 1-bit mode keeps them from fighting anything else.
+  /* DAT1..3 must be handed to the controller, not turned into plain outputs.
+   *
+   * They were being configured with esp_configgpio(OUTPUT | ...), which makes
+   * them GPIO outputs holding whatever value the output register happens to
+   * carry -- zero. The analyser shows exactly that: DAT1 and DAT2 sit LOW while
+   * the bus is idle, where an SDIO data line must rest HIGH on its pull-up.
+   *
+   * With the host holding two data lines low, the companion has nothing to
+   * drive data onto, which is why every transfer completed at the command
+   * level and delivered no bytes. Commands were unaffected because CMD is a
+   * separate line.
+   *
+   * Routing them to the SDMMC function (the same thing esp_sdmmc_route_pins()
+   * does for the other lines) leaves them bidirectional and pulled up, which is
+   * what a data line has to be.
    */
 
   if (enable)
     {
-      esp_configgpio(priv->d1_pin, OUTPUT | PULLUP | DRIVE_3);
-      esp_configgpio(priv->d2_pin, OUTPUT | PULLUP | DRIVE_3);
-      esp_configgpio(priv->d3_pin, OUTPUT | PULLUP | DRIVE_3);
+      esp_sdmmc_route_pins();
     }
 
   mcinfo("widebus=%d\n", (int)enable);

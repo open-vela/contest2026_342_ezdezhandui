@@ -1827,10 +1827,56 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
   sdio_eventset_t wkupevent;
 
-  while (priv->xfrmask == 0)
-    {
-      nxsem_wait_uninterruptible(&priv->waitsem);
-    }
+  /* Read the completion out of the controller rather than waiting for the
+   * interrupt service routine to post it.
+   *
+   * Hardware settled this for commands, and the data phase is the same story:
+   * the controller raises its status bits correctly, but nothing is delivering
+   * the interrupt to this driver, so the semaphore is never posted and every
+   * transfer ends in a timeout. Polling the same status word the ISR would have
+   * read is what made command responses work; do the same here.
+   */
+
+  {
+    sdmmc_dev_t *hw = priv->hw;
+    clock_t      start = clock_systime_ticks();
+
+    while (priv->xfrmask == 0)
+      {
+        uint32_t st = sdmmc_ll_get_intr_status(hw);
+
+        if (st & SDMMC_DATA_OVER)
+          {
+            sdmmc_ll_clear_interrupt(hw, SDMMC_DATA_OVER);
+            priv->xfrmask |= SDIOWAIT_TRANSFERDONE;
+          }
+
+        if (st & SDMMC_CMD_DONE)
+          {
+            sdmmc_ll_clear_interrupt(hw, SDMMC_CMD_DONE);
+            priv->xfrmask |= SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE;
+          }
+
+        if (st & SDMMC_ALL_ERRORS)
+          {
+            sdmmc_ll_clear_interrupt(hw, st & SDMMC_ALL_ERRORS);
+            priv->xfrmask |= SDIOWAIT_ERROR;
+          }
+
+        if (priv->xfrmask != 0)
+          {
+            break;
+          }
+
+        if (clock_systime_ticks() - start > SDMMC_LONGTIMEOUT)
+          {
+            priv->xfrmask |= SDIOWAIT_TIMEOUT;
+            break;
+          }
+
+        up_udelay(20);
+      }
+  }
 
   /* Cancel the watchdog if it is still armed, then take the accumulated
    * events and disarm.

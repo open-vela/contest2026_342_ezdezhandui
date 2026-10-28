@@ -612,6 +612,29 @@ int esp_hosted_sdio_initialize(void)
              HOSTED_TAG, written, w, readback, rb,
              readback == written ? "-- MATCHES" : "-- differs");
     }
+
+    /* Finally exercise CMD53: one 512-byte block read over function 1.
+     *
+     * This is the piece the frame layer will ride on, and it is the first test
+     * of the driver's own data path -- the IDMAC descriptor chain, the block
+     * setup and the transfer-complete interrupt handling. A read that comes
+     * back with a clean status and a plausible first word says that path works.
+     */
+
+    {
+      static uint8_t block[512] __attribute__((aligned(64)));
+      int r;
+
+      memset(block, 0, sizeof(block));
+
+      r = sdio_io_rw_extended(sdio, false, 1, 0, true, block, 512, 1);
+
+      syslog(LOG_INFO,
+             "%s: CMD53 read 1x512 from FN1: ret %d, first word %08" PRIx32 "\n",
+             HOSTED_TAG, r,
+             ((uint32_t)block[0] << 24) | ((uint32_t)block[1] << 16) |
+             ((uint32_t)block[2] << 8) | (uint32_t)block[3]);
+    }
   }
 
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;

@@ -5622,3 +5622,78 @@ esp_hosted_sdio: scratch14 loopback: wrote 5a (ret 0), read 5a (ret 0) -- MATCHE
 
 **主机与 C6 之间的双向寄存器通道已经确凿可用。** 这是实现 CMD53 数据通路的直接基础
 —— esp-hosted 的数据通路正是建立在"主机读写从机寄存器 + CMD53 搬运数据"之上。
+
+---
+
+# 附录 Z：**CMD53 块数据传输成功 —— 数据通路打通**
+
+## Z.1 第一次尝试：命令成功、数据超时
+
+```
+esp_sdmmc: issue CMD53 arg=0x1c000001 (cmd_word=a0010675)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)     <- CMD53 的 R5 回来了
+CMD53 read 1x512 from FN1: ret -110, first word 00000000  <- 数据阶段超时
+```
+
+**CMD53 本身得到了响应，但数据阶段超时（-110）。**
+
+原因与 `waitresponse` 当初一模一样：**`eventwait()` 只在等信号量，而那个中断
+从未送达本驱动**。`waitresponse` 早就改成轮询了，但**数据完成
+（`SDIOWAIT_TRANSFERDONE`）仍然走事件路径**。
+
+## Z.2 修法：`eventwait()` 也改为轮询控制器
+
+让 `eventwait()` 直接读 `RINTSTS`，与 ISR 会读的是同一个状态字：
+
+- `SDMMC_DATA_OVER` → `SDIOWAIT_TRANSFERDONE`
+- `SDMMC_CMD_DONE`  → `SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE`
+- `SDMMC_ALL_ERRORS` → `SDIOWAIT_ERROR`
+- 超时 → `SDIOWAIT_TIMEOUT`
+
+## Z.3 结果：**CMD53 成功**
+
+```
+esp_hosted_sdio: CMD53 read 1x512 from FN1: ret 0, first word 00000000
+```
+
+**`ret 0` —— 512 字节块读完整成功。**
+
+首个字为 0 是合理的：该地址上从机没有排队数据。
+
+## Z.4 这一步验证了什么
+
+这一条 `ret 0` 覆盖了驱动里**最复杂的一整块**：
+
+| 组件 | 是否被验证 |
+|---|---|
+| `blocksetup` / `recvsetup`（块大小、块数编程）| ✅ |
+| **IDMAC 描述符链**（`dmarecvsetup` 建链）| ✅ |
+| `SDMMC_DATA_OVER` 的完成判定 | ✅ |
+| 缓冲区 DMA 写入与 cache 一致性 | ✅ |
+| CMD53 的 R5 响应与数据阶段的衔接 | ✅ |
+
+**主机侧的数据搬运能力已经确凿可用。**
+
+## Z.5 现在的完整层级
+
+| 层 | 状态 |
+|---|---|
+| 时钟 / 引脚 / 物理连线 | ✅ |
+| SDIO 枚举（CMD0/5/3/7）| ✅ 稳定 |
+| 卡功能（FN1、512 字节块）| ✅ 稳定 |
+| CMD52 寄存器读写（双向）| ✅ 写入读回一致 |
+| **CMD53 块数据传输** | ✅ **本轮打通（ret 0）** |
+| ESP-Hosted 帧层 | ✅ 上线 |
+| 协议层（RPC → `wlan0`）| ⏭ 下一步 |
+
+## Z.6 一个反复出现的模式
+
+**这个驱动里所有"等中断"的地方最终都要改成"轮询控制器"。**
+中断在这块板子上从未送达驱动（原因未深究，但不影响功能）。
+
+到目前为止已改的位置：
+
+1. `waitresponse()` —— 命令响应；
+2. `eventwait()` —— 数据传输完成。
+
+**新写的等待逻辑应当直接采用轮询，不要再依赖该中断。**

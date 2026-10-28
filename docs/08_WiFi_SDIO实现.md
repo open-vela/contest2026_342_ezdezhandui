@@ -3073,3 +3073,48 @@ probe 1/4..4/4 -> -110
 **引脚对了、slot 对了、驱动是最新的，仍然不通。**
 所以问题不在"选错引脚"，而在更深处 —— 而判定"主机有没有真的输出时钟"
 只能靠逻辑分析仪。
+
+## O.6 引脚之谜彻底解开：**GPIO43/44/39-42 是 microSD，不是 C6**
+
+下载 ESP32-P4-Function-EV-Board 官方原理图
+（`dl.espressif.com/dl/schematics/esp32-p4-function-ev-board-schematics.pdf`）
+后，把两条 SD 总线的归属查清楚了。这块板有**两条独立的 SD 总线**：
+
+### SD1 —— microSD 卡槽（SDMMC **slot 0**）
+
+```
+SD1_CLK -> GPIO43      SD1_CMD -> GPIO44
+SD1_D0  -> GPIO39      SD1_D1  -> GPIO40
+SD1_D2  -> GPIO41      SD1_D3  -> GPIO42
+```
+
+**这正是"GPIO44/43/39-42"那组引脚** —— 它们属于 microSD 卡槽，
+与 SDMMC slot 0 的 IO_MUX 引脚一一对应（这也解释了为什么它们恰好是
+`SDMMC_SLOT0_IOMUX_PIN_NUM_*`）。
+
+### SD2 —— ESP32-C6-MINI-1 的 SDIO（SDMMC **slot 1**）
+
+```
+P4 侧:   SD2_CLK -> GPIO18    SD2_CMD -> GPIO19
+         SD2_D0  -> GPIO14    SD2_D1  -> GPIO15
+         SD2_D2  -> GPIO16    SD2_D3  -> GPIO17
+
+C6 侧:   IO18 <-> SD2_CMD     IO19 <-> SD2_CLK
+         IO20 <-> SD2_D3      IO21 <-> SD2_D0
+         IO22 <-> SD2_D1      IO23 <-> SD2_D2
+```
+
+（C6 那侧正是用户给出的 `IO18/19/20/21/22/23 -> SD2_CMD/SD2_CLK/SD2_D0..D3`
+—— **C6 侧用户是对的，P4 侧被写成了 SD1 的引脚**。）
+
+### 结论
+
+- 用户提供的 `P4 GPIO44/43/39-42` 实际是 **SD1（microSD）**，被误当成 C6 的连接；
+- C6 在 **SD2** 上，即 **slot 1 + GPIO18/19/14-17** —— 参考仓库的配置从一开始就是对的；
+- 我据此做的 slot 0 + IO_MUX 改造（第 44-48 轮）**方向是错的**，
+  那套配置驱动的是 microSD 卡槽；
+- defconfig 已改回 slot 1。
+
+**但这个正确配置也已用当前驱动实测，仍为 -110**（见 O.5）。
+引脚与 slot 的正确性问题到此**已经查清并排除**，剩下的是电气/时序层面的问题，
+判定需要逻辑分析仪看 GPIO18 上到底有没有时钟。

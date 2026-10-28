@@ -709,7 +709,11 @@ int esp_hosted_sdio_initialize(void)
         uint8_t  lenb[4] = { 0, 0, 0, 0 };
         uint32_t raw;
         uint32_t len;
-        static uint8_t payload[512] __attribute__((aligned(64)));
+        /* Must hold the whole advertised transfer (1536) plus the offset
+         * from the window base to the payload, which is why it is larger
+         * than one transfer.
+         */
+        static uint8_t payload[2048] __attribute__((aligned(64)));
         int r;
 
         sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &lenb[0]);
@@ -772,6 +776,22 @@ int esp_hosted_sdio_initialize(void)
               uint32_t aligned = addr & ~511u;
               uint32_t skip    = addr - aligned;
               uint32_t nblk    = ((skip + len) + 511u) / 512u;
+
+              /* The companion advertises a transfer size of 1536 bytes
+               * (3 blocks) in its own log. Read the full advertised size from
+               * the bottom of that window instead of a single block: if the
+               * slave only starts its data phase once the host asks for a whole
+               * advertised transfer, a 512-byte request would leave it silent
+               * while still accepting the command -- which is what has been
+               * happening.
+               */
+
+              if (nblk < 3u)
+                {
+                  nblk    = 3u;
+                  aligned = 0x1f800u - 1536u;
+                  skip    = addr - aligned;
+                }
 
               memset(payload, 0, sizeof(payload));
 

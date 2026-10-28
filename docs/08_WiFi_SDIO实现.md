@@ -2942,3 +2942,60 @@ CH0(CLK) 第 2 个上升沿：不存在
    而 `stages` 的字段名试了 `value/mask`、`cv/msk/edg`、`trigger_value/trigger_type`
    三种都无法写入（GET 回来 `stages` 恒为空，采集也立即完成，证明触发未真正布防）。
    **这个 schema 还需要再找**（可试 `list_analyzers` 或厂商文档）。
+
+## N. 第 58-59 轮：终于能烧录了，用当前驱动把两个配置各测一遍
+
+### N.1 先纠正一个错误结论
+
+前几轮我反复说"板子没有上电"——**这是错的**。
+
+真实情况：用户把 P4/C6 的串口开在 Tabby 里，**Tabby 独占 `/dev/ttyUSB0` 和
+`/dev/ttyUSB1`**，我的进程打不开，读到 0 字节，就据此判断"主芯片没在跑"。
+
+> **读到 0 字节只说明"我读不到"，不说明"对面没在跑"。**
+
+打通 Tabby 的 MCP（`http://127.0.0.1:3001/mcp`，配在 **headless** profile）后，
+能读两个 console；而 `/dev/ttyACM0`（烧录口）不在 Tabby 里，是空闲的，
+所以**烧录一直是可能的**。
+
+### N.2 又发现：板子跑的是旧固件
+
+从 P4 console 读到：
+
+```
+slot 1 pads routed via the GPIO matrix (CLK=43 CMD=44 D0..D3=39,40,41,42)
+settling 200 ms
+probe 1/12
+CLK pin sampled 512x as input ...          ← 这段诊断早已删除
+IO_MUX MCU_SEL: GPIO43=1 GPIO44=1
+```
+
+**这是我上几轮实验留下的混合配置，而且带着已经删掉的诊断代码。**
+也就是说：**本轮之前的所有修复从未在真机上跑过**，之前 40 多轮"slot 1 失败"
+的结论是在固件版本不确定的前提下得出的。
+
+### N.3 用当前驱动重测两个配置（均已烧入并确认生效）
+
+| 配置 | 日志确认 | 结果 |
+|---|---|---|
+| slot 0 + IO_MUX 43/44/39-42 | `slot 0 pads attached via IO_MUX (CLK=43 CMD=44 D0..D3=39,40,41,42)`、`clkena=00000001`、`clkdiv=0000009f` | `probe 1/4..4/4 -> -110` |
+| slot 1 + 矩阵 18/19/14-17 | `slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)`、`clkena=00000002`、`clkdiv=00009f00` | `probe 1/4..4/4 -> -110` |
+
+**两个配置在最新驱动上都失败。** 这干净地排除了"固件是旧的"这个解释，
+也说明此前那 11 处修复虽然都真实存在，但都不足以让枚举成功。
+
+### N.4 排除掉的另一个猜想
+
+C6 日志里有一条 `ehcp_core: host reset handler task started`，一度怀疑是
+从机在等主机的复位握手。查 esp-hosted 源码
+（`coprocessor/eh_cp_core/src/eh_cp_core.c`）后确认：
+
+```c
+static int event_handler(uint8_t val) {
+  case ESP_OPEN_DATA_PATH:
+      ...
+      if (host_reset_sem) xSemaphoreGive(host_reset_sem);   // 这里才给信号量
+```
+
+`ESP_OPEN_DATA_PATH` 是**枚举成功之后**的握手步骤，所以它不可能是失败原因。
+**这个猜想排除。**

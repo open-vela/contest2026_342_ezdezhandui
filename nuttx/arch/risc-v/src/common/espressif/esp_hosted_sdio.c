@@ -549,11 +549,24 @@ int esp_hosted_sdio_initialize(void)
         syslog(LOG_INFO, "%s: card bus width set to 1 bit (read %02x, wrote %02x, ret %d)\n",
                HOSTED_TAG, busif, want, ret);
 
-        /* Taking both sides to four bits was tried here as well -- CCCR went
-         * back to 0x42 and sdio_set_wide_bus() returned success -- and the
-         * payload still came back as zeros. The link stays on one bit, which is
-         * what the reference implementation for this board uses.
+        /* Take both sides to four bits.
+         *
+         * This could not have worked before: esp_sdmmc_configpins() never routed
+         * DAT1..3 to the controller, so a four-bit bus was impossible by
+         * construction no matter what the CCCR said. They are routed now, and
+         * the companion's own CCCR already reports four bits plus a DAT1 that it
+         * actively drives -- so four bits is the mode it is built for.
          */
+
+        {
+          int wr = sdio_set_wide_bus(sdio);
+          uint8_t after = 0;
+
+          sdio_io_rw_direct(sdio, false, 0, SDIO_CCCR_BUS_IF, 0, &after);
+
+          syslog(LOG_INFO, "%s: 4-bit enable: ret %d, CCCR now %02x\n",
+                 HOSTED_TAG, wr, after);
+        }
       }
     else
       {

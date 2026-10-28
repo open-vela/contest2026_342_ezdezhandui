@@ -796,22 +796,38 @@ static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
       esp_rom_gpio_connect_in_signal(d0_pin,
                                      SD_CARD_CDATA0_2_PAD_IN_IDX, false);
 
-      /* D1 and D2 are unused in 1-bit SDIO: plain inputs, pull-ups on, kept
-       * off the controller.
+      /* Route DAT1..3 to the controller as well.
+       *
+       * They used to be left off it -- DAT1 and DAT2 as plain inputs, DAT3 as a
+       * GPIO driven high. That makes a four-bit bus impossible by construction,
+       * and hardware says the companion is on four bits: its CCCR reports 0x42
+       * (bus width 0b10), and DAT1 is held low even while this end drives it
+       * high for 50 ms during pin identification -- something is driving it, and
+       * the only candidate is the companion's DAT1.
+       *
+       * A companion on four data lines talking to a host on one answers commands
+       * perfectly (CMD is a single wire either way) and delivers nothing during
+       * a data phase, which is exactly the failure being chased.
        */
 
-      esp_configgpio(d1_pin, INPUT | PULLUP);
-      esp_configgpio(d2_pin, INPUT | PULLUP);
+      esp_rom_gpio_connect_out_signal(d1_pin,
+                                      SD_CARD_CDATA1_2_PAD_OUT_IDX, false, false);
+      esp_rom_gpio_connect_in_signal(d1_pin,
+                                     SD_CARD_CDATA1_2_PAD_IN_IDX, false);
 
-      /* D3 is not a spare pin. In 1-bit SDIO the companion samples DAT3 rather
-       * than moving data on it, so a pad left attached to the controller sits
-       * at whatever the idle state happens to be. Driving it high as a plain
-       * GPIO is what the working implementation for this board does, and the
-       * companion does not answer without it.
-       */
+      esp_rom_gpio_connect_out_signal(d2_pin,
+                                      SD_CARD_CDATA2_2_PAD_OUT_IDX, false, false);
+      esp_rom_gpio_connect_in_signal(d2_pin,
+                                     SD_CARD_CDATA2_2_PAD_IN_IDX, false);
 
-      esp_configgpio(d3_pin, OUTPUT | PULLUP);
-      esp_gpiowrite(d3_pin, true);
+      esp_rom_gpio_connect_out_signal(d3_pin,
+                                      SD_CARD_CDATA3_2_PAD_OUT_IDX, false, false);
+      esp_rom_gpio_connect_in_signal(d3_pin,
+                                     SD_CARD_CDATA3_2_PAD_IN_IDX, false);
+
+      esp_configgpio(d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+      esp_configgpio(d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+      esp_configgpio(d3_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
 
       syslog(LOG_INFO,
              "esp_sdmmc: slot %d pads routed via the GPIO matrix "

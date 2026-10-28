@@ -454,6 +454,115 @@ static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
  *
  ****************************************************************************/
 
+/****************************************************************************
+ * Name: esp_sdmmc_sample_idle
+ *
+ * Description:
+ *   Read the slot's pads as plain GPIOs before the controller takes them over,
+ *   once with the internal pull-ups off and once with them on.
+ *
+ *   This is the cheap half of what a logic analyser would tell us. The six
+ *   lines of an idle SDIO bus are held high by the board's pull-ups, so:
+ *
+ *     no pull          pull-up on        reading means
+ *     ---------------  ---------------   ------------------------------------
+ *     high             high              the line has its own pull-up, healthy
+ *     low              low               something is holding it down: a short,
+ *                                         contention, or a missing pull-up
+ *     low              high              nothing drives it, only our pull-up
+ *
+ *   In particular a CLK or CMD that stays low against its own pull-up means the
+ *   problem is on the board, not in the protocol layer, and no amount of
+ *   driver work will fix it.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_sample_idle(void)
+{
+  static const char *const names[6] =
+  {
+    "CLK", "CMD", "D0", "D1", "D2", "D3"
+  };
+  const int pins[6] =
+  {
+    CONFIG_ESPRESSIF_SDMMC_CLK, CONFIG_ESPRESSIF_SDMMC_CMD,
+    CONFIG_ESPRESSIF_SDMMC_D0,  CONFIG_ESPRESSIF_SDMMC_D1,
+    CONFIG_ESPRESSIF_SDMMC_D2,  CONFIG_ESPRESSIF_SDMMC_D3
+  };
+  int i;
+
+  for (i = 0; i < 6; i++)
+    {
+      esp_configgpio(pins[i], INPUT);
+      up_udelay(200);
+      int floating = esp_gpioread(pins[i]);
+
+      esp_configgpio(pins[i], INPUT | PULLUP);
+      up_udelay(200);
+      int pulled = esp_gpioread(pins[i]);
+
+      syslog(LOG_INFO,
+             "esp_sdmmc: idle %s(GPIO%d): no-pull=%d pull-up=%d -- %s\n",
+             names[i], pins[i], floating, pulled,
+             (floating && pulled) ? "healthy (line has its own pull-up)"
+             : (!pulled)          ? "HELD LOW: short, contention or no pull-up"
+                                  : "only our pull-up drives it");
+    }
+}
+
+/****************************************************************************
+ * Name: esp_sdmmc_identify_pins
+ *
+ * Description:
+ *   Drive each of the slot's pads as a plain GPIO and emit a number of pulses
+ *   that identifies which pad it is: CLK gets one, CMD two, D0 three, and so
+ *   on. Read the logic analyser alongside the console and the channel-to-pin
+ *   mapping stops being an assumption.
+ *
+ *   It doubles as a pad test: if a pad cannot produce its pulses, the problem
+ *   is the pad or whatever is holding it, not the protocol layer.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_identify_pins(void)
+{
+  static const char *const names[6] =
+  {
+    "CLK", "CMD", "D0", "D1", "D2", "D3"
+  };
+  const int pins[6] =
+  {
+    CONFIG_ESPRESSIF_SDMMC_CLK, CONFIG_ESPRESSIF_SDMMC_CMD,
+    CONFIG_ESPRESSIF_SDMMC_D0,  CONFIG_ESPRESSIF_SDMMC_D1,
+    CONFIG_ESPRESSIF_SDMMC_D2,  CONFIG_ESPRESSIF_SDMMC_D3
+  };
+  int i;
+  int n;
+
+  syslog(LOG_INFO, "esp_sdmmc: pin identification starting\n");
+
+  for (i = 0; i < 6; i++)
+    {
+      syslog(LOG_INFO, "esp_sdmmc: %s (GPIO%d) -> %d pulse(s)\n",
+             names[i], pins[i], i + 1);
+
+      esp_configgpio(pins[i], OUTPUT);
+
+      for (n = 0; n < i + 1; n++)
+        {
+          esp_gpiowrite(pins[i], true);
+          up_mdelay(20);
+          esp_gpiowrite(pins[i], false);
+          up_mdelay(20);
+        }
+
+      esp_configgpio(pins[i], INPUT | PULLUP);
+      up_mdelay(60);
+    }
+
+  syslog(LOG_INFO, "esp_sdmmc: pin identification done\n");
+}
+
 void esp_sdmmc_route_pins(void)
 {
   esp_sdmmc_configpins(CONFIG_ESPRESSIF_SDMMC_SLOT,
@@ -1235,7 +1344,25 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 
   if (wkupevent & SDIOWAIT_TIMEOUT)
     {
-      mcerr("ERROR: timed out waiting for a response\n");
+      /* Record what the controller was doing when the wait expired.
+       *
+       * A response timeout (RTO) means the command really went out on the wire
+       * and nothing answered -- the failure is at the far end. No interrupt
+       * flags at all means the controller never got as far as driving CMD,
+       * which is a completely different problem and points back at the host.
+       */
+
+      FAR struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+      sdmmc_dev_t *hw = priv->hw;
+
+      syslog(LOG_ERR, "esp_sdmmc: timed out waiting for a response "
+            "(rintsts=%08" PRIx32 " status=%08" PRIx32 " cmd=%08" PRIx32
+            " cmdarg=%08" PRIx32 ")\n",
+            *(volatile uint32_t *)&hw->rintsts,
+            *(volatile uint32_t *)&hw->status,
+            *(volatile uint32_t *)&hw->cmd,
+            *(volatile uint32_t *)&hw->cmdarg);
+
       return -ETIMEDOUT;
     }
 

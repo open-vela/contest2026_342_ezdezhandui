@@ -196,6 +196,14 @@ int esp_hosted_sdio_initialize(void)
       return OK;
     }
 
+  /* Before anything drives these lines, find out what the board itself is
+   * doing with them. A line held low against its own pull-up is a wiring
+   * problem, and no driver change can fix that.
+   */
+
+  esp_sdmmc_sample_idle();
+  esp_sdmmc_identify_pins();
+
   /* Step 0a: put the pads in a defined state *before* the companion boots.
    *
    * The order matters. If CLK is still floating when the companion comes out

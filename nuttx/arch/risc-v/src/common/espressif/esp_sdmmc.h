@@ -120,6 +120,28 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno);
 void esp_sdmmc_route_pins(void);
 
 /****************************************************************************
+ * Name: esp_sdmmc_identify_pins
+ *
+ * Description:
+ *   Emit 1..6 pulses on CLK..D3 so the analyser's channel-to-pin mapping can
+ *   be read off directly instead of assumed.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_identify_pins(void);
+
+/****************************************************************************
+ * Name: esp_sdmmc_sample_idle
+ *
+ * Description:
+ *   Read the slot's pads as plain GPIOs, with and without the internal
+ *   pull-ups, and log what each line is doing while the bus is idle.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_sample_idle(void);
+
+/****************************************************************************
  * Name: esp_sdmmc_debug
  *
  * Description:

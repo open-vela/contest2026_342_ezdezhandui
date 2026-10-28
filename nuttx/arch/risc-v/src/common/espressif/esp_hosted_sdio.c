@@ -860,6 +860,26 @@ int esp_hosted_sdio_initialize(void)
                        (tk >> 16) & 0xffffu);
               }
 
+              /* Look at the whole buffer, not just the offset the address
+               * arithmetic predicted: if the companion lays the payload down
+               * anywhere in the block, dumping a few windows finds it.
+               */
+
+              if (r == 0)
+                {
+                  int w;
+
+                  for (w = 0; w < 1536; w += 256)
+                    {
+                      syslog(LOG_INFO,
+                             "%s: buf[%4d..%4d] = %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                             HOSTED_TAG, w, w + 7,
+                             payload[w], payload[w + 1], payload[w + 2],
+                             payload[w + 3], payload[w + 4], payload[w + 5],
+                             payload[w + 6], payload[w + 7]);
+                    }
+                }
+
               if (r == 0)
                 {
                   uint8_t *pl = &payload[skip];

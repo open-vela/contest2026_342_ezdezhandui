@@ -86,7 +86,6 @@
 #include "esp_gpio.h"
 #include "esp_hosted_sdio.h"
 #include "esp_sdmmc.h"
-#include "hosted_ref_sdio.h"
 
 #include <soc/io_mux_reg.h>
 #include <soc/sdmmc_pins.h>
@@ -178,6 +177,7 @@ enum esp_hosted_sdio_state_e esp_hosted_sdio_state(void)
 int esp_hosted_sdio_initialize(void)
 {
   FAR struct sdio_dev_s *sdio;
+  int attempt;
   int ret;
 
   if (g_hosted_state == ESP_HOSTED_SDIO_ENUMERATED ||
@@ -342,7 +342,13 @@ int esp_hosted_sdio_initialize(void)
    * the two.
    */
 
-  /* Report what the controller can see, then enumerate. */
+  /* One concise snapshot of the controller and the clock tree.
+   *
+   * These are bring-up diagnostics rather than something a working system
+   * needs, but on this board the failure mode is "every register reads back
+   * correct and nothing happens", so having the values in the boot log is what
+   * makes that visible without attaching a debugger.
+   */
 
   {
     FAR struct esp_sdmmc_debug_s dbg;
@@ -352,114 +358,36 @@ int esp_hosted_sdio_initialize(void)
            " cdetect=%08" PRIx32 " clkena=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.verid, dbg.status, dbg.cdetect, dbg.clkena);
     syslog(LOG_INFO, "%s: ctrl=%08" PRIx32 " bmod=%08" PRIx32
-           " rintsts=%08" PRIx32 " cmdarg=%08" PRIx32 "\n",
-           HOSTED_TAG, dbg.ctrl, dbg.bmod, dbg.rintsts, dbg.cmdarg);
-    syslog(LOG_INFO, "%s: CLKRST sys=%08" PRIx32 " peri01=%08" PRIx32
-           " peri02=%08" PRIx32 "\n",
+           " rintsts=%08" PRIx32 " clkdiv=%08" PRIx32 "\n",
+           HOSTED_TAG, dbg.ctrl, dbg.bmod, dbg.rintsts, dbg.clkdiv);
+    syslog(LOG_INFO, "%s: clkrst sys=%08" PRIx32 " peri01=%08" PRIx32
+           " peri02=%08" PRIx32 " ref2=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.sys_clk_ctrl1, dbg.peri_clk_ctrl01,
-           dbg.peri_clk_ctrl02);
-    syslog(LOG_INFO, "%s: ref_clk2=%08" PRIx32 " clkdiv=%08" PRIx32
-           " cmd=%08" PRIx32 "\n",
-           HOSTED_TAG, dbg.ref_clk_ctrl2, dbg.clkdiv, dbg.cmd);
+           dbg.peri_clk_ctrl02, dbg.ref_clk_ctrl2);
   }
 
-  /* Give the companion a real chance to come up before declaring failure.
+  /* Ask repeatedly, for a bounded window.
    *
-   * The module has to boot its own RTOS and start the SDIO slave before it can
-   * answer CMD5, and that takes appreciably longer than the enable-to-first-
-   * command gap. Probing once right after the enable delay therefore measures
-   * how fast the companion boots rather than whether the link works at all.
-   * Retry for a bounded window instead.
+   * The companion boots its own RTOS and brings up its SDIO slave before it can
+   * answer CMD5, so a single probe right after the enable delay measures how
+   * fast it boots rather than whether the link works. There is deliberately no
+   * controller reset between attempts: re-running the clock and reset sequence
+   * is disruptive while the companion is still settling.
    */
 
-  {
-    int attempt;
+  for (attempt = 1; attempt <= ESP_HOSTED_SDIO_PROBE_TRIES; attempt++)
+    {
+      ret = sdio_probe(sdio);
+      if (ret >= 0)
+        {
+          break;
+        }
 
-    for (attempt = 1; attempt <= ESP_HOSTED_SDIO_PROBE_TRIES; attempt++)
-      {
-        /* Sample the CLK pad as an input to find out whether the controller is
-   * actually driving it.
-   *
-   * Every register involved reads back correctly and yet nothing works, so the
-   * one thing worth establishing before anything else is whether the card clock
-   * physically exists. The pad is still routed to the SDMMC controller, but its
-   * input path can be enabled independently, so reading GPIO18 a few hundred
-   * times tells us what is really on the pin: a clock at ~400 kHz sampled
-   * asynchronously shows up as a mix of high and low, whereas a dead or stuck
-   * pad reads the same every time.
-   */
+      syslog(LOG_INFO, "%s: probe %d/%d -> %d, retrying\n",
+             HOSTED_TAG, attempt, ESP_HOSTED_SDIO_PROBE_TRIES, ret);
 
-  {
-    int hi = 0;
-    int lo = 0;
-    int i;
-
-    /* INPUT | OUTPUT, deliberately: esp_configgpio(..., INPUT) alone would
-     * disable the pad's output driver, which would disconnect the controller's
-     * clock from the pin and make the measurement say "no clock" no matter what
-     * the controller does. Keeping the output enabled and just adding the input
-     * path samples what the controller is really driving.
-     */
-
-    /* Purely passive: never reconfigure the pad here. */
-
-    for (i = 0; i < 512; i++)
-      {
-        if (esp_gpioread(CONFIG_ESPRESSIF_SDMMC_CLK))
-          {
-            hi++;
-          }
-        else
-          {
-            lo++;
-          }
-      }
-
-    syslog(LOG_INFO,
-           "%s: CLK pin (GPIO%d) sampled 512x as input: %d high, %d low -- %s\n",
-           HOSTED_TAG, CONFIG_ESPRESSIF_SDMMC_CLK, hi, lo,
-           (hi && lo) ? "TOGGLING (clock is really running)"
-                      : "NOT toggling (no clock on the pad)");
-  }
-
-  /* The pad-level diagnostics that used to live here (drive the CLK pad as a
-   * plain GPIO, then route it back) are gone: they reconfigured the pad, and
-   * "routing it back" pointed it at the slot-1 matrix signal, which silently
-   * undid the IO_MUX attachment that slot 0 depends on.
-   */
-
-  /* Read back the IO_MUX function selection for the two pins that matter.
-   *
-   * For a slot-0 (IOMUX) attachment the pad's MCU_SEL must be the SDMMC
-   * function (SDMMC_SLOT0_FUNC == 0). If it still reads as the GPIO function,
-   * the controller is connected to nothing no matter how correct the clock and
-   * command registers look.
-   */
-
-  syslog(LOG_INFO, "%s: IO_MUX MCU_SEL: GPIO43=%" PRIu32 " GPIO44=%" PRIu32
-                   " (SDMMC_SLOT0_FUNC=%d)\n",
-         HOSTED_TAG,
-         (uint32_t)REG_GET_FIELD(IO_MUX_GPIO43_REG, MCU_SEL),
-         (uint32_t)REG_GET_FIELD(IO_MUX_GPIO44_REG, MCU_SEL),
-         SDMMC_SLOT0_FUNC);
-
-  ret = sdio_probe(sdio);
-        if (ret >= 0)
-          {
-            break;
-          }
-
-        syslog(LOG_INFO, "%s: probe %d/%d -> %d, retrying\n",
-               HOSTED_TAG, attempt, ESP_HOSTED_SDIO_PROBE_TRIES, ret);
-
-        /* No bus reset between attempts: re-running the controller reset
-         * re-does the clock and reset sequence, which is disruptive while the
-         * companion is settling. Just wait and ask again.
-         */
-
-        nxsig_usleep(ESP_HOSTED_SDIO_PROBE_INTERVAL_MS * 1000);
-      }
-  }
+      nxsig_usleep(ESP_HOSTED_SDIO_PROBE_INTERVAL_MS * 1000);
+    }
 
   if (ret < 0)
     {

@@ -610,9 +610,6 @@ if(CONFIG_ESPRESSIF_HOSTED_SDIO)
     ${CMAKE_CURRENT_LIST_DIR}/eh_frame/shim)
 endif()
 
-# The proven SDIO implementation borrowed from contest2026_031 (see docs/08
-# appendix K). Kept as a separate translation unit while it is being validated
-# against the existing esp_hosted_sdio.c.
-if(CONFIG_ESPRESSIF_HOSTED_SDIO)
-  target_sources(arch PRIVATE ${CMAKE_CURRENT_LIST_DIR}/hosted_ref_sdio.c)
-endif()
+# The reference implementation from contest2026_031 was compiled in here during
+# the cross-check that showed it fails identically on this board. Its finding is
+# written up in docs/08 appendix K; the code itself is not needed any more.

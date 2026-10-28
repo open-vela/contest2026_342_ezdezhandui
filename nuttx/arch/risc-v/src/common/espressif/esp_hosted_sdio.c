@@ -760,8 +760,8 @@ int esp_hosted_sdio_initialize(void)
                * padded whole block) is the closest match to what it expects.
                */
 
-              r = sdio_io_rw_extended(sdio, false, 1, addr, true, payload,
-                                      len, 0);
+              r = sdio_io_rw_extended(sdio, false, 1, 0u, true, payload,
+                                      512u, 1);
 
               syslog(LOG_INFO,
                      "%s: RX ret %d, addr %05" PRIx32 " (512-byte block read)\n",
@@ -903,6 +903,70 @@ int esp_hosted_sdio_initialize(void)
                            HOSTED_TAG, a, rl, pr, nz,
                            s2[0], s2[1], s2[2], s2[3], s2[4], s2[5]);
                   }
+
+                /* Try the transmit direction.
+                 *
+                 * The companion answers reads only while it has a packet queued,
+                 * and it has exactly one to give, so the receive side cannot be
+                 * probed further. Writes have no such precondition: the host
+                 * offers a buffer, and the companion takes it when it is ready.
+                 *
+                 * The token register says how many transmit buffers the
+                 * companion is offering (its upper half), so read that first and
+                 * only write when it reports room.
+                 */
+
+                {
+                  uint8_t  tok[4];
+                  uint32_t token;
+                  static uint8_t tx[512] __attribute__((aligned(64)));
+                  int k;
+                  int wr;
+
+                  sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &tok[0]);
+                  sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &tok[1]);
+                  sdio_io_rw_direct(sdio, false, 1, 0x00046, 0, &tok[2]);
+                  sdio_io_rw_direct(sdio, false, 1, 0x00047, 0, &tok[3]);
+                  token = (uint32_t)tok[0] | ((uint32_t)tok[1] << 8) |
+                          ((uint32_t)tok[2] << 16) | ((uint32_t)tok[3] << 24);
+
+                  syslog(LOG_INFO, "%s: TX token reg = %08" PRIx32
+                         " (buffers offered = %" PRIu32 ")\n",
+                         HOSTED_TAG, token, (token >> 16) & 0xffu);
+
+                  for (k = 0; k < 512; k++)
+                    {
+                      tx[k] = (uint8_t)(0x5a ^ (k & 0xff));
+                    }
+
+                  wr = sdio_io_rw_extended(sdio, true, 1, 0x1f600u, true, tx,
+                                           512u, 1);
+
+                  syslog(LOG_INFO, "%s: TX write 512 @1f600: ret %d\n",
+                         HOSTED_TAG, wr);
+
+                  /* Hand the buffer over by writing the token back, which is how
+                   * the companion learns a frame is waiting.
+                   */
+
+                  {
+                    uint8_t ack[4];
+                    uint32_t newtok = (token & 0xffff0000u) | 0u;
+
+                    ack[0] = (uint8_t)(newtok & 0xff);
+                    ack[1] = (uint8_t)((newtok >> 8) & 0xff);
+                    ack[2] = (uint8_t)((newtok >> 16) & 0xff);
+                    ack[3] = (uint8_t)((newtok >> 24) & 0xff);
+
+                    sdio_io_rw_direct(sdio, true, 1, 0x00044, ack[0], NULL);
+                    sdio_io_rw_direct(sdio, true, 1, 0x00045, ack[1], NULL);
+                    sdio_io_rw_direct(sdio, true, 1, 0x00046, ack[2], NULL);
+                    sdio_io_rw_direct(sdio, true, 1, 0x00047, ack[3], NULL);
+
+                    syslog(LOG_INFO, "%s: TX token ack written %08" PRIx32 "\n",
+                           HOSTED_TAG, newtok);
+                  }
+                }
 
                 (void)scan;
                 syslog(LOG_INFO, "%s: window scan done\n", HOSTED_TAG);

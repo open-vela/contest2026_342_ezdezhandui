@@ -646,7 +646,7 @@ int esp_hosted_sdio_initialize(void)
      */
 
     {
-      uint8_t mask = 0x03;   /* NEW_PACKET | ... */
+      uint8_t mask = 0x01;   /* BIT(ESP_OPEN_DATA_PATH) -- see adapter.h */
       int w = sdio_io_rw_direct(sdio, true, 1, 0x0008c, mask, NULL);
       uint8_t rb = 0;
       int rr = sdio_io_rw_direct(sdio, false, 1, 0x0008c, 0, &rb);
@@ -663,14 +663,14 @@ int esp_hosted_sdio_initialize(void)
     {
       int i;
 
-      for (i = 0; i < 10; i++)
+      for (i = 0; i < 20; i++)
         {
           uint8_t len_lo = 0;
           uint8_t len_hi = 0;
           uint8_t len_x = 0;
           uint8_t st = 0;
 
-          nxsig_usleep(10000);
+          nxsig_usleep(300000);
 
           sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &len_lo);
           sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &len_hi);

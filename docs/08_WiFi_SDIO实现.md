@@ -6309,3 +6309,85 @@ D0 前 24 字节: ff ff ff ff ff ff ff ff ff ff ff ff ...
 1. 检查 C6 固件里 `sdio_slave` 的数据通路是否真的启动
    （`sdio_slave_start()` 的返回值、`sdio_slave_send_get_free_buf()` 是否被调用）；
 2. 或者用 ESP-IDF 官方例程把 C6 配成一个最小 SDIO 从机，验证其数据阶段是否工作。
+
+### AA.41 第 121 轮：**找到了 CP 一直在等的东西 —— `OPEN_DATA_PATH`**
+
+回到 C6 的日志，有一句从第一轮起就在那里、我却一直没追的话：
+
+```
+ehcp_core: wait for data path to be opened
+```
+
+在参考实现里找到了它的对应物：
+
+```c
+/* Wait for transport rx-ready before issuing OPEN_DATA_PATH. */
+...
+sdio_generate_slave_intr(ESP_OPEN_DATA_PATH);
+```
+
+而 `sdio_generate_slave_intr()` 的实现是：
+
+```c
+uint8_t intr_mask = EH_SET_BIT(intr_no + ESP_SDIO_CONF_OFFSET);
+return eh_host_port_sdio_write_reg(sdio_handle, HOST_TO_SLAVE_INTR, &intr_mask, ...);
+```
+
+即：**主机要把 `BIT(ESP_OPEN_DATA_PATH)` 写进 `HOST_TO_SLAVE_INTR`（SCRATCH 7，`0x08C`）。**
+
+查枚举定义：`ESP_OPEN_DATA_PATH` 是 `ESP_HOST_INTERRUPT` 的**第一个成员**（值为 0），
+且 `ESP_SDIO_CONF_OFFSET = 0` —— **所以掩码就是 `0x01`。**
+
+### AA.42 **信号被 CP 收到了**（计数 20 → 21）
+
+改好之后重新上机，读 C6 的 console 统计相关消息的出现次数：
+
+```
+[ 21] ehcp_core: Open Data Path
+[ 21] ehcp_core: Open Data Path: giving host_reset_sem
+[ 21] ehcp_core: host_reset_task: host_reset_sem taken, preparing slave-up TLV
+[ 21] ehcp_core: Send slave up event
+[ 21] SDIO_SLAVE: advertising transfer size 1536
+[ 20] ehcp_core: Close Data Path
+```
+
+**上一轮这些计数都是 20，现在变成 21 —— 多出来的那一次就是我发的那条
+`OPEN_DATA_PATH`。**
+
+**CP 完整地走完了它的处理流程：**
+
+```
+Open Data Path
+  -> giving host_reset_sem
+  -> host_reset_task: host_reset_sem taken, preparing slave-up TLV
+  -> Send slave up event
+  -> SDIO_SLAVE: advertising transfer size 1536
+```
+
+**即：CP 收到主机的"打开数据通路"信号后，准备好并发送了 `slave up` 事件
+（就是主机一直能看到的那个 60 字节的包），并宣告传输大小 1536 字节。**
+
+### AA.43 现在的状态
+
+| 项 | 状态 |
+|---|---|
+| `OPEN_DATA_PATH` 握手 | ✅ **本轮实现并验证（CP 计数 +1）** |
+| CP 处理流程 | ✅ `Open Data Path → slave up event → 宣告 1536` |
+| 从机排队数据包 | ✅ `PACKET_LEN` = 60 |
+| 主机读取该包 | 🔴 仍为零 |
+| 从机的数据线 | 🔴 数据阶段无输出（上一轮的波形结论）|
+
+**握手的第一环（OPEN_DATA_PATH）已经打通，但数据仍然取不到。**
+
+### AA.44 下一轮的方向
+
+CP 宣告了 `transfer size 1536`，而主机目前按 512（一个块）读取。
+**两者不一致是一个明确的、可检验的疑点。**
+
+参考实现里，`EH_PRIV_TRANSFER_SIZE` 是**从机告诉主机的最大传输尺寸**。若从机
+按 1536 组织数据的收发，而主机只读 512，就可能出现"命令完成、数据阶段无内容"
+的现象。
+
+下一轮：
+1. 把读取长度改为从机宣告的 1536（3 个块），地址仍为 `0x1F800 - len`；
+2. 若仍为零，则抓这一次 CMD53 的数据线波形，看从机是否开始驱动数据线。

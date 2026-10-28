@@ -5220,3 +5220,60 @@ CMD5 的 OCR 当成了 R5 来解。**
 
 这条其实正是附录 S.29 那条教训的正解 —— 当时我用"命令被接受"当"收到响应"，
 现在可以把它做成一个真正的判据。
+
+### V.11 **又一个真 bug：命令完成位没在发命令前清掉**
+
+给 `waitresponse()` 加上"命令前后 `RESP0` 是否变化"的判据后，日志暴露了原因：
+
+```
+issue CMD5 arg=0x00000000
+CMD05 resp 00000000 -> 00000000 unchanged     <-- 第一条就没有响应？
+issue CMD5 arg=0x00000300
+CMD05 resp 20ffff00 -> 20ffff00 unchanged     <-- 此时 RESP0 已经有值了
+```
+
+**第一次 CMD5 的响应，是在 `waitresponse` 返回之后才到的。**
+
+根因：`waitresponse` 轮询 `RINTSTS` 的 Command Done 位时，看到的是**上一条命令
+残留的完成位**，于是立刻返回；等响应真正写进 `RESP0` 时，已经没人在等了。
+
+**修法：在发命令之前清掉 `RINTSTS`，而不是等完之后清。** 已在
+`esp_sdmmc_sendcmd()` 里加上 `sdmmc_ll_clear_interrupt(hw, 0xffffffffu);`。
+
+修复后：
+
+```
+CMD05 resp 00000000 -> 20ffff00 CHANGED       <-- 正确捕获到响应
+```
+
+### V.12 修复后又暴露两件事
+
+修复后的完整序列（一次启动）：
+
+```
+issue CMD0
+issue CMD5 arg=0x00000000
+CMD05 resp 00000000 -> 20ffff00 CHANGED        <-- 响应正确
+issue CMD5 arg=0x00000300
+CMD05 resp 20ffff00 -> 20ffff00 unchanged
+companion enumerated
+issue CMD52 arg=0x80002000
+CMD52 resp 20ffff00 -> 20ffff00 unchanged      <-- CMD52 没有响应
+FN0 block size failed: -5
+```
+
+**问题一：`sdio_probe` 只发了 CMD0 + CMD5×2 就报告"枚举成功"。**
+
+按 NuttX 的 `sdio_probe()` 流程，之后还应当有 **CMD3（取 RCA）** 与
+**CMD7（选卡）** —— 但日志里**没有** `issue CMD3` / `issue CMD7`。
+
+**即"枚举成功"是不完整的**：卡可能根本没被 CMD7 选中、没进入 Transfer State，
+这也解释了为什么随后的 CMD52 得不到响应。
+
+**问题二：CMD52 的响应仍然没有到达**（`RESP0` 未变化），
+这与"卡未被选中"的推断一致。
+
+### V.13 下一轮的方向
+
+1. **查清 CMD3/CMD7 为什么没有发出** —— 这是"枚举成功"名不副实的关键；
+2. 在那之后再看 CMD52：一旦卡真的被 CMD7 选中，CMD52 就应当有响应。

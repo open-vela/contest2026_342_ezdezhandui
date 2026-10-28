@@ -416,6 +416,17 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
          "esp_sdmmc: issue CMD%u arg=0x%08" PRIx32 " (cmd_word=%08" PRIx32 ")\n",
          (unsigned)(hwcmd.cmd_index), arg, hwcmd.val);
 
+  /* Clear any stale completion before issuing this command.
+   *
+   * Leaving the previous Command Done bit standing is what made every wait
+   * return early: the poll saw the old bit, reported success, and the response
+   * for the command just written landed afterwards with nobody reading it.
+   * The response register then kept the previous command's value, which is
+   * exactly what the log showed (CMD52 "reading" CMD5's 0x20ffff00).
+   */
+
+  sdmmc_ll_clear_interrupt(hw, 0xffffffffu);
+
   sdmmc_ll_set_command_arg(hw, arg);
   sdmmc_ll_set_command(hw, hwcmd);
 
@@ -1671,6 +1682,7 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
     FAR struct esp_sdmmc_dev_s *p = (struct esp_sdmmc_dev_s *)dev;
     sdmmc_dev_t *hw = p->hw;
     clock_t start = clock_systime_ticks();
+    uint32_t resp_before = *(volatile uint32_t *)&hw->resp[0];
     bool done = false;
 
     for (;;)
@@ -1687,6 +1699,13 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
             break;
           }
       }
+
+    syslog(LOG_INFO,
+           "esp_sdmmc: CMD%.2u resp %08" PRIx32 " -> %08" PRIx32 " %s\n",
+           (unsigned)(cmd & MMCSD_CMDIDX_MASK), resp_before,
+           *(volatile uint32_t *)&hw->resp[0],
+           (*(volatile uint32_t *)&hw->resp[0] != resp_before) ? "CHANGED"
+                                                             : "unchanged");
 
     if (!done)
       {

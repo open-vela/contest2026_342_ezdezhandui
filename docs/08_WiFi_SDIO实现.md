@@ -5115,3 +5115,32 @@ esp_hosted_sdio: FN0 block size failed: -5      (-EIO)
 | **SDIO 枚举（CMD0/5/3/7）** | ✅ **首次通过** |
 | 卡功能 bring-up（CMD52）| 🔴 `FN0 block size failed: -5` |
 | ESP-Hosted 协议 / WiFi | ⏸ 阻塞于上一步 |
+
+## V.6 第 99 轮：把 `-EIO` 定位到具体那一行
+
+沿着 `FN0 block size failed: -5` 往上追：
+
+- 驱动里只有**一处**返回 `-EIO`（`waitresponse` 里的 `SDMMC_ERR_RE` 判断），
+  而日志中**并没有**出现它对应的 "response error" 输出 → **不是它**；
+- NuttX 的 `drivers/mmcsd/sdio.c` 有两处 `-EIO`：
+  - 第 220 行：`if (resp.flags.error) return -EIO;`
+  - 第 342 行：`if (resp.flags.error || (wkupevent & SDIOWAIT_ERROR)) return -EIO;`
+
+命令走的是 `sdio_io_rw_direct()` → 第 220 行那条路径。
+
+**即：`-EIO` 来自 NuttX 对 R5 响应里 `flags.error` 位的判断 —— 也就是说
+"C6 对这次 CMD52 回了 R5，但 R5 里 error 标志被解出来是 1"。**
+
+### 下一步的两种可能
+
+1. **R5 本身真的是错误应答** —— 写 CCCR 0x10（FN0 块大小）被从机拒绝；
+2. **R5 解码错位** —— 驱动的 `recv_r5` 直接把 `RESP0`（= 响应位 [39:8]）当 32 位
+   载荷交给 NuttX，而 NuttX 的 `struct sdio_resp_r5` 按它自己的位序解释
+   （flags 在 [15:13]）。若 DW MSHC 与 NuttX 预期的对齐方式差一段，
+   flags 就会读到错误的位置。
+
+第 2 种更可能 —— 因为 **CMD52 之前的 CMD0/CMD5/CMD3/CMD7 全部成功**，
+说明链路质量没问题；而刚好是第一个用到 R5 位域解析的命令失败。
+
+下一轮：把 `recv_r5` 实际交出去的 `RESP0` 原始值打出来，
+与 NuttX 的 `sdio_resp_r5` 位序对照，就能确定是不是对齐问题。

@@ -5277,3 +5277,56 @@ FN0 block size failed: -5
 
 1. **查清 CMD3/CMD7 为什么没有发出** —— 这是"枚举成功"名不副实的关键；
 2. 在那之后再看 CMD52：一旦卡真的被 CMD7 选中，CMD52 就应当有响应。
+
+### V.14 完整原始序列（不过滤）—— "枚举成功"确实名不副实
+
+一次启动的全部 SDIO 相关行：
+
+```
+CMD05 resp 00000000 -> 20ffff00 CHANGED          <- 第 1 条 CMD5 收到响应
+short response raw=20ffff00 (cmd=00000145)       <- 它的 RECVR4
+issue CMD5 arg=0x00000300                        <- 第 2 条 CMD5
+CMD05 resp 20ffff00 -> 20ffff00 unchanged
+companion enumerated                             <- 报"枚举成功"
+issue CMD52 arg=0x80002000
+CMD52 resp 20ffff00 -> 20ffff00 unchanged        <- 无响应
+FN0 block size failed: -5
+```
+
+**注意中间缺了什么：**
+
+- 第 2 条 CMD5 之后**没有 `short response raw=`（即没有 RECVR4）**；
+- **完全没有 `issue CMD3`**（取 RCA）；
+- **完全没有 `issue CMD7`**（选卡）。
+
+而 NuttX 的 `sdio_probe()` 在这之后必须依次做
+`CMD5 → RECVR4 → CMD3 → RECVR6 → CMD7S → RECVR1 → sdio_set_wide_bus()`。
+
+**所以真实情况是：第 2 条 CMD5 之后，`sdio_probe` 走了错误分支提前返回，
+而它返回的值却被上层当成了成功** —— 于是打印出"companion enumerated"，
+可卡从来没有被 CMD3/CMD7 选中过，自然也不在 Transfer State。
+
+### V.15 这就解释了 CMD52 为什么没有响应
+
+SDIO 的 CMD52 只能在卡被 **CMD7 选中（Transfer State）** 之后才有意义。
+卡根本没被选中，CMD52 的响应自然不会来 —— 而 `RESP0` 里保留的仍是 CMD5 的
+OCR，`recv_r5` 把它当 R5 解，flags 全是 1，NuttX 判 `error`，返回 `-EIO`。
+
+**整条因果链现在是闭合的：**
+
+```
+第 2 条 CMD5 之后提前返回（原因待查）
+  -> CMD3/CMD7 未发出
+  -> 卡未进入 Transfer State
+  -> CMD52 无响应
+  -> RESP0 保留旧值
+  -> NuttX 把旧值当 R5 解出 error=1
+  -> -EIO / FN0 block size failed
+```
+
+### V.16 下一轮的唯一目标
+
+**查清第 2 条 CMD5 之后为什么提前返回，以及 `sdio_probe` 的返回值为什么
+被上层当成成功。**
+
+这两点一解决，CMD3/CMD7 就能发出去，整条链路应当贯通。

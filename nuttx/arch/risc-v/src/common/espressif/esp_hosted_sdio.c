@@ -760,11 +760,11 @@ int esp_hosted_sdio_initialize(void)
                * padded whole block) is the closest match to what it expects.
                */
 
-              r = sdio_io_rw_extended(sdio, false, 1, 0u, true, payload,
+              r = sdio_io_rw_extended(sdio, false, 1, addr, true, payload,
                                       512u, 1);
 
               syslog(LOG_INFO,
-                     "%s: RX ret %d, addr %05" PRIx32 " (512-byte block read)\n",
+                     "%s: RX ret %d, addr %05" PRIx32 " (512-byte block read, the address actually sent)\n",
                      HOSTED_TAG, r, addr);
 
               if (r == 0)

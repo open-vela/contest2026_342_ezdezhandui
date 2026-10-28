@@ -670,7 +670,7 @@ int esp_hosted_sdio_initialize(void)
           uint8_t len_x = 0;
           uint8_t st = 0;
 
-          nxsig_usleep(100000);
+          nxsig_usleep(10000);
 
           sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &len_lo);
           sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &len_hi);
@@ -915,6 +915,44 @@ int esp_hosted_sdio_initialize(void)
                  * companion is offering (its upper half), so read that first and
                  * only write when it reports room.
                  */
+
+                /* Configure the interrupt registers before touching the data
+                 * path.
+                 *
+                 * The reference host clears the slave's interrupt latches and
+                 * enables the host-side interrupt register as part of coming up;
+                 * this driver never did either. The companion may well be holding
+                 * its data path closed until it sees that configuration -- which
+                 * would explain a queued packet that reads as zeros and a token
+                 * register that offers no transmit buffers.
+                 */
+
+                {
+                  uint8_t v;
+                  int i;
+
+                  for (i = 0; i < 4; i++)
+                    {
+                      sdio_io_rw_direct(sdio, true, 1, 0x000d4 + i, 0xff, NULL);
+                    }
+
+                  for (i = 0; i < 4; i++)
+                    {
+                      sdio_io_rw_direct(sdio, true, 1, 0x000dc + i, 0xff, NULL);
+                    }
+
+                  /* Also enable the slave's own interrupt output. */
+
+                  for (i = 0; i < 4; i++)
+                    {
+                      sdio_io_rw_direct(sdio, true, 1, 0x00050 + i, 0x00, NULL);
+                    }
+
+                  v = 0;
+                  sdio_io_rw_direct(sdio, false, 1, 0x000dc, 0, &v);
+                  syslog(LOG_INFO, "%s: interrupts configured, HOST_INT_ENA now %02x\n",
+                         HOSTED_TAG, v);
+                }
 
                 {
                   uint8_t  tok[4];

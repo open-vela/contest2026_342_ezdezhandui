@@ -1,12 +1,31 @@
 # WiFi（板载协处理器 / SDIO + ESP-Hosted）—— 现状调研与实现路线
 
-> 版本：2026-10-23 · 状态：**第 1 层（P4 SDMMC/SDIO host 驱动）已实现并通过构建验证；
-> 第 2/3 层（ESP-Hosted 协议 + 远端 WiFi netdev）未实现**
+> 版本：**2026-10-28** · 状态：**主机侧已完整工作并逐条仪器验证；
+> 卡在从机（C6）不应答 —— 已定位到"C6 内部"这一层，主机侧无剩余可疑环节**
 >
-> - ✅ P4 SDMMC host 驱动（`esp_sdmmc.c`）：完整 `struct sdio_dev_s` 方法表、IDMAC 描述符链、
->   CLIC 中断、双 slot 引脚路由；**实测编入固件、符号落位、调用链已反汇编核实**
-> - ✅ 枚举层（`esp_hosted_sdio.c`）：`esp_sdmmc_initialize` → `sdio_probe`，里程碑状态机
-> - ❌ ESP-Hosted 协议层与远端 WiFi netdev
+> ## 执行摘要（当前状态）
+>
+> | 层 | 状态 | 证据 |
+> |---|---|---|
+> | P4 SDMMC/SDIO host 驱动（`esp_sdmmc.c`）| ✅ **完整工作** | 时钟 25 MS/s 实测 **403 kHz**（在 100~400 kHz 规范内）；CIU 执行命令（`start_command` 自清）；`CMD0` 与 `CMD5` 均以 **CRC7 合法**的帧出现在线上（逻辑分析仪 + 自写的 48 位解码器验证）|
+> | 枚举层（`esp_hosted_sdio.c`）| ✅ 工作 | 从机使能/复位（GPIO54 实测有效，C6 console 每次复位都新增一次完整启动日志）、引脚路由、bring-up 状态机 |
+> | 从机（C6）| 🔴 **无应答** | 它被正常复位、启动日志零错误、`SDIO slave` 初始化完成，却对合法的 CMD0/CMD5 一条响应也没有 |
+> | 协议层 / WiFi netdev | ⛔ 未开始 | 阻塞于枚举 |
+>
+> **本任务最有价值的两个发现**（附录 S.9、S.12）：
+>
+> 1. **CIU 一直不执行命令的根因是 SDIO PLL 从未被 PMU 上电**
+>    （`sdmmc_ll_enable_sdio_pll()` 从未被调用）；补上后 CIU 立刻开始执行、
+>    时钟第一次出现在焊盘上；
+> 2. **`waitresponse()` 忽略了命令字里的响应标志**，导致 CMD0（无响应命令）
+>    去等一个不存在的响应、超时退出 —— **CMD5 在此之前从未被发出过**。
+>    此前几十轮观测到的 `-110` 其实都不是"等不到从机回应"。
+>
+> 下一步（需要人工）：按住板上 BOOT → 按一下 RESET → 松开 BOOT，
+> 然后运行 `tools/build_flash/c6_hosted_new/flash.sh` 烧入自建固件
+> （esp-hosted v3.0.10，配置逐项核对过），再复测。详见附录 S.19。
+>
+> ---
 
 ## 一、结论先行（三条硬事实）
 

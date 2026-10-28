@@ -1649,6 +1649,37 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
   esp_sdmmc_waitenable(dev, SDIOWAIT_RESPONSEDONE, SDMMC_LONGTIMEOUT);
   wkupevent = esp_sdmmc_eventwait(dev);
 
+  /* Fall back to polling the controller when the event never arrives.
+   *
+   * Hardware shows this clearly: after a CMD5 the response is sitting in
+   * RESP0 (a valid OCR) and RINTSTS bit 2 (Command Done) is set, yet the
+   * event-driven wait times out -- the interrupt is not being delivered to
+   * this driver. Polling the same status bit recovers the response, which is
+   * what a command with no data phase needs anyway.
+   */
+
+  if ((wkupevent & SDIOWAIT_RESPONSEDONE) == 0)
+    {
+      FAR struct esp_sdmmc_dev_s *p = (struct esp_sdmmc_dev_s *)dev;
+      sdmmc_dev_t *hw = p->hw;
+      clock_t pstart = clock_systime_ticks();
+
+      while ((*(volatile uint32_t *)&hw->rintsts & SDMMC_CMD_DONE) == 0)
+        {
+          if (clock_systime_ticks() - pstart > SDMMC_CMDTIMEOUT)
+            {
+              break;
+            }
+        }
+
+      if (*(volatile uint32_t *)&hw->rintsts & SDMMC_CMD_DONE)
+        {
+          sdmmc_ll_clear_interrupt(hw, SDMMC_CMD_DONE);
+          wkupevent |= SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE;
+          wkupevent &= ~SDIOWAIT_TIMEOUT;
+        }
+    }
+
   if (wkupevent & SDIOWAIT_TIMEOUT)
     {
       /* Record what the controller was doing when the wait expired.

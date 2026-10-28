@@ -4012,3 +4012,81 @@ P4 复位后：totalLines = 2752     (+156 行 = 一次完整启动)
 
 这一步能直接把问题定性，而在此之前继续改驱动的收益已经很低 ——
 主机侧每一条都已经有仪器读数或 CRC 校验作支撑。
+
+## S.12 第 77 轮：**找到一个一直存在的真 bug —— CMD5 从未被发出**
+
+### S.12.1 线索：线上只有 CMD0
+
+给每条命令加日志后，真机输出是：
+
+```
+issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+issue CMD0 arg=0x00000000
+issue CMD0 arg=0x00000000
+issue CMD0 arg=0x00000000        <-- 四次探测，每次只发了 CMD0
+```
+
+`sdio_probe()` 的顺序是 **CMD0 → 延时 → CMD5**。**CMD5 一次都没出现**，
+说明 CMD0 之后 `sdio_probe` 就退出了。而 CMD0 是**无响应**命令。
+
+### S.12.2 根因：`waitresponse()` 忽略了命令里的响应标志
+
+NuttX 的 `sdio_sendcmdpoll()`（`drivers/mmcsd/sdio.c`）：
+
+```c
+ret = SDIO_SENDCMD(dev, cmd, arg);
+if (ret == OK) {
+    ret = SDIO_WAITRESPONSE(dev, cmd);   /* 对每条命令都调用，包括 CMD0 */
+}
+```
+
+而本驱动的 `esp_sdmmc_waitresponse()` 开头是 **`UNUSED(cmd)`** ——
+完全不看命令字里的响应标志，**一律去等 `SDIOWAIT_RESPONSEDONE`**。
+
+CMD0 根本没有响应阶段，这个事件永远不会来 → 超时 → 返回 `-ETIMEDOUT`(-110)
+→ `sdio_sendcmdpoll` 失败 → `sdio_probe` 走 `err` 分支退出 → **CMD5 永远发不出去**。
+
+**这也解释了为什么此前每一轮都是 `-110`：那个超时根本不是 CMD5 等不到从机回应，
+而是 CMD0 在等一个它本就不该等的响应。**
+
+### S.12.3 修复
+
+```c
+if ((cmd & MMCSD_RESPONSE_MASK) == MMCSD_NO_RESPONSE)
+  {
+    return OK;
+  }
+```
+
+### S.12.4 修复后的真机结果
+
+驱动日志：
+
+```
+issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+issue CMD5 arg=0x00000000 (cmd_word=a0010045)      <-- 第一次出现
+```
+
+分析仪（每一帧都过 CRC7 校验，全部 48 位对齐都试过）：
+
+```
+burst 5: 714543 edges, valid frames: [('cmd', 0, 0), ('cmd', 5, 0)]
+```
+
+**CMD0 与 CMD5 现在都是线上 CRC 合法的帧。**
+
+### S.12.5 现在的状态
+
+| 环节 | 状态 |
+|---|---|
+| 时钟 | ✅ 实测 403 kHz（低功耗已关，时钟连续运行）|
+| CIU 执行命令 | ✅ |
+| **CMD0 发出并 CRC 合法** | ✅ |
+| **CMD5 发出并 CRC 合法** | ✅ **本轮修复后才出现** |
+| 从机响应 | 🔴 仍无 |
+
+用户已确认**整条链路的每一根线同时接到 P4、C6 和逻辑分析仪**，因此分析仪在
+P4 侧看到的波形就是 C6 引脚上的波形 —— 即 **C6 确实收到了合法的 CMD5，却没有回应。**
+
+**主机侧到此再无任何可疑环节。** 问题确定在 C6 内部：它的 SDIO slave
+虽然初始化完成、日志零错误，却不响应任何命令。

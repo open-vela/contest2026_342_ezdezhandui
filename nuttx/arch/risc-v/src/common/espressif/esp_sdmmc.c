@@ -398,6 +398,18 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
   hwcmd.use_hold_reg  = 1;
   hwcmd.start_command = 1;
 
+  /* Name every command on the way out.
+   *
+   * The analyser shows only CMD0 reaching the wire; the CMD5 that the probe
+   * waits on never appears as a CRC-valid frame even with the card clock
+   * running continuously. Logging here separates "the driver never issued it"
+   * from "it was issued and the controller dropped it".
+   */
+
+  syslog(LOG_INFO,
+         "esp_sdmmc: issue CMD%u arg=0x%08" PRIx32 " (cmd_word=%08" PRIx32 ")\n",
+         (unsigned)(hwcmd.cmd_index), arg, hwcmd.val);
+
   sdmmc_ll_set_command_arg(hw, arg);
   sdmmc_ll_set_command(hw, hwcmd);
 
@@ -860,7 +872,17 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
   esp_sdmmc_clk_update(hw, priv->slot, "dividers programmed");
 
   sdmmc_ll_enable_card_clock(hw, priv->slot, true);
-  sdmmc_ll_enable_card_clock_low_power(hw, priv->slot, true);
+  /* Low power OFF: keep the card clock running instead of letting the CIU gate
+   * it when no transfer is in flight.
+   *
+   * Espressif enables low power here, and with it on the analyser shows exactly
+   * one clock burst in a whole capture -- the 81 initialisation clocks plus
+   * CMD0 -- with the CMD5 that follows producing no clocks at all. Keeping the
+   * clock running is the way to tell "the clock is gated at the wrong moment"
+   * apart from "the command never reached the wire".
+   */
+
+  sdmmc_ll_enable_card_clock_low_power(hw, priv->slot, false);
   esp_sdmmc_clk_update(hw, priv->slot, "clock re-enabled");
 
 
@@ -1512,7 +1534,23 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 {
   sdio_eventset_t wkupevent;
 
-  UNUSED(cmd);
+  /* Commands with no response phase must return immediately.
+   *
+   * sdio_sendcmdpoll() calls this for *every* command, including CMD0, which
+   * has no response phase at all -- nothing will ever raise RESPONSEDONE, so
+   * waiting can only run into the timeout. The caller then abandons the
+   * sequence, which is why the wire showed CMD0 four times and never a CMD5:
+   * the driver was reporting "timed out waiting for a response" for a command
+   * that was never supposed to produce one.
+   *
+   * The response flags are in the command word; ignoring them (this function
+   * used to be `UNUSED(cmd)`) is what made it wait.
+   */
+
+  if ((cmd & MMCSD_RESPONSE_MASK) == MMCSD_NO_RESPONSE)
+    {
+      return OK;
+    }
 
   esp_sdmmc_waitenable(dev, SDIOWAIT_RESPONSEDONE, SDMMC_LONGTIMEOUT);
   wkupevent = esp_sdmmc_eventwait(dev);

@@ -635,6 +635,138 @@ int esp_hosted_sdio_initialize(void)
              ((uint32_t)block[0] << 24) | ((uint32_t)block[1] << 16) |
              ((uint32_t)block[2] << 8) | (uint32_t)block[3]);
     }
+
+    /* Tell the companion the host is up.
+     *
+     * The slave will not queue anything until it sees this: esp-hosted's host
+     * writes HOST_TO_SLAVE_INTR (SCRATCH 7) to hand its interrupt mask over,
+     * and only then does the slave start raising NEW_PACKET. Without it
+     * PACKET_LEN stays zero forever, which is what the earlier register dump
+     * showed.
+     */
+
+    {
+      uint8_t mask = 0x03;   /* NEW_PACKET | ... */
+      int w = sdio_io_rw_direct(sdio, true, 1, 0x0008c, mask, NULL);
+      uint8_t rb = 0;
+      int rr = sdio_io_rw_direct(sdio, false, 1, 0x0008c, 0, &rb);
+
+      syslog(LOG_INFO, "%s: host-ready mask %02x written (ret %d), readback %02x (ret %d)\n",
+             HOSTED_TAG, mask, w, rb, rr);
+    }
+
+    /* Watch PACKET_LEN for a while after announcing readiness. A companion that
+     * has events queued should raise it; a register that stays zero says it
+     * either has nothing to say or is waiting for something else.
+     */
+
+    {
+      int i;
+
+      for (i = 0; i < 10; i++)
+        {
+          uint8_t len_lo = 0;
+          uint8_t len_hi = 0;
+          uint8_t len_x = 0;
+          uint8_t st = 0;
+
+          nxsig_usleep(100000);
+
+          sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &len_lo);
+          sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &len_hi);
+          sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &len_x);
+          sdio_io_rw_direct(sdio, false, 1, 0x00050, 0, &st);
+
+          if (len_lo || len_hi || len_x || st)
+            {
+              syslog(LOG_INFO,
+                     "%s: t=%dms PACKET_LEN=%02x %02x %02x INT_RAW=%02x\n",
+                     HOSTED_TAG, (i + 1) * 100, len_lo, len_hi, len_x, st);
+            }
+        }
+
+      /* Read the queued packet.
+       *
+       * esp-hosted hands the payload over at the END of the CMD53 window and
+       * works downwards: address = ESP_SLAVE_CMD53_END_ADDR - length. The length
+       * register's low 20 bits are the byte count; the upper bits carry flags.
+       */
+
+      {
+        uint8_t  lenb[4] = { 0, 0, 0, 0 };
+        uint32_t raw;
+        uint32_t len;
+        static uint8_t payload[512] __attribute__((aligned(64)));
+        int r;
+
+        sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &lenb[0]);
+        sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &lenb[1]);
+        sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &lenb[2]);
+        sdio_io_rw_direct(sdio, false, 1, 0x00063, 0, &lenb[3]);
+
+        raw = (uint32_t)lenb[0] | ((uint32_t)lenb[1] << 8) |
+              ((uint32_t)lenb[2] << 16) | ((uint32_t)lenb[3] << 24);
+        len = raw & 0xfffffu;
+
+        syslog(LOG_INFO, "%s: packet queued: raw=%08" PRIx32 " len=%" PRIu32 "\n",
+               HOSTED_TAG, raw, len);
+
+        if (len > 0 && len <= sizeof(payload))
+          {
+            uint32_t blk = (len + 511u) & ~511u;
+            uint32_t addr = 0x1f800u - len;
+
+            memset(payload, 0, sizeof(payload));
+
+            /* Block-only transfer, matching the reference: the payload lives at
+             * a fixed offset from the end of the window, so the read length is
+             * rounded up and the companion pads the tail.
+             */
+
+            /* Read whole, aligned blocks covering the payload.
+             *
+             * A block-mode CMD53 addresses the function in units of its block
+             * size, so the start has to be block aligned: reading from
+             * 0x1F800-len directly returned zeros. Rounding down to the block
+             * that contains the payload and taking the tail of it gives the
+             * same bytes with an address the card can act on.
+             */
+
+            {
+              uint32_t aligned = addr & ~511u;
+              uint32_t skip    = addr - aligned;
+              uint32_t nblk    = ((skip + len) + 511u) / 512u;
+
+              memset(payload, 0, sizeof(payload));
+
+              r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
+                                      nblk * 512u, nblk);
+
+              syslog(LOG_INFO,
+                     "%s: RX ret %d, want addr %05" PRIx32 " -> aligned %05" PRIx32
+                     " skip %" PRIu32 " nblk %" PRIu32 "\n",
+                     HOSTED_TAG, r, addr, aligned, skip, nblk);
+
+              if (r == 0)
+                {
+                  uint8_t *pl = &payload[skip];
+                  char    hex[3 * 24 + 1];
+                  int     k;
+
+                  for (k = 0; k < 20 && (uint32_t)k < len; k++)
+                    {
+                      snprintf(&hex[k * 3], 4, "%02x ", pl[k]);
+                    }
+
+                  hex[3 * (k < 20 ? k : 20)] = '\0';
+
+                  syslog(LOG_INFO, "%s: payload[%" PRIu32 "] = %s\n",
+                         HOSTED_TAG, len, hex);
+                }
+            }
+          }
+      }
+    }
   }
 
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;

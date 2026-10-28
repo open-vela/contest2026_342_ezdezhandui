@@ -554,6 +554,13 @@ void esp_sdmmc_identify_pins(void)
 
   syslog(LOG_INFO, "esp_sdmmc: pin identification starting\n");
 
+  /* A one-pin probe that pulsed GPIO18 alone (three 50 ms pulses) was used to
+   * settle which analyser channel carries CLK. Result: the pulses appeared on
+   * channel 1 while channel 0 stayed flat, i.e. CLK is on channel 1 and CMD on
+   * channel 0 -- one off from the channel list supplied with the board. The
+   * six-pin loop below is kept because it identifies all six at once.
+   */
+
   for (i = 0; i < 6; i++)
     {
       syslog(LOG_INFO, "esp_sdmmc: %s (GPIO%d) -> %d pulse(s)\n",

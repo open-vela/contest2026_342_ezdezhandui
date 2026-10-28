@@ -715,6 +715,27 @@ int esp_hosted_sdio_initialize(void)
             uint8_t tok[4];
             uint32_t token;
 
+            /* Enable every host interrupt source, then read the masked status.
+             *
+             * The protocol doc: "The host can also mask unneeded sources by
+             * clearing the bits in the INT_ENA register." With INT_ENA at zero
+             * INT_ST reads zero no matter what the slave is signalling -- which
+             * would make the "no pending interrupt" conclusion worthless.
+             */
+
+            {
+              uint8_t ena = 0xff;
+              int k;
+
+              for (k = 0; k < 4; k++)
+                {
+                  sdio_io_rw_direct(sdio, true, 1, 0x000dc + k, ena, NULL);
+                }
+
+              sdio_io_rw_direct(sdio, false, 1, 0x000dc, 0, &ena);
+              syslog(LOG_INFO, "%s: INT_ENA now %02x\n", HOSTED_TAG, ena);
+            }
+
             sdio_io_rw_direct(sdio, false, 1, 0x00058, 0, &stst);
             sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &tok[0]);
             sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &tok[1]);

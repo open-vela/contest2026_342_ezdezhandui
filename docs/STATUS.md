@@ -288,3 +288,30 @@ python3 tools/test/board.py run "free" "ps"    # 任意 NSH 命令并断言
   新 key 一律经本地 `ai_agent/include/agent_secrets.h`（.gitignore 忽略）注入，不入仓。
 - ⚠️ 本地环境坑：`openocd` 运行期间占用 USB，用完务必 `pkill -x openocd`；
   `pkill -f openocd` 会连自己的 shell 一起杀掉（模式自匹配）。
+
+---
+
+## 2026-10-28 · 第 85 轮复核（在 WiFi 调试大量改动之后）
+
+WiFi 排查期间对 `esp_sdmmc.c` / `esp_hosted_sdio.c` 动了十几处，
+本轮重新确认**音频与语音播放这两条已交付链路没有受影响**：
+
+```
+$ audiotest -t 1
+audiotest: queued 96044 bytes
+audiotest: done
+
+$ audiotest -w /tmp/t.wav      ->  -rwxrwxrwx  192044 /tmp/t.wav
+$ nxplayer                     ->  device /dev/audio/pcm0 -> play /tmp/t.wav -> q
+                                 干净返回 nsh>（此前那个无参命令 NULL 解引用会崩）
+```
+
+| 复核项 | 结果 |
+|---|---|
+| ES8311 音频（I2S0 + GDMA）| ✅ `queued 96044` / `done` |
+| WAV 生成 | ✅ 192,044 B |
+| 语音播放（`nxplayer`）| ✅ device→play→q 全程无崩溃 |
+| 帧层往返测试 | ✅ all checks passed |
+| 交付清单 | ✅ 354 条一致 |
+
+**结论：WiFi 侧的改动没有影响音频/语音这两条路径。**

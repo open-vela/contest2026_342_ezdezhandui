@@ -786,18 +786,11 @@ int esp_hosted_sdio_initialize(void)
                      (tk >> 16) & 0xffffu);
             }
 
-            /* Sample the companion's interrupt line around the read.
-             *
-             * In 1-bit mode the slave announces a queued packet by holding DAT1
-             * low (SDIO_SLAVE_HOSTINT_SEND_NEW_PACKET). Reading DAT1 before and
-             * after says whether the companion considered the transfer taken:
-             * still low afterwards means it is still waiting, high means it let
-             * the buffer go.
+            /* D1 is the companion's SEND_NEW_PACKET line (held low while it has
+             * a packet queued). Sampling it from software was tried and gave a
+             * reading that disagreed with the analyser, which showed it low for
+             * the whole capture, so the value is not trusted and is not used.
              */
-
-            esp_configgpio(CONFIG_ESPRESSIF_SDMMC_D1, INPUT | PULLUP);
-            syslog(LOG_INFO, "%s: D1 before read = %d\n", HOSTED_TAG,
-                   esp_gpioread(CONFIG_ESPRESSIF_SDMMC_D1));
 
             memset(payload, 0xaa, sizeof(payload));
 
@@ -873,29 +866,6 @@ int esp_hosted_sdio_initialize(void)
                        (tk >> 16) & 0xffffu);
               }
 
-              /* Look at the whole buffer, not just the offset the address
-               * arithmetic predicted: if the companion lays the payload down
-               * anywhere in the block, dumping a few windows finds it.
-               */
-
-              syslog(LOG_INFO, "%s: D1 after read  = %d\n", HOSTED_TAG,
-                     esp_gpioread(CONFIG_ESPRESSIF_SDMMC_D1));
-
-              if (r == 0)
-                {
-                  int w;
-
-                  for (w = 0; w < 1536; w += 256)
-                    {
-                      syslog(LOG_INFO,
-                             "%s: buf[%4d..%4d] = %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                             HOSTED_TAG, w, w + 7,
-                             payload[w], payload[w + 1], payload[w + 2],
-                             payload[w + 3], payload[w + 4], payload[w + 5],
-                             payload[w + 6], payload[w + 7]);
-                    }
-                }
-
               if (r == 0)
                 {
                   uint8_t *pl = &payload[skip];
@@ -921,8 +891,7 @@ int esp_hosted_sdio_initialize(void)
               {
                 uint8_t  pl2[4];
                 uint32_t after = 0;
-                uint32_t scan;
-
+        
                 sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &pl2[0]);
                 sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &pl2[1]);
                 sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &pl2[2]);
@@ -933,229 +902,7 @@ int esp_hosted_sdio_initialize(void)
                 syslog(LOG_INFO, "%s: PACKET_LEN after read = %08" PRIx32 "\n",
                        HOSTED_TAG, after);
 
-                /* Write a known pattern into the CMD53 window and read it back.
-                 *
-                 * This tests the data path and the address semantics on their
-                 * own, with no dependence on the companion's packet protocol: if
-                 * a block written to an address comes back from that same
-                 * address, both the transfer and the addressing are sound and
-                 * the empty receive must be the companion's doing. If it does
-                 * not, the fault is here.
-                 */
 
-                {
-                  static uint8_t out[512] __attribute__((aligned(64)));
-                  static uint8_t in[512]  __attribute__((aligned(64)));
-                  uint32_t target = 0x1f000u;
-                  int rw;
-                  int rr;
-                  int k;
-                  int match = 0;
-
-                  for (k = 0; k < 512; k++)
-                    {
-                      out[k] = (uint8_t)(0xa5 ^ (k & 0xff));
-                    }
-
-                  memset(in, 0, sizeof(in));
-
-                  rw = sdio_io_rw_extended(sdio, true, 1, target, true, out,
-                                           512u, 1);
-                  rr = sdio_io_rw_extended(sdio, false, 1, target, true, in,
-                                           512u, 1);
-
-                  for (k = 0; k < 512; k++)
-                    {
-                      if (in[k] == out[k])
-                        {
-                          match++;
-                        }
-                    }
-
-                  syslog(LOG_INFO,
-                         "%s: CMD53 loopback @%05" PRIx32 ": write ret %d, "
-                         "read ret %d, matching bytes %d/512 "
-                         "in[0..3]=%02x %02x %02x %02x\n",
-                         HOSTED_TAG, target, rw, rr, match,
-                         in[0], in[1], in[2], in[3]);
-                }
-
-                /* Find where the payload actually lives.
-                 *
-                 * Each read dequeues the packet, so ask the companion for a
-                 * fresh one before every attempt: re-write the host-ready
-                 * register, wait for PACKET_LEN to rise, then read that
-                 * address. Sampling several offsets shows which region of the
-                 * window carries data.
-                 */
-
-                for (scan = 0; scan < 8; scan++)
-                  {
-                    static uint8_t s2[512] __attribute__((aligned(64)));
-                    uint32_t off = (uint32_t)scan * 512u;
-                    uint32_t a   = 0x1f800u - 512u - off;
-                    uint8_t  l4[4];
-                    uint32_t rl;
-                    uint8_t  ready = 0x03;
-                    int k;
-                    int nz = 0;
-                    int pr;
-
-                    sdio_io_rw_direct(sdio, true, 1, 0x0008c, ready, NULL);
-                    nxsig_usleep(200000);
-
-                    sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &l4[0]);
-                    sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &l4[1]);
-                    sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &l4[2]);
-                    sdio_io_rw_direct(sdio, false, 1, 0x00063, 0, &l4[3]);
-                    rl = (uint32_t)l4[0] | ((uint32_t)l4[1] << 8) |
-                         ((uint32_t)l4[2] << 16) | ((uint32_t)l4[3] << 24);
-
-                    memset(s2, 0xaa, sizeof(s2));
-
-                    /* Read the whole block that ends at the window end. */
-
-                    pr = sdio_io_rw_extended(sdio, false, 1, a, true, s2,
-                                             512u, 1);
-
-                    for (k = 0; k < 512; k++)
-                      {
-                        if (s2[k] != 0xaa)
-                          {
-                            nz++;
-                          }
-                      }
-
-                    syslog(LOG_INFO,
-                           "%s: scan addr %05" PRIx32 " len %06" PRIx32
-                           ": ret %d, written %d, head %02x %02x %02x %02x %02x %02x\n",
-                           HOSTED_TAG, a, rl, pr, nz,
-                           s2[0], s2[1], s2[2], s2[3], s2[4], s2[5]);
-                  }
-
-                /* Try the transmit direction.
-                 *
-                 * The companion answers reads only while it has a packet queued,
-                 * and it has exactly one to give, so the receive side cannot be
-                 * probed further. Writes have no such precondition: the host
-                 * offers a buffer, and the companion takes it when it is ready.
-                 *
-                 * The token register says how many transmit buffers the
-                 * companion is offering (its upper half), so read that first and
-                 * only write when it reports room.
-                 */
-
-                /* Configure the interrupt registers before touching the data
-                 * path.
-                 *
-                 * The reference host clears the slave's interrupt latches and
-                 * enables the host-side interrupt register as part of coming up;
-                 * this driver never did either. The companion may well be holding
-                 * its data path closed until it sees that configuration -- which
-                 * would explain a queued packet that reads as zeros and a token
-                 * register that offers no transmit buffers.
-                 */
-
-                {
-                  uint8_t v;
-                  int i;
-
-                  for (i = 0; i < 4; i++)
-                    {
-                      sdio_io_rw_direct(sdio, true, 1, 0x000d4 + i, 0xff, NULL);
-                    }
-
-                  for (i = 0; i < 4; i++)
-                    {
-                      sdio_io_rw_direct(sdio, true, 1, 0x000dc + i, 0xff, NULL);
-                    }
-
-                  /* Also enable the slave's own interrupt output. */
-
-                  for (i = 0; i < 4; i++)
-                    {
-                      sdio_io_rw_direct(sdio, true, 1, 0x00050 + i, 0x00, NULL);
-                    }
-
-                  v = 0;
-                  sdio_io_rw_direct(sdio, false, 1, 0x000dc, 0, &v);
-                  syslog(LOG_INFO, "%s: interrupts configured, HOST_INT_ENA now %02x\n",
-                         HOSTED_TAG, v);
-                }
-
-                {
-                  uint8_t  tok[4];
-                  uint32_t token;
-                  static uint8_t tx[512] __attribute__((aligned(64)));
-                  int k;
-                  int wr;
-
-                  sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &tok[0]);
-                  sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &tok[1]);
-                  sdio_io_rw_direct(sdio, false, 1, 0x00046, 0, &tok[2]);
-                  sdio_io_rw_direct(sdio, false, 1, 0x00047, 0, &tok[3]);
-                  token = (uint32_t)tok[0] | ((uint32_t)tok[1] << 8) |
-                          ((uint32_t)tok[2] << 16) | ((uint32_t)tok[3] << 24);
-
-                  syslog(LOG_INFO, "%s: TX token reg = %08" PRIx32
-                         " (buffers offered = %" PRIu32 ")\n",
-                         HOSTED_TAG, token, (token >> 16) & 0xffu);
-
-                  for (k = 0; k < 512; k++)
-                    {
-                      tx[k] = (uint8_t)(0x5a ^ (k & 0xff));
-                    }
-
-                  /* Reference semantics: the payload goes at
-                   * ESP_SLAVE_CMD53_END_ADDR - length, and the host does no
-                   * token write-back -- the token register is the companion's
-                   * own count of buffers it is offering.
-                   */
-
-                  wr = sdio_io_rw_extended(sdio, true, 1, 0x1f800u - 512u, true,
-                                           tx, 512u, 1);
-
-                  {
-                    uint8_t t2[4];
-                    uint32_t tok2;
-
-                    sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &t2[0]);
-                    sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &t2[1]);
-                    sdio_io_rw_direct(sdio, false, 1, 0x00046, 0, &t2[2]);
-                    sdio_io_rw_direct(sdio, false, 1, 0x00047, 0, &t2[3]);
-                    tok2 = (uint32_t)t2[0] | ((uint32_t)t2[1] << 8) |
-                           ((uint32_t)t2[2] << 16) | ((uint32_t)t2[3] << 24);
-
-                    syslog(LOG_INFO,
-                           "%s: TX write 512 @1f600: ret %d; TOKEN after = %08" PRIx32
-                           " (buffers %" PRIu32 ")\n",
-                           HOSTED_TAG, wr, tok2, (tok2 >> 16) & 0xffffu);
-                  }
-
-                  /* Hand the buffer over by writing the token back, which is how
-                   * the companion learns a frame is waiting.
-                   */
-
-                  {
-                    uint8_t ack[4];
-                    uint32_t newtok = (token & 0xffff0000u) | 0u;
-
-                    ack[0] = (uint8_t)(newtok & 0xff);
-                    ack[1] = (uint8_t)((newtok >> 8) & 0xff);
-                    ack[2] = (uint8_t)((newtok >> 16) & 0xff);
-                    ack[3] = (uint8_t)((newtok >> 24) & 0xff);
-
-                    sdio_io_rw_direct(sdio, true, 1, 0x00044, ack[0], NULL);
-                    sdio_io_rw_direct(sdio, true, 1, 0x00045, ack[1], NULL);
-                    sdio_io_rw_direct(sdio, true, 1, 0x00046, ack[2], NULL);
-                    sdio_io_rw_direct(sdio, true, 1, 0x00047, ack[3], NULL);
-
-                    syslog(LOG_INFO, "%s: TX token ack written %08" PRIx32 "\n",
-                           HOSTED_TAG, newtok);
-                  }
-                }
-
-                (void)scan;
                 syslog(LOG_INFO, "%s: window scan done\n", HOSTED_TAG);
               }
             }

@@ -334,7 +334,13 @@ static struct esp_sdmmc_dev_s g_sdmmc =
     .recv_r2          = esp_sdmmc_recvlong,
     .recv_r3          = esp_sdmmc_recvshort,
     .recv_r4          = esp_sdmmc_recvshort,
-    .recv_r5          = esp_sdmmc_recvshortcrc,
+    /* R5 is CMD52's reply and carries no CRC field; checking one on a response
+     * that does not have it rejects every CMD52. That is what stopped the
+     * bring-up right after a successful enumeration -- "FN0 block size failed:
+     * -5" was this check, not a bad answer from the companion.
+     */
+
+    .recv_r5          = esp_sdmmc_recvshort,
     .recv_r6          = esp_sdmmc_recvshortcrc,
     .recv_r7          = esp_sdmmc_recvshort,
     .waitenable       = esp_sdmmc_waitenable,
@@ -1393,7 +1399,9 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
           hwcmd.response_long = 1;
         }
       else if ((cmd & MMCSD_RESPONSE_MASK) != MMCSD_R3_RESPONSE &&
-               (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R4_RESPONSE)
+               (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R4_RESPONSE &&
+               (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R5_RESPONSE &&
+               (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R6_RESPONSE)
         {
           /* R3 (OCR) and R4 carry no valid CRC. */
 
@@ -1646,72 +1654,56 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
       return OK;
     }
 
-  esp_sdmmc_waitenable(dev, SDIOWAIT_RESPONSEDONE, SDMMC_LONGTIMEOUT);
-  wkupevent = esp_sdmmc_eventwait(dev);
-
-  /* Fall back to polling the controller when the event never arrives.
+  /* Poll the controller instead of waiting on an event.
    *
-   * Hardware shows this clearly: after a CMD5 the response is sitting in
-   * RESP0 (a valid OCR) and RINTSTS bit 2 (Command Done) is set, yet the
-   * event-driven wait times out -- the interrupt is not being delivered to
-   * this driver. Polling the same status bit recovers the response, which is
-   * what a command with no data phase needs anyway.
+   * Hardware settled this: after CMD5 the response is already in RESP0 (a
+   * valid OCR -- 0x20FFFF, 3.2-3.3 V) and RINTSTS bit 2 (Command Done) is set,
+   * yet the event-driven wait times out with that bit still standing. The CIU
+   * finished the command perfectly; the completion just never reached this
+   * driver as an event.
+   *
+   * A command with no data phase needs nothing else, so reading the same
+   * status bit the interrupt would have read is both simpler and immune to
+   * whatever is dropping the interrupt.
    */
 
-  if ((wkupevent & SDIOWAIT_RESPONSEDONE) == 0)
-    {
-      FAR struct esp_sdmmc_dev_s *p = (struct esp_sdmmc_dev_s *)dev;
-      sdmmc_dev_t *hw = p->hw;
-      clock_t pstart = clock_systime_ticks();
+  {
+    FAR struct esp_sdmmc_dev_s *p = (struct esp_sdmmc_dev_s *)dev;
+    sdmmc_dev_t *hw = p->hw;
+    clock_t start = clock_systime_ticks();
+    bool done = false;
 
-      while ((*(volatile uint32_t *)&hw->rintsts & SDMMC_CMD_DONE) == 0)
-        {
-          if (clock_systime_ticks() - pstart > SDMMC_CMDTIMEOUT)
-            {
-              break;
-            }
-        }
+    for (;;)
+      {
+        if (sdmmc_ll_get_intr_status(hw) & SDMMC_CMD_DONE)
+          {
+            sdmmc_ll_clear_interrupt(hw, SDMMC_CMD_DONE);
+            done = true;
+            break;
+          }
 
-      if (*(volatile uint32_t *)&hw->rintsts & SDMMC_CMD_DONE)
-        {
-          sdmmc_ll_clear_interrupt(hw, SDMMC_CMD_DONE);
-          wkupevent |= SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE;
-          wkupevent &= ~SDIOWAIT_TIMEOUT;
-        }
-    }
+        if (clock_systime_ticks() - start > SDMMC_LONGTIMEOUT)
+          {
+            break;
+          }
+      }
 
-  if (wkupevent & SDIOWAIT_TIMEOUT)
-    {
-      /* Record what the controller was doing when the wait expired.
-       *
-       * A response timeout (RTO) means the command really went out on the wire
-       * and nothing answered -- the failure is at the far end. No interrupt
-       * flags at all means the controller never got as far as driving CMD,
-       * which is a completely different problem and points back at the host.
-       */
+    if (!done)
+      {
+        syslog(LOG_ERR, "esp_sdmmc: no command completion "
+               "(rintsts=%08" PRIx32 " resp0=%08" PRIx32 ")\n",
+               *(volatile uint32_t *)&hw->rintsts,
+               *(volatile uint32_t *)&hw->resp[0]);
+        return -ETIMEDOUT;
+      }
 
-      FAR struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
-      sdmmc_dev_t *hw = priv->hw;
-
-      syslog(LOG_ERR, "esp_sdmmc: timed out waiting for a response "
-            "(rintsts=%08" PRIx32 " status=%08" PRIx32 " cmd=%08" PRIx32
-            " cmdarg=%08" PRIx32 " resp0=%08" PRIx32 ")\n",
-            *(volatile uint32_t *)&hw->rintsts,
-            *(volatile uint32_t *)&hw->status,
-            *(volatile uint32_t *)&hw->cmd,
-            *(volatile uint32_t *)&hw->cmdarg,
-            *(volatile uint32_t *)&hw->resp[0]);
-
-      return -ETIMEDOUT;
-    }
-
-  if (wkupevent & SDIOWAIT_ERROR)
-    {
-      mcerr("ERROR: response error\n");
-      return -EIO;
-    }
-
-  return OK;
+    if (sdmmc_ll_get_intr_status(hw) & SDMMC_ERR_RE)
+      {
+        syslog(LOG_ERR, "esp_sdmmc: response error (rintsts=%08" PRIx32 ")\n",
+               *(volatile uint32_t *)&hw->rintsts);
+        return -EIO;
+      }
+  }
 }
 
 static int esp_sdmmc_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,

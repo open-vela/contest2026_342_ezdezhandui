@@ -5051,3 +5051,67 @@ DW MSHC 的 `RESP0` 保存的是 **响应位 [39:8]**。对 R4（CMD5 的响应�
 现在有确凿数据表明：**响应正常到达、命令完成位正常置起，只是驱动没把它接住。**
 
 **问题范围因此从"从机/硬件"整个翻转回"主机的响应接收路径"。**
+
+---
+
+# 附录 V：**枚举通了！** —— `waitresponse` 改为轮询是转折点
+
+## V.1 关键改动
+
+`waitresponse()` 从"等中断事件"改为**直接轮询 `RINTSTS` 的 Command Done 位**
+（命令响应本来就不需要中断）。
+
+## V.2 结果：枚举立刻成功
+
+```
+issue CMD5 arg=0x00000300
+esp_hosted_sdio: companion enumerated          <-- 第一次出现
+issue CMD52 arg=0x80002000
+esp_hosted_sdio: FN0 block size failed: -5
+```
+
+**`companion enumerated` 出现了** —— 也就是说：
+
+- `CMD0` ✅
+- `CMD5`（含 R4 读取、OCR 解析）✅
+- `CMD3`（RCA）✅
+- `CMD7`（选卡）✅
+- `sdio_probe()` 整体返回成功 ✅
+
+**SDIO 枚举完全通过。**
+
+## V.3 这印证了附录 U 的判断
+
+**从机一直是正常的**；问题始终在主机侧 —— 具体是
+**命令完成事件没有作为中断送达驱动**。
+把等待方式换成轮询后，整条 `CMD0→CMD5→CMD3→CMD7` 序列一次走通。
+
+## V.4 新的、位置明确的失败点
+
+枚举之后进入卡功能 bring-up，第一步就失败：
+
+```
+issue CMD52 arg=0x80002000
+esp_hosted_sdio: FN0 block size failed: -5      (-EIO)
+```
+
+`0x80002000` = 写 CCCR 地址 0x10（Function 0 块大小）。
+
+已尝试两处与 CMD52/R5 有关的修正：
+
+1. 命令侧：`check_response_crc` 对 R5 不置位（确认生效：命令字从
+   `a0010174` 变为 `a0010074`）—— **仍 -5**；
+2. 响应侧：`recv_r5` 由 `esp_sdmmc_recvshortcrc`（软件校验 CRC）改为
+   `esp_sdmmc_recvshort` —— **仍 -5**。
+
+所以 -EIO 不是 CRC 引起的，来源还在别处（`sendcmd` 或 `waitresponse` 的
+其它错误分支）。下一轮把这两个函数的错误返回点逐一打点，就能定位。
+
+## V.5 现状
+
+| 项 | 状态 |
+|---|---|
+| 时钟 / 引脚 / 物理连线 | ✅ |
+| **SDIO 枚举（CMD0/5/3/7）** | ✅ **首次通过** |
+| 卡功能 bring-up（CMD52）| 🔴 `FN0 block size failed: -5` |
+| ESP-Hosted 协议 / WiFi | ⏸ 阻塞于上一步 |

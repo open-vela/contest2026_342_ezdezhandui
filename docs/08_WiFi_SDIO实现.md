@@ -5144,3 +5144,32 @@ esp_hosted_sdio: FN0 block size failed: -5      (-EIO)
 
 下一轮：把 `recv_r5` 实际交出去的 `RESP0` 原始值打出来，
 与 NuttX 的 `sdio_resp_r5` 位序对照，就能确定是不是对齐问题。
+
+### V.7 第 100 轮：`-EIO` 的来源进一步收窄
+
+逐条排除驱动自身的错误返回点（在真机 console 上直接数关键字出现次数）：
+
+| 驱动里的错误分支 | console 中出现次数 |
+|---|---|
+| `response error`（`waitresponse` 的 RE 分支）| **0** |
+| `previous command still pending`（`sendcmd` 的 EBUSY 分支）| **0** |
+| `no command completion`（`waitresponse` 的超时分支）| **0** |
+| `FN0 block`（失败信息本身）| 4 |
+
+**即：驱动自己的三条错误分支一条都没有触发过。**
+
+所以 `-EIO` 确实来自 NuttX 的 `sdio_io_rw_direct()` 里那句
+`if (resp.flags.error) return -EIO;`（`sdio.c:220`）——
+也就是 **R5 响应的 flags 字段被解出来 error=1**。
+
+另外：为了看 R5 的原始值，在 `recvshort()` 里加了 `R5 raw=...` 日志，
+但 console 里该字符串出现 **0 次**（而二进制里确实含这个字符串），
+**说明 `SDIO_RECVR5` 没有被调用到**。这与"`-EIO` 在 `sdio.c:220`"矛盾
+（那一行在 `SDIO_RECVR5` 之后），需要下一轮确认：是烧录没真正生效，
+还是另有第三条路径。
+
+### V.8 本轮的确定结论
+
+- **SDIO 枚举（CMD0/5/3/7）已经稳定通过** —— 这是本任务最实质的突破；
+- 失败点固定在枚举之后第一个 CMD52 写操作；
+- 驱动自身的错误分支全部未触发，`-EIO` 由 NuttX 对 R5 flags 的解释产生。

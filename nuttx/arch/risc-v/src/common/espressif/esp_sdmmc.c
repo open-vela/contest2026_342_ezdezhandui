@@ -1711,7 +1711,15 @@ static int esp_sdmmc_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
 {
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
 
-  UNUSED(cmd);
+  /* Log the raw response word: the caller parses bit fields out of it, and a
+   * one-word shift between what the controller stores and what NuttX expects
+   * would make those fields read nonsense while every earlier command (which
+   * only needed the OCR) still worked.
+   */
+
+  syslog(LOG_INFO, "esp_sdmmc: R%u raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
+         (unsigned)((cmd & MMCSD_RESPONSE_MASK) == MMCSD_R5_RESPONSE ? 5 : 4),
+         *(volatile uint32_t *)&priv->hw->resp[0], cmd);
 
   *rshort = priv->hw->resp[0];
   return OK;

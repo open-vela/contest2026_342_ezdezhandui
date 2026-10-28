@@ -923,7 +923,7 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
          * 200 MHz / 2 / 250 = 400 kHz.
          */
 
-        div = 250;
+        div = 250;              /* 200MHz / 8 / 250 = 100 kHz */
         break;
 
       case CLOCK_MMC_TRANSFER:
@@ -946,7 +946,7 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
   esp_sdmmc_clk_update(hw, priv->slot, "clock disabled");
 
   sdmmc_ll_set_card_clock_div(hw, priv->slot, div);
-  sdmmc_ll_set_clock_div(hw, 2);
+  sdmmc_ll_set_clock_div(hw, 8);
   sdmmc_ll_init_phase_delay(hw);
 
   /* All four drive/sample clock-edge combinations were tried here and the
@@ -1664,11 +1664,12 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 
       syslog(LOG_ERR, "esp_sdmmc: timed out waiting for a response "
             "(rintsts=%08" PRIx32 " status=%08" PRIx32 " cmd=%08" PRIx32
-            " cmdarg=%08" PRIx32 ")\n",
+            " cmdarg=%08" PRIx32 " resp0=%08" PRIx32 ")\n",
             *(volatile uint32_t *)&hw->rintsts,
             *(volatile uint32_t *)&hw->status,
             *(volatile uint32_t *)&hw->cmd,
-            *(volatile uint32_t *)&hw->cmdarg);
+            *(volatile uint32_t *)&hw->cmdarg,
+            *(volatile uint32_t *)&hw->resp[0]);
 
       return -ETIMEDOUT;
     }
@@ -2005,7 +2006,7 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * "correct", no waveform anywhere, and CMD0 unable to emit its 80 clocks.
    */
 
-  sdmmc_ll_set_clock_div(hw, 2);
+  sdmmc_ll_set_clock_div(hw, 8);
 
   /* Three clock-path probes were tried here and the analyser rejected all of
    * them, so they are not kept: switching the source to SDIO_PLL, forcing

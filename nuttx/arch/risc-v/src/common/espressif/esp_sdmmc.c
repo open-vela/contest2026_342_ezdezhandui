@@ -810,23 +810,47 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
      * The reset bit is self-clearing and is polled below.
      */
 
-    sdmmc_ll_reset_controller(hw);
+    /* Issue the clock-update command exactly as Espressif does.
+     *
+     * sd_host_slot_clock_update_command() builds precisely this and nothing
+     * else -- card_num, update_clk_reg, wait_complete, with no use_hold_reg and
+     * no command index. The register description is explicit that CLKDIV /
+     * CLKSRC / CLKENA are transferred into the card clock domain only by a
+     * command carrying update_clk_reg, so this is the documented way to commit
+     * them and a controller reset is only an assumption that it works too.
+     */
+
+    upd.card_num       = (uint32_t)priv->slot;
+    upd.update_clk_reg = 1;
+    upd.wait_complete  = 1;
+    upd.start_command  = 1;
+
+    sdmmc_ll_set_command_arg(hw, 0);
+    sdmmc_ll_set_command(hw, upd);
 
     {
       clock_t cstart = clock_systime_ticks();
 
-      while (!sdmmc_ll_is_controller_reset_done(hw))
+      while (hw->cmd.start_command != 0)
         {
           if (clock_systime_ticks() - cstart > SDMMC_CMDTIMEOUT)
             {
-              syslog(LOG_ERR, "%s: controller reset for the clock commit did "
-                              "not complete (ctrl=%08" PRIx32 ")\n",
-                     "esp_sdmmc", hw->ctrl.val);
+              syslog(LOG_ERR,
+                     "esp_sdmmc: clock-update command did NOT complete "
+                     "(cmd=%08" PRIx32 " rintsts=%08" PRIx32
+                     " ctrl=%08" PRIx32 ") -- falling back to a controller "
+                     "reset\n",
+                     hw->cmd.val, hw->rintsts.val, hw->ctrl.val);
+              sdmmc_ll_reset_controller(hw);
               break;
             }
         }
-    }
 
+      syslog(LOG_INFO,
+             "esp_sdmmc: clock-update command %s (cmd=%08" PRIx32 ")\n",
+             (hw->cmd.start_command == 0) ? "completed" : "timed out",
+             hw->cmd.val);
+    }
   }
 
   /* There is deliberately no wait for a command here any more: the clock is
@@ -1887,6 +1911,21 @@ void esp_sdmmc_bus_reset(void)
             break;
           }
       }
+
+    /* Say whether the reset actually completed.
+     *
+     * This is not a cosmetic log. CTRL.controller_reset is cleared by the CIU
+     * clock, so a bit that stays set proves the CIU is not being clocked at
+     * all -- which is a different failure from "the card did not answer", and
+     * it is the one that explains a controller which accepts every register
+     * write, reports every clock enable as set, and still drives nothing.
+     */
+
+    syslog(LOG_INFO,
+           "esp_sdmmc: controller reset %s (ctrl=%08" PRIx32 ")\n",
+           sdmmc_ll_is_controller_reset_done(g_sdmmc.hw) ? "completed"
+                                                         : "*** TIMED OUT ***",
+           *(volatile uint32_t *)&g_sdmmc.hw->ctrl);
   }
 
   g_sdmmc.xfrmask   = 0;

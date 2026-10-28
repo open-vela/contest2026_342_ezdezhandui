@@ -297,17 +297,21 @@ int esp_hosted_sdio_initialize(void)
    * wired to slot 0, so nothing was ever driven on the slot-1 pads.
    */
 
-  /* Do not issue the update_clk_reg command from the generic clock path.
+  /* Let the clock path issue the update_clk_reg command.
    *
-   * That command never completes in this driver, and issuing it also triggers a
-   * controller reset -- both of which run after the initialisation above has
-   * correctly programmed CLKDIV/CLKSRC/CLKENA. The reference implementation for
-   * this same board programs the clock once at init and never needs the command
-   * during bring-up, so the generic path is disabled here and the clock set up
-   * in esp_sdmmc_initialize() is left untouched.
+   * It used to be skipped here because it never completed, and a controller
+   * reset was used to commit CLKDIV/CLKSRC/CLKENA instead. But the register
+   * description says those three are transferred into the card clock domain
+   * only by a command carrying update_clk_reg, and Espressif's own path always
+   * issues it -- so the reset was committing them on an assumption. The
+   * analyser shows the result of that assumption: a CLK pad that never moves.
+   *
+   * The command is now built exactly as sd_host_slot_clock_update_command()
+   * builds it (card_num, update_clk_reg, wait_complete, nothing else), and the
+   * driver reports whether it completes.
    */
 
-  esp_sdmmc_skip_clk_update(true);
+  esp_sdmmc_skip_clk_update(false);
 
   /* Step 1: the host controller.
    *
@@ -390,6 +394,16 @@ int esp_hosted_sdio_initialize(void)
     syslog(LOG_INFO, "%s: ctrl=%08" PRIx32 " bmod=%08" PRIx32
            " rintsts=%08" PRIx32 " clkdiv=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.ctrl, dbg.bmod, dbg.rintsts, dbg.clkdiv);
+
+    /* CTRL.controller_reset is cleared by the CIU clock, so this one bit says
+     * whether the controller is being clocked at all. A controller that
+     * accepts every register write but sits with its reset bit set is not
+     * "waiting for a card" -- it is not running.
+     */
+
+    syslog(LOG_INFO, "%s: CIU reset bit %s (bit0 of ctrl: %d)\n", HOSTED_TAG,
+           (dbg.ctrl & 1u) ? "*** STILL SET -- CIU is not clocked ***"
+                           : "clear -- CIU is running", (int)(dbg.ctrl & 1u));
     syslog(LOG_INFO, "%s: clkrst sys=%08" PRIx32 " peri01=%08" PRIx32
            " peri02=%08" PRIx32 " ref2=%08" PRIx32 "\n",
            HOSTED_TAG, dbg.sys_clk_ctrl1, dbg.peri_clk_ctrl01,

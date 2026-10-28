@@ -3322,3 +3322,82 @@ sdmmc_slot_gpio_sig[1] = {
 
 下一轮应当从"P4 的 SDMMC 时钟树如何真正启动"入手（例如对照 ESP-IDF 的
 `sdmmc_host_init` 全序列逐调用比对），而不是继续调单个寄存器。
+
+---
+
+# 附录 R：把「时钟提交」这条命令打开 —— 错误码终于变了
+
+## R.1 找到了我自己写死的一行
+
+IDF 的 `sd_host_slot_clock_update_command()`（`components/upper_hal_sdmmc/src/sd_host_sdmmc.c`）：
+
+```c
+sdmmc_hw_cmd_t cmd_val = {
+    .card_num       = slot->slot_id,
+    .update_clk_reg = 1,
+    .wait_complete  = 1
+};
+```
+
+**注意：没有 `use_hold_reg`，没有命令号。** 而且 IDF 在每次改完卡时钟后都会发它
+（`sd_host_slot_enable_clk_cmd11()` 里紧跟 `sdmmc_ll_enable_card_clock()`）。
+
+而在我的驱动里，hosted 层写死了一行：
+
+```c
+esp_hosted_sdio.c:  esp_sdmmc_skip_clk_update(true);
+```
+
+**这条命令从未被执行过。** 我的"时钟提交"改用控制器复位完成 ——
+但寄存器文档明确写着 CLKDIV/CLKSRC/CLKENA **只有**通过带 `update_clk_reg`
+的命令才会传送到卡时钟域，**复位提交是我自己的假设**。
+
+## R.2 按 IDF 的写法实现后打开它
+
+命令严格照 IDF 构造（`card_num=slot`、`update_clk_reg=1`、`wait_complete=1`，
+其余全零），并报告是否完成。开启后的真机结果：
+
+```
+esp_sdmmc: clock-update command did NOT complete
+           (cmd=80212000 rintsts=00000000 ctrl=00000010) -- falling back to a controller reset
+esp_sdmmc: clock-update command timed out (cmd=80212000)
+esp_hosted_sdio: probe 1/4 -> -16, retrying
+```
+
+**错误码第一次变了**：之前一直是 `-110`（ETIMEDOUT），现在变成 `-16`（EBUSY）——
+因为 `start_command` 位被这条命令置上后再也不自清，后续命令全部报"上一条还在挂起"。
+
+同时这些寄存器也变了：
+
+| | 改前 | 改后 |
+|---|---|---|
+| `status` | `00000106` | `00000406` |
+| `peri01` | `01000601` | `01400601`（`hs_mode` 位变了）|
+| `peri02` | `38820200` | `38820201` |
+| `cmd` | `a0018000`（期间）| `80212000`（卡住）|
+
+即**这条命令确实被硬件接收了，但从未被执行。**
+
+## R.3 这证明了什么
+
+**CIU 无法执行任何命令。**
+
+而"提交卡时钟"又**需要 CIU 执行命令**。于是形成循环：
+
+```
+没有卡时钟  ->  CIU 不执行命令  ->  时钟提交不了  ->  没有卡时钟
+```
+
+`ctrl.controller_reset` 位读回是**清的**（`CIU reset bit clear`），说明它要么被
+BIU 时钟清掉、要么从未真正置起 —— **它不能证明 CIU 时钟存在**。
+
+所以真正要修的是**循环之外的那一环：CIU 自己的时钟（cclk_in）为什么没有运行**。
+`reg_sdio_ls_clk_en` 已置 1、时钟源已选、边沿值正确、总线时钟已使能、
+系统级复位已做过 —— 这些都"写进去了"，但 CIU 仍然不动。
+
+## R.4 本轮改动
+
+- `esp_sdmmc_skip_clk_update(false)`：不再跳过，按 IDF 的写法真正发出该命令并
+  报告结果（超时则回退到控制器复位，行为不会比之前更差）；
+- 保留 `esp_sdmmc_report_routing()`、`esp_sdmmc_sample_idle()`、
+  `esp_sdmmc_identify_pins()`、CIU 复位位上报等诊断 —— 它们这一轮都起了作用。

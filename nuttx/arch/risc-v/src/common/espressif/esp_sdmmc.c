@@ -765,6 +765,18 @@ static bool esp_sdmmc_clk_update(sdmmc_dev_t *hw, int slot, const char *stage)
   upd.card_num       = (uint32_t)slot;
   upd.update_clk_reg = 1;
   upd.wait_complete  = 1;
+
+  /* use_hold_reg is part of the command.
+   *
+   * sd_host_slot_clock_update_command() builds its struct literal without it,
+   * but it hands that struct to sd_host_slot_start_command(), which sets
+   * cmd.use_hold_reg = 1 before writing the register -- so the word that
+   * actually reaches hardware has it. Reading only the literal missed this,
+   * and "outputs are synchronised to cclk_out" is exactly the behaviour a
+   * clock update needs.
+   */
+
+  upd.use_hold_reg   = 1;
   upd.start_command  = 1;
 
   sdmmc_ll_set_command_arg(hw, 0);
@@ -781,10 +793,10 @@ static bool esp_sdmmc_clk_update(sdmmc_dev_t *hw, int slot, const char *stage)
   done = (hw->cmd.start_command == 0);
 
   syslog(LOG_INFO,
-         "esp_sdmmc: clock update (%s): %s (cmd=%08" PRIx32
-         " ctrl=%08" PRIx32 " rintsts=%08" PRIx32 ")\n",
+         "esp_sdmmc: clock update (%s): %s (wrote=%08" PRIx32
+         " read=%08" PRIx32 " ctrl=%08" PRIx32 " rintsts=%08" PRIx32 ")\n",
          stage, done ? "completed" : "DID NOT COMPLETE",
-         hw->cmd.val, hw->ctrl.val, hw->rintsts.val);
+         upd.val, hw->cmd.val, hw->ctrl.val, hw->rintsts.val);
 
   return done;
 }

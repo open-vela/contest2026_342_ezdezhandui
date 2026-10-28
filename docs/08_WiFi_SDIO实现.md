@@ -3503,3 +3503,58 @@ CLKDIV/CLKSRC/CLKENA，控制器就置这一位 —— 它表示"写入已登记
 `CTRL.USE_INTERNAL_DMAC` / `BMOD` 的 DMA 接口配置（本驱动 `BMOD` 读回恒为 0）、
 以及 IDF 在 `sd_host_create_sdmmc_controller()` 里对 DMA 与中断的那几步
 （`sdmmc_ll_init_dma` 之后的 `sdmmc_ll_enable_interrupt` 等）在顺序上的差异。
+
+## R.10 第 68 轮：命令字里少了一个 `use_hold_reg`（已补），但 CIU 仍不执行
+
+IDF 的 `sd_host_slot_clock_update_command()` 只构造三个字段：
+
+```c
+sdmmc_hw_cmd_t cmd_val = { .card_num = slot->slot_id,
+                           .update_clk_reg = 1, .wait_complete = 1 };
+sd_host_slot_start_command(slot, cmd_val, 0);
+```
+
+**但它是交给 `sd_host_slot_start_command()` 发出去的**，而那个函数在写寄存器之前会：
+
+```c
+cmd.use_hold_reg = 1;      /* <-- 对所有命令都设，包括时钟更新 */
+cmd.card_num = slot->slot_id;
+cmd.start_command = 1;
+sdmmc_ll_set_command(...);
+```
+
+**只看结构体字面量就会漏掉这一行。** 已补上，并把**实际写入的命令字**也打进日志：
+
+```
+clock update (clock disabled):
+  DID NOT COMPLETE  wrote=a0212000  read=80212000  ctrl=00000010  rintsts=00001000
+```
+
+- **写入 `a0212000`**：bit31 `start_command` + **bit29 `use_hold_reg`** +
+  bit21 `update_clk_reg` + bit16:20 `card_num=1` + bit13 `wait_complete`
+  —— **与 IDF 构造的完全一致**；
+- **读回 `80212000`**：bit29 已被硬件清掉 —— 该位是"保持输出"的自清位，
+  写入后由硬件清除属正常。
+
+**所以命令字现在是对的，CIU 依旧不执行它**：`start_command`（bit31）始终置着。
+
+分析仪也再次确认：CLK（CH1）没有任何时钟（300 ms 窗口内 1 次跳变）。
+
+## R.11 到目前为止的完整排除清单
+
+| 项 | 状态 |
+|---|---|
+| 引脚 / slot / 探头映射 / GPIO 矩阵路由（`out_sel` 读回）| ✅ 正确 |
+| SDMMC 信号索引（对照 IDF `sdmmc_periph.c`）| ✅ 一致 |
+| 时钟源（PLL_F160M、SDIO_PLL）| ✅ 都试过 |
+| 低速 / 高速路径（`hs_mode` 0 与 1）| ✅ 都试过 |
+| `reg_sdio_ls_clk_div_num`（唯一无人写的字段）| ✅ 强制为 1 无效 |
+| 时钟路径四个使能位 + 边沿值 | ✅ 全部符合应写值 |
+| 模块复位（controller/dma/fifo）| ✅ 三个位全部自清 |
+| 三步提交序列（照 IDF `sd_host_slot_set_card_clk`）| ✅ 已实现并上机 |
+| 命令字（逐位解码，含 `use_hold_reg`）| ✅ 与 IDF 完全相同 |
+| 每次提交前清 `rintsts` | ✅ 无变化 |
+| **CIU 执行该命令** | 🔴 **否** |
+
+**结论未变且更牢固：模块复位能完成、命令写入能被硬件接收（`use_hold_reg` 被清），
+但 `start_command` 永不释放 —— 即 CIU 的命令通路没有运行。**

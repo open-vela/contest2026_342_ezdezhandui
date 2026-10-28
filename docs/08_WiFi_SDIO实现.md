@@ -6929,3 +6929,74 @@ typedef enum {
 —— 这可以从它日志里 `Open`/`Close` 的**时序**判断（而不是只数总数）：
 把 C6 console 的日志按时间顺序打印出来，看 `Close Data Path` 出现在
 `Send slave up event` 的**之前还是之后**。
+
+### AA.76 第 130 轮：查清 CP 的发送路径 —— **帧确实被交给了 SDIO 从机硬件**
+
+#### 先纠正一处：我上一轮读错了代码分支
+
+日志里写着 `SDIO datapath mode: SW_AGGR`，而我上一轮读的是
+`TX_MODE_STREAM` 的分支（那里有 `if (!datapath ...) continue;`）。
+**SW_AGGR 走的是另一条路径**，不能拿那一处的守卫当结论。
+
+#### 按时间顺序看 CP 的日志（关键）
+
+把 C6 console 里相关的行按顺序打印（时间戳是每次启动后的毫秒数）：
+
+```
+(2936) ehcp_core: Open Data Path
+(2936) ehcp_core: Open Data Path: giving host_reset_sem
+(2938) ehcp_core: host_reset_task: host_reset_sem taken, preparing slave-up TLV
+(2945) ehcp_core: Send slave up event
+(2949) SDIO_SLAVE: advertising transfer size 1536
+```
+
+**`Open Data Path` 与 `Send slave up event` 之间没有 `Close Data Path`。**
+
+**即：在从机准备并发送那份 `slave up` 帧的时候，`datapath` 是 1，通路是开着的。**
+（重复出现多次是因为 console 累积了多次启动的日志，每次启动时间戳都从 0 重新计。）
+
+#### 然后看 SW_AGGR 的实际发送路径
+
+```
+send_task
+  -> process_tx_queue(...)
+     -> build_frame(aggr_buf + aggr_len, &buf)
+     -> sdio_tx_locked(aggr_buf, aggr_len)
+        -> sdio_slave_transmit(buf, len)        <- IDF 的 SDIO 从机发送 API
+```
+
+**`sdio_slave_transmit()` 是 ESP-IDF 提供的、把缓冲区交给 SDIO 从机硬件发送队列的接口** ——
+它会阻塞直到有可用的 TX 缓冲区，然后入队。
+
+**也就是说：从机确实把那份帧交给了 SDIO 从机外设。**
+
+### AA.77 至此两侧的链条都完整了，缺口在中间
+
+**从机侧（C6 固件）：**
+- ✅ 收到 `OPEN_DATA_PATH`（CP 计数 +1）
+- ✅ `datapath = 1`（日志顺序确认，中间无 `Close`）
+- ✅ 准备 `slave-up TLV` 并调用 `sdio_slave_transmit()` 把帧交给 SDIO 从机外设
+- ✅ 宣告 `transfer size 1536`
+
+**主机侧（P4 驱动）：**
+- ✅ 命令帧与参考实现逐位一致（波形解码）
+- ✅ 时钟连续（数据阶段 7999 个时钟沿）
+- ✅ 数据线空闲电平正确（`widebus` 修复之后）
+- ✅ DMA 与 cache 正确（预填被覆盖）
+- ✅ 从机登记了主机的 CMD53（`TOKEN` 变化）
+- 🔴 **数据阶段收不到任何字节**
+
+**两边各自都走到了"应该能传数据"的状态，中间却没有数据。**
+
+### AA.78 现在剩下的可能（已经很窄）
+
+1. **ESP32-C6 的 `sdio_slave` 外设在 1-bit 模式下的数据阶段没有真正驱动** ——
+   可能是 IDF 版本/配置与该芯片的组合问题；
+2. **主机对数据阶段的处理与从机期望不一致** —— 例如 `sdio_slave_transmit()` 交付的
+   缓冲区长度（`aggr_len`，SW_AGGR 下可能大于一帧）与主机读取的长度不匹配；
+3. **`SDIO_SLAVE: advertising transfer size 1536` 与主机实际读取的行为之间仍有未对齐之处**
+   —— 但上一轮已按 1536 试过，仍为零。
+
+**这三条都可能，但都没有可以直接在主机侧验证的抓手了。**
+要区分它们，需要**用示波器探到 C6 一侧**看它是否真的在驱动数据线，
+或者**用一个已知良好的 SDIO 从机做对照**。

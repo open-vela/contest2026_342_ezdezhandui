@@ -40,6 +40,27 @@ def rising_edges(b):
     return [i for i in range(1, len(b)) if b[i] == 1 and b[i - 1] == 0]
 
 
+
+
+def crc7(bits_):
+    """SD CRC7 (x^7 + x^3 + 1) over a bit string, MSB first.
+
+    Verified against the known CMD0 frame: 40 body bits of
+    start=0, dir=1, index=0, arg=0 must give CRC 0x4A, i.e. the 48-bit
+    frame is 0x400000000095. An implementation that returns anything else
+    will reject every real frame, so this is checked first.
+
+    Note the formulation: the output bit and the input bit are XORed BEFORE
+    the polynomial step. Shifting the input in first and then testing bit 6
+    -- the obvious-looking version -- is wrong and yields 0x1B here.
+    """
+    crc = 0
+    for b in bits_:
+        crc = (crc << 1) & 0xFF
+        if (((crc >> 7) & 1) ^ b):
+            crc ^= 0x09
+    return crc & 0x7F
+
 def decode():
     clk = bits(CH_CLK, 0, WINDOW)
     cmd = bits(CH_CMD, 0, WINDOW)
@@ -57,6 +78,12 @@ def decode():
     while i < len(sampled) - 48:
         win = sampled[i:i + 48]
         if win[0] == 0 and win[47] == 1:
+            crc = 0
+            for b in win[40:47]:
+                crc = (crc << 1) | b
+            if crc7(win[0:40]) != crc:
+                i += 1
+                continue
             idx = 0
             for b in win[2:8]:
                 idx = (idx << 1) | b

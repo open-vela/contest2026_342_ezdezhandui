@@ -104,6 +104,22 @@ struct esp_sdmmc_debug_s
 struct sdio_dev_s *esp_sdmmc_initialize(int slotno);
 
 /****************************************************************************
+ * Name: esp_sdmmc_route_pins
+ *
+ * Description:
+ *   Attach the slot's pads to the controller, without resetting the controller
+ *   or touching its clock tree.
+ *
+ *   The companion must be brought out of reset *after* the pads are already in
+ *   a defined state: a CLK pin left floating while the companion boots can be
+ *   read by it as edges that never happened. Routing first and resetting second
+ *   is the order the working implementation for this board uses.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_route_pins(void);
+
+/****************************************************************************
  * Name: esp_sdmmc_debug
  *
  * Description:

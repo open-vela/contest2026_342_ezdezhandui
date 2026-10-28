@@ -437,6 +437,34 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
   return OK;
 }
 
+static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
+                                 int d0_pin, int d1_pin, int d2_pin,
+                                 int d3_pin);
+
+/****************************************************************************
+ * Name: esp_sdmmc_route_pins
+ *
+ * Description:
+ *   Attach the configured slot's pads to the controller.
+ *
+ *   This is callable before esp_sdmmc_initialize(), which is the point: the
+ *   companion must not be released from reset while CLK is still floating, and
+ *   the driver's own state does not exist yet at that moment. The pin numbers
+ *   therefore come from the Kconfig symbols rather than from that state.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_route_pins(void)
+{
+  esp_sdmmc_configpins(CONFIG_ESPRESSIF_SDMMC_SLOT,
+                       CONFIG_ESPRESSIF_SDMMC_CLK,
+                       CONFIG_ESPRESSIF_SDMMC_CMD,
+                       CONFIG_ESPRESSIF_SDMMC_D0,
+                       CONFIG_ESPRESSIF_SDMMC_D1,
+                       CONFIG_ESPRESSIF_SDMMC_D2,
+                       CONFIG_ESPRESSIF_SDMMC_D3);
+}
+
 /****************************************************************************
  * Name: esp_sdmmc_configpins
  *
@@ -448,10 +476,10 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
  *
  ****************************************************************************/
 
-static void esp_sdmmc_configpins(void)
+static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
+                                 int d0_pin, int d1_pin, int d2_pin,
+                                 int d3_pin)
 {
-  struct esp_sdmmc_dev_s *priv = &g_sdmmc;
-
   /* Two completely different ways of attaching a pad to the controller.
    *
    * Slot 0 has fixed IOMUX pins and no GPIO-matrix signals at all -- there is
@@ -465,29 +493,29 @@ static void esp_sdmmc_configpins(void)
    * which looks exactly like a dead controller.
    */
 
-  esp_configgpio(priv->clk_pin, OUTPUT | DRIVE_3);
-  esp_configgpio(priv->cmd_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
-  esp_configgpio(priv->d0_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
-  esp_configgpio(priv->d1_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
-  esp_configgpio(priv->d2_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
-  esp_configgpio(priv->d3_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(clk_pin, OUTPUT | DRIVE_3);
+  esp_configgpio(cmd_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(d0_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(d1_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(d2_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(d3_pin,  INPUT | OUTPUT | PULLUP | DRIVE_3);
 
-  if (priv->slot == 0)
+  if (slot == 0)
     {
       /* IOMUX-attached: point each pad at the SDMMC function. */
 
-      esp_gpio_func_sel(priv->clk_pin, SDMMC_SLOT0_FUNC);
-      esp_gpio_func_sel(priv->cmd_pin, SDMMC_SLOT0_FUNC);
-      esp_gpio_func_sel(priv->d0_pin,  SDMMC_SLOT0_FUNC);
-      esp_gpio_func_sel(priv->d1_pin,  SDMMC_SLOT0_FUNC);
-      esp_gpio_func_sel(priv->d2_pin,  SDMMC_SLOT0_FUNC);
-      esp_gpio_func_sel(priv->d3_pin,  SDMMC_SLOT0_FUNC);
+      esp_gpio_func_sel(clk_pin, SDMMC_SLOT0_FUNC);
+      esp_gpio_func_sel(cmd_pin, SDMMC_SLOT0_FUNC);
+      esp_gpio_func_sel(d0_pin,  SDMMC_SLOT0_FUNC);
+      esp_gpio_func_sel(d1_pin,  SDMMC_SLOT0_FUNC);
+      esp_gpio_func_sel(d2_pin,  SDMMC_SLOT0_FUNC);
+      esp_gpio_func_sel(d3_pin,  SDMMC_SLOT0_FUNC);
 
       syslog(LOG_INFO,
              "esp_sdmmc: slot 0 pads attached via IO_MUX "
              "(CLK=%d CMD=%d D0..D3=%d,%d,%d,%d)\n",
-             priv->clk_pin, priv->cmd_pin, priv->d0_pin, priv->d1_pin,
-             priv->d2_pin, priv->d3_pin);
+             clk_pin, cmd_pin, d0_pin, d1_pin,
+             d2_pin, d3_pin);
     }
   else
     {
@@ -495,39 +523,41 @@ static void esp_sdmmc_configpins(void)
        * CMD and DAT are driven by the controller and read back by it.
        */
 
-      esp_rom_gpio_connect_out_signal(priv->clk_pin,
+      esp_rom_gpio_connect_out_signal(clk_pin,
                                       SD_CARD_CCLK_2_PAD_OUT_IDX, false, false);
 
-      esp_rom_gpio_connect_out_signal(priv->cmd_pin,
+      esp_rom_gpio_connect_out_signal(cmd_pin,
                                       SD_CARD_CCMD_2_PAD_OUT_IDX, false, false);
-      esp_rom_gpio_connect_in_signal(priv->cmd_pin,
+      esp_rom_gpio_connect_in_signal(cmd_pin,
                                      SD_CARD_CCMD_2_PAD_IN_IDX, false);
 
-      esp_rom_gpio_connect_out_signal(priv->d0_pin,
+      esp_rom_gpio_connect_out_signal(d0_pin,
                                       SD_CARD_CDATA0_2_PAD_OUT_IDX, false, false);
-      esp_rom_gpio_connect_in_signal(priv->d0_pin,
+      esp_rom_gpio_connect_in_signal(d0_pin,
                                      SD_CARD_CDATA0_2_PAD_IN_IDX, false);
 
-      esp_rom_gpio_connect_out_signal(priv->d1_pin,
-                                      SD_CARD_CDATA1_2_PAD_OUT_IDX, false, false);
-      esp_rom_gpio_connect_in_signal(priv->d1_pin,
-                                     SD_CARD_CDATA1_2_PAD_IN_IDX, false);
+      /* D1 and D2 are unused in 1-bit SDIO: plain inputs, pull-ups on, kept
+       * off the controller.
+       */
 
-      esp_rom_gpio_connect_out_signal(priv->d2_pin,
-                                      SD_CARD_CDATA2_2_PAD_OUT_IDX, false, false);
-      esp_rom_gpio_connect_in_signal(priv->d2_pin,
-                                     SD_CARD_CDATA2_2_PAD_IN_IDX, false);
+      esp_configgpio(d1_pin, INPUT | PULLUP);
+      esp_configgpio(d2_pin, INPUT | PULLUP);
 
-      esp_rom_gpio_connect_out_signal(priv->d3_pin,
-                                      SD_CARD_CDATA3_2_PAD_OUT_IDX, false, false);
-      esp_rom_gpio_connect_in_signal(priv->d3_pin,
-                                     SD_CARD_CDATA3_2_PAD_IN_IDX, false);
+      /* D3 is not a spare pin. In 1-bit SDIO the companion samples DAT3 rather
+       * than moving data on it, so a pad left attached to the controller sits
+       * at whatever the idle state happens to be. Driving it high as a plain
+       * GPIO is what the working implementation for this board does, and the
+       * companion does not answer without it.
+       */
+
+      esp_configgpio(d3_pin, OUTPUT | PULLUP);
+      esp_gpiowrite(d3_pin, true);
 
       syslog(LOG_INFO,
              "esp_sdmmc: slot %d pads routed via the GPIO matrix "
              "(CLK=%d CMD=%d D0..D3=%d,%d,%d,%d)\n",
-             priv->slot, priv->clk_pin, priv->cmd_pin, priv->d0_pin,
-             priv->d1_pin, priv->d2_pin, priv->d3_pin);
+             slot, clk_pin, cmd_pin, d0_pin,
+             d1_pin, d2_pin, d3_pin);
     }
 }
 
@@ -1572,7 +1602,9 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
   memset(priv->desc, 0, sizeof(struct esp_sdmmc_desc_s) * 2);
 #endif
 
-  esp_sdmmc_configpins();
+  esp_sdmmc_configpins(priv->slot, priv->clk_pin, priv->cmd_pin,
+                       priv->d0_pin, priv->d1_pin, priv->d2_pin,
+                       priv->d3_pin);
   esp_sdmmc_reset(&priv->dev);
 
   /* Initialise the DMA interface AFTER the reset, as Espressif does.

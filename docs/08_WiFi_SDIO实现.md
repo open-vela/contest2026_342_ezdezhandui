@@ -3118,3 +3118,72 @@ C6 侧:   IO18 <-> SD2_CMD     IO19 <-> SD2_CLK
 **但这个正确配置也已用当前驱动实测，仍为 -110**（见 O.5）。
 引脚与 slot 的正确性问题到此**已经查清并排除**，剩下的是电气/时序层面的问题，
 判定需要逻辑分析仪看 GPIO18 上到底有没有时钟。
+
+## O.7 第 62 轮：对齐参考实现的引脚路由与顺序，仍然 -110
+
+### O.7.1 参考实现的路由方式与我的**不同**
+
+读参考仓库 `chips/esp32p4/common/espressif/esp_hosted_sdio.c` 的
+`esp_hosted_sdio_route_pins()` 发现，它并不是"六根线全接控制器"：
+
+```
+CLK : OUTPUT              + 矩阵 CCLK_2
+CMD : INPUT|OUTPUT|PULLUP + 矩阵 in/out
+D0  : INPUT|OUTPUT|PULLUP + 矩阵 in/out
+D1  : INPUT|PULLUP        ← 不接矩阵
+D2  : INPUT|PULLUP        ← 不接矩阵
+D3  : OUTPUT|PULLUP       ← 不接矩阵，且 esp_gpiowrite(d3, true) 拉高
+```
+
+**1 位 SDIO 下 D1/D2/D3 不传数据**，而 **DAT3 是从机会采样的**：
+把 D3 挂在控制器上会让它停在"碰巧的"空闲电平，参考实现选择**显式拉高**。
+
+### O.7.2 另一个差异：**顺序**
+
+```
+参考: route_sdio()  ->  reset_c6()  ->  transport_initialize()
+我  : reset_c6()    ->  等待 1000ms ->  sdmmc_initialize()（内含引脚配置）
+```
+
+它们在**复位从机之前**就把主机引脚置于确定状态 —— 否则 CLK 悬空期间从机启动，
+可能采到从未被驱动的边沿。
+
+### O.7.3 两处都已改并上机验证
+
+- `esp_sdmmc_configpins()` 改为按上述 1 位路由；
+- 新增 `esp_sdmmc_route_pins()`，在复位从机**之前**调用；引脚取自 Kconfig
+  而非驱动状态（那时状态还不存在）。
+
+真机日志确认改动生效（复位前、复位后各出现一次路由日志）：
+
+```
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_hosted_sdio: companion enable held high (GPIO54), settling 1000 ms
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+```
+
+**结果仍是 `-110`。**
+
+### O.7.4 本轮我自己犯的两个错（都记下来）
+
+1. **提前调用读到全 0**：第一次把 `route_pins()` 提前时，它读的是还没初始化的
+   `g_sdmmc`，日志打出 `CLK=0 CMD=0 D0..D3=0,0,0,0` —— **那次"验证"其实是空操作**，
+   假设根本没被检验。改成从 Kconfig 取值才真正生效。
+2. **又一次脚本大范围替换把文件改坏**：把 `priv->slot` 批量替换成 `slot` 时
+   误伤了其它 36 行，编译报 100 个错。已从 git 恢复后改为**整体重写该函数**。
+
+> 这已经是第四次同类事故。教训固定下来了：**脚本做大范围替换后必须看 diff，
+> 或者干脆整函数重写**，不要指望"锚点唯一"。
+
+### O.7.5 现状小结
+
+| 项 | 状态 |
+|---|---|
+| 引脚（SD2 = GPIO18/19/14-17）| ✅ 官方原理图确认 |
+| slot（1）| ✅ |
+| 1 位路由（D3 拉高、D1/D2 拉输入）| ✅ 已对齐并上机 |
+| 初始化顺序（先路由后复位）| ✅ 已对齐并上机 |
+| 结果 | 🔴 仍 `-110` |
+
+**已经把参考实现的行为逐项对齐，仍然不通。** 剩下能查的是电气层面，
+而"主机到底有没有输出时钟"只能靠逻辑分析仪判定。

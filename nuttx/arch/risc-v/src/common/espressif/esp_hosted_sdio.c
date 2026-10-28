@@ -196,7 +196,16 @@ int esp_hosted_sdio_initialize(void)
       return OK;
     }
 
-  /* Step 0: bring the companion module out of reset.
+  /* Step 0a: put the pads in a defined state *before* the companion boots.
+   *
+   * The order matters. If CLK is still floating when the companion comes out
+   * of reset, it can latch edges that were never driven. Routing first and
+   * resetting second is what the working implementation for this board does.
+   */
+
+  esp_sdmmc_route_pins();
+
+  /* Step 0b: bring the companion module out of reset.
    *
    * On this board the ESP32-C5 is gated by a GPIO from the ESP32-P4 (GPIO54 by
    * default: the J1 pin table describes it as "ESP32-P4 control of the

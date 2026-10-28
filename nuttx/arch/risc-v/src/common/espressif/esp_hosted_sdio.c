@@ -715,27 +715,6 @@ int esp_hosted_sdio_initialize(void)
             uint8_t tok[4];
             uint32_t token;
 
-            /* Enable every host interrupt source, then read the masked status.
-             *
-             * The protocol doc: "The host can also mask unneeded sources by
-             * clearing the bits in the INT_ENA register." With INT_ENA at zero
-             * INT_ST reads zero no matter what the slave is signalling -- which
-             * would make the "no pending interrupt" conclusion worthless.
-             */
-
-            {
-              uint8_t ena = 0xff;
-              int k;
-
-              for (k = 0; k < 4; k++)
-                {
-                  sdio_io_rw_direct(sdio, true, 1, 0x000dc + k, ena, NULL);
-                }
-
-              sdio_io_rw_direct(sdio, false, 1, 0x000dc, 0, &ena);
-              syslog(LOG_INFO, "%s: INT_ENA now %02x\n", HOSTED_TAG, ena);
-            }
-
             sdio_io_rw_direct(sdio, false, 1, 0x00058, 0, &stst);
             sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &tok[0]);
             sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &tok[1]);
@@ -744,11 +723,11 @@ int esp_hosted_sdio_initialize(void)
             token = (uint32_t)tok[0] | ((uint32_t)tok[1] << 8) |
                     ((uint32_t)tok[2] << 16) | ((uint32_t)tok[3] << 24);
 
-            syslog(LOG_INFO,
-                   "%s: t=%dms LEN=%02x %02x %02x INT_RAW=%02x INT_ST=%02x "
-                   "TOKEN=%08" PRIx32 "\n",
-                   HOSTED_TAG, (i + 1) * 100, len_lo, len_hi, len_x, st,
-                   stst, token);
+            if (len_lo || len_hi || len_x)
+              {
+                syslog(LOG_INFO, "%s: slave LEN=%02x %02x %02x TOKEN=%08" PRIx32 "\n",
+                       HOSTED_TAG, len_lo, len_hi, len_x, token);
+              }
 
             /* Reading the registers the instant the length appears was tried
              * and returns 0x32 for every register -- the bus has not settled.

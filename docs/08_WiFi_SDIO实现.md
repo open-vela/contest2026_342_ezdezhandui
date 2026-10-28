@@ -3436,3 +3436,70 @@ BIU 时钟清掉、要么从未真正置起 —— **它不能证明 CIU 时钟�
 外设是否在某个未使能的电源域、或 `HP_SYS_CLKRST` 里是否还有一处
 SDMMC 专属的门控没有打开（例如某个 `soc_clk_ctrl` 的位），
 以及对照 IDF 从 `sd_host_create_sdmmc_controller` 起的**完整**调用序列。
+
+## R.7 第 67 轮：照 IDF 的完整序列实现三步时钟提交，三步全部失败
+
+读 IDF 的 `sd_host_slot_set_card_clk()`（`upper_hal_sdmmc/src/sd_host_sdmmc.c`），
+它的顺序是**三步、每步都发一次更新命令并检查返回值**：
+
+```c
+sdmmc_ll_enable_card_clock(dev, slot, false);
+sd_host_slot_clock_update_command(slot, false);        // 1 禁用后提交
+
+sdmmc_ll_set_card_clock_div(dev, slot, card_div);
+sd_host_set_clk_div(ctlr, clk_src, host_div);          // 源 + 系统分频 + 相位
+sd_host_slot_clock_update_command(slot, false);        // 2 编程后提交
+
+sdmmc_ll_enable_card_clock(dev, slot, true);
+sdmmc_ll_enable_card_clock_low_power(dev, slot, true);
+sd_host_slot_clock_update_command(slot, false);        // 3 重新使能后提交
+```
+
+本驱动原先只做「设分频 → 使能 → 提交一次」。已按上面三步**整函数重写**
+`esp_sdmmc_clock()`，并抽出 `esp_sdmmc_clk_update()` 辅助函数逐次报告结果。
+
+真机结果：
+
+```
+clock update (clock disabled):    DID NOT COMPLETE (cmd=80212000 rintsts=00001000)
+clock update (dividers programmed): DID NOT COMPLETE (cmd=80212000 rintsts=00001000)
+clock update (clock re-enabled):  DID NOT COMPLETE (cmd=80212000 rintsts=00001000)
+```
+
+**连第一步都失败** —— 而"禁用时钟后提交"这一步在逻辑上**不需要任何卡时钟**
+就能被 CIU 接受执行。
+
+在每次提交前清 `rintsts` 也一样：状态总是立刻回到 `00001000`。
+
+## R.8 `rintsts` bit 12 的含义
+
+按 HAL 的定义（`sdmmc_ll.h`）：
+
+```c
+#define SDMMC_LL_EVENT_HLE   (1<<12)   /* Hardware Locked Error */
+```
+
+**HLE = 硬件锁定错误**：当软件在 CIU 已锁定时钟寄存器时写入
+CLKDIV/CLKSRC/CLKENA，控制器就置这一位 —— 它表示"写入已登记，
+等待那条能释放锁的更新命令"。所以 HLE 置位本身是**预期的**；
+不预期的是那条本该释放它的命令始终不完成。
+
+## R.9 现在确认的事实
+
+| 观察 | 状态 |
+|---|---|
+| 模块复位（controller/dma/fifo 三个位）| ✅ 全部自清，复位完成 |
+| GPIO 路由 / 信号索引 / 引脚 / slot | ✅ 全部正确 |
+| 时钟路径寄存器（源、分频边沿、四个使能位）| ✅ 全部符合 IDF 应写值 |
+| 更新命令字（逐位解码）| ✅ 与 IDF 构造完全相同 |
+| 按 IDF 三步序列执行 | ✅ 已实现并上机 |
+| **更新命令被 CIU 执行** | 🔴 **否，三步全部不完成** |
+| 模块复位后三个复位位 | ✅ 自清（说明复位逻辑能跑）|
+
+**即：模块复位能完成，但命令一条也执行不了。** 这两件事同时成立，
+说明 CIU 的**命令通路**没有在运行，而不是整个外设没上电。
+
+下一轮方向：查 DW MSHC 的**命令通路**还需要什么 —— 具体是
+`CTRL.USE_INTERNAL_DMAC` / `BMOD` 的 DMA 接口配置（本驱动 `BMOD` 读回恒为 0）、
+以及 IDF 在 `sd_host_create_sdmmc_controller()` 里对 DMA 与中断的那几步
+（`sdmmc_ll_init_dma` 之后的 `sdmmc_ll_enable_interrupt` 等）在顺序上的差异。

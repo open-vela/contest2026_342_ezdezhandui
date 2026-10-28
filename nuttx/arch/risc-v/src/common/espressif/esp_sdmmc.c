@@ -728,6 +728,67 @@ static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
  *
  ****************************************************************************/
 
+/****************************************************************************
+ * Name: esp_sdmmc_clk_update
+ *
+ * Description:
+ *   Issue the clock-update command for one slot and say whether it completed.
+ *
+ *   Espressif builds exactly this (card_num, update_clk_reg, wait_complete and
+ *   nothing else) and calls it after every change to the card clock -- once
+ *   with the clock disabled, once after programming the dividers, and once
+ *   after re-enabling. The register description says CLKDIV/CLKSRC/CLKENA reach
+ *   the card clock domain only through a command carrying update_clk_reg.
+ *
+ *   Returns true when start_command self-cleared, i.e. the CIU executed it.
+ *
+ ****************************************************************************/
+
+static bool esp_sdmmc_clk_update(sdmmc_dev_t *hw, int slot, const char *stage)
+{
+  sdmmc_hw_cmd_t upd;
+  clock_t start = clock_systime_ticks();
+  bool done;
+
+  /* Clear the interrupt status first.
+   *
+   * RINTSTS bit 12 is HLE (hardware locked error), which is what the controller
+   * raises when CLKDIV/CLKSRC/CLKENA are written while the CIU has them locked
+   * and the update that would release them is still outstanding. Leaving a
+   * stale HLE set across the three steps means every later check reads a flag
+   * from an earlier attempt.
+   */
+
+  sdmmc_ll_clear_interrupt(hw, 0xffffffffu);
+
+  memset(&upd, 0, sizeof(upd));
+  upd.card_num       = (uint32_t)slot;
+  upd.update_clk_reg = 1;
+  upd.wait_complete  = 1;
+  upd.start_command  = 1;
+
+  sdmmc_ll_set_command_arg(hw, 0);
+  sdmmc_ll_set_command(hw, upd);
+
+  while (hw->cmd.start_command != 0)
+    {
+      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+        {
+          break;
+        }
+    }
+
+  done = (hw->cmd.start_command == 0);
+
+  syslog(LOG_INFO,
+         "esp_sdmmc: clock update (%s): %s (cmd=%08" PRIx32
+         " ctrl=%08" PRIx32 " rintsts=%08" PRIx32 ")\n",
+         stage, done ? "completed" : "DID NOT COMPLETE",
+         hw->cmd.val, hw->ctrl.val, hw->rintsts.val);
+
+  return done;
+}
+
 static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
 {
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
@@ -753,8 +814,26 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
         break;
     }
 
+  /* Espressif's sd_host_slot_set_card_clk(), step for step.
+   *
+   * Order matters and each step is confirmed by the controller: disable the
+   * card clock and commit that, program the dividers and commit that, then
+   * re-enable and commit that again. Building the sequence this way is the
+   * whole reason the helper exists -- the previous code enabled the clock once
+   * and committed once, which is not the same thing.
+   */
+
+  sdmmc_ll_enable_card_clock(hw, priv->slot, false);
+  esp_sdmmc_clk_update(hw, priv->slot, "clock disabled");
+
   sdmmc_ll_set_card_clock_div(hw, priv->slot, div);
+  sdmmc_ll_set_clock_div(hw, 2);
+  sdmmc_ll_init_phase_delay(hw);
+  esp_sdmmc_clk_update(hw, priv->slot, "dividers programmed");
+
   sdmmc_ll_enable_card_clock(hw, priv->slot, true);
+  sdmmc_ll_enable_card_clock_low_power(hw, priv->slot, true);
+  esp_sdmmc_clk_update(hw, priv->slot, "clock re-enabled");
 
 
   /* A probe that pointed slot 0 at the cclk_in_sdio source was tried here and
@@ -1861,6 +1940,23 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
                        priv->d0_pin, priv->d1_pin, priv->d2_pin,
                        priv->d3_pin);
   esp_sdmmc_reset(&priv->dev);
+
+  /* Report the three reset bits after the module reset.
+   *
+   * All of them are cleared by the CIU clock, so a bit that stays set is a
+   * direct measurement of "the CIU is not being clocked" -- and unlike the
+   * liveness command it needs nothing else to be configured first. Espressif's
+   * controller init waits for exactly these three (s_is_module_reset_done)
+   * and fails loudly if they do not clear.
+   */
+
+  syslog(LOG_INFO,
+         "esp_sdmmc: after module reset: controller=%d dma=%d fifo=%d "
+         "(ctrl=%08" PRIx32 ")\n",
+         (int)(*(volatile uint32_t *)&hw->ctrl & 1u),
+         (int)((*(volatile uint32_t *)&hw->ctrl >> 1) & 1u),
+         (int)((*(volatile uint32_t *)&hw->ctrl >> 2) & 1u),
+         *(volatile uint32_t *)&hw->ctrl);
 
   /* Initialise the DMA interface AFTER the reset, as Espressif does.
    *

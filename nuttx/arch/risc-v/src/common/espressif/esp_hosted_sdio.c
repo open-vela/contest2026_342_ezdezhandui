@@ -725,8 +725,12 @@ int esp_hosted_sdio_initialize(void)
 
             if (len_lo || len_hi || len_x)
               {
+                static uint8_t regblk[20] __attribute__((aligned(64)));
+                int rr;
+
                 syslog(LOG_INFO, "%s: slave LEN=%02x %02x %02x TOKEN=%08" PRIx32 "\n",
                        HOSTED_TAG, len_lo, len_hi, len_x, token);
+
               }
 
             /* Reading the registers the instant the length appears was tried

@@ -625,6 +625,78 @@ void esp_sdmmc_report_routing(void)
     }
 }
 
+/****************************************************************************
+ * Name: esp_sdmmc_try_cmd5_ocr
+ *
+ * Description:
+ *   Send CMD5 with a real OCR argument instead of the zero NuttX uses.
+ *
+ *   sdio_probe() issues CMD5 with arg 0, which is the "query" form: the card is
+ *   supposed to answer with its own OCR regardless. Some SDIO devices are less
+ *   forgiving and only answer once the argument carries the voltage they want
+ *   (3.2-3.4 V -> OCR bits 20:21). Espressif's host sends CMD5 with an OCR
+ *   rather than zero, so this is worth one check before concluding the
+ *   companion is silent.
+ *
+ *   Returns true when R4 came back.
+ *
+ ****************************************************************************/
+
+bool esp_sdmmc_try_cmd5_ocr(uint32_t ocr)
+{
+  sdmmc_dev_t *hw = g_sdmmc.hw;
+  sdmmc_hw_cmd_t c;
+  clock_t start;
+  bool got;
+
+  syslog(LOG_INFO, "esp_sdmmc: CMD5-OCR probe entered (hw=%p slot=%d)\n",
+         hw, g_sdmmc.slot);
+
+  if (hw == NULL)
+    {
+      return false;
+    }
+
+  sdmmc_ll_clear_interrupt(hw, 0xffffffffu);
+
+  memset(&c, 0, sizeof(c));
+  c.cmd_index        = 5;
+  c.card_num         = (uint32_t)g_sdmmc.slot;
+  c.response_expect  = 1;
+  c.use_hold_reg     = 1;
+  c.wait_complete    = 1;
+  c.start_command    = 1;
+
+  sdmmc_ll_set_command_arg(hw, ocr);
+  sdmmc_ll_set_command(hw, c);
+
+  start = clock_systime_ticks();
+  while (hw->cmd.start_command != 0)
+    {
+      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+        {
+          break;
+        }
+    }
+
+  /* No response error bit is exposed by this header; judge on whether the
+   * command was taken at all -- that already separates "the CIU never
+   * executed it" from "it executed and nothing came back".
+   */
+
+  got = (hw->cmd.start_command == 0);
+
+  syslog(LOG_INFO,
+         "esp_sdmmc: CMD5 with OCR 0x%08" PRIx32 ": %s "
+         "(rintsts=%08" PRIx32 " cmdarg=%08" PRIx32 " resp0=%08" PRIx32 ")\n",
+         ocr, got ? "RESPONSE RECEIVED" : "no response",
+         *(volatile uint32_t *)&hw->rintsts,
+         *(volatile uint32_t *)&hw->cmdarg,
+         *(volatile uint32_t *)&hw->resp[0]);
+
+  return got;
+}
+
 void esp_sdmmc_route_pins(void)
 {
   esp_sdmmc_configpins(CONFIG_ESPRESSIF_SDMMC_SLOT,

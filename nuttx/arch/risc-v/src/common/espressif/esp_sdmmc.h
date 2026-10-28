@@ -120,6 +120,16 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno);
 void esp_sdmmc_route_pins(void);
 
 /****************************************************************************
+ * Name: esp_sdmmc_try_cmd5_ocr
+ *
+ * Description:
+ *   Issue CMD5 with a real OCR argument and report whether it was answered.
+ *
+ ****************************************************************************/
+
+bool esp_sdmmc_try_cmd5_ocr(uint32_t ocr);
+
+/****************************************************************************
  * Name: esp_sdmmc_report_routing
  *
  * Description:

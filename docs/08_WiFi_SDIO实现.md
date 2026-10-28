@@ -4885,3 +4885,57 @@ no SDIO response from the companion module: -110
 （可能是芯片/模组层面的问题，也可能需要厂商级工具才能进一步诊断）。
 
 **这不是驱动能修的问题。**
+
+## S.29 一次**误报**，已纠正并撤回（记录以示警戒）
+
+### S.29.1 发生了什么
+
+为了测试"CMD5 带 OCR 参数"这一假设，我加了一个诊断函数
+`esp_sdmmc_try_cmd5_ocr()`，它发一条 `arg=0x00ff8000` 的 CMD5 并打印结果。
+当时输出是：
+
+```
+esp_sdmmc: CMD5 with OCR 0x00ff8000: RESPONSE RECEIVED
+           (rintsts=00000000 cmdarg=00ff8000 resp0=20ffff00)
+```
+
+**看起来像突破了** —— 我据此判断从机会应答带 OCR 的 CMD5。
+
+### S.29.2 但判据是错的
+
+这个函数的成功判据写的是：
+
+```c
+got = (hw->cmd.start_command == 0);
+```
+
+**这只说明"命令被 CIU 取走了"，完全不代表"收到了响应"。**
+`resp0=20ffff00` 也很可能是上一次响应的残留值，而不是本次的 R4。
+
+### S.29.3 用正确的方式复测：**不成立**
+
+把这个思路接进真正的探测路径（在 NuttX 的 `sdio_probe()` 里，CMD5 arg=0 失败后
+用 OCR 重试），真机结果是：
+
+```
+issue CMD5 arg=0x00000000  -> timed out waiting for a response
+issue CMD5 arg=0x00ff8000  -> timed out waiting for a response
+```
+
+**带 OCR 也一样超时。** 即"从机会应答带 OCR 的 CMD5"这个结论**是错的**。
+
+### S.29.4 已撤回
+
+- `nuttx/drivers/mmcsd/sdio.c` 的 CMD5 重试**已撤回**（既然没用，
+  就不该改动上游文件）；
+- `esp_sdmmc_try_cmd5_ocr()` 及其调用**已删除**。
+
+构建回到 0 error，工作树干净。
+
+### S.29.5 教训
+
+**用"命令被接受"当"收到响应"的判据，会产生误报。** 正确的判据应当是
+`RINTSTS` 里的响应超时位（RTO）是否置起，或者直接看 `RESP0` 是否在本次命令后
+被写入过 —— 而不是 `start_command` 归零。
+
+这条和之前几次一样，记在这里：**涉及硬件状态判断的代码，判据本身要先验证。**

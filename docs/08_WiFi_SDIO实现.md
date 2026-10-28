@@ -5514,3 +5514,57 @@ probe 1/4 -> -5, retrying
 **命令即使没收到响应，控制器也会置起 Command Done**（响应超时同样算"完成"）。
 需要改成看 **`RINTSTS` 的响应超时位（RTO）是否置起**，
 以此区分"真收到响应"与"命令结束但没响应"。
+
+---
+
+# 🎉 附录 X：**通了！SDIO 枚举 + 卡功能 + ESP-Hosted 帧层全部就绪**
+
+## X.1 决定性结果
+
+```
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: probe 1/4 -> -5, retrying
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)     <- 真实成功（返回值 0）
+esp_hosted_sdio: card function ready (FN1, 512-byte blocks)
+esp_hosted_sdio: frame layer up (hdr v1, 12-byte headers, checksum on)
+```
+
+**`sdio_probe` 返回 0（真成功）**，卡功能（FN1、512 字节块）就绪，
+**ESP-Hosted 帧层上线**。
+
+## X.2 每次命令的响应都是真实的
+
+```
+CMD05 resp 20ffff00 -> a0ffff00 CHANGED (rintsts=00000000)
+CMD05 resp a0ffff00 -> a0ffff00 unchanged (rintsts=00000000)
+CMD03 resp a0ffff00 -> 00010000 CHANGED (rintsts=00000000)   <- RCA = 0x0001
+CMD07 resp 00010000 -> 00001e00 CHANGED (rintsts=00000000)   <- 选卡成功
+CMD52 resp 00001e00 -> 00001040 CHANGED (rintsts=00000000)   <- FN0 块大小写入成功
+```
+
+- **RCA = `0x0001`** —— 一个合法且合理的相对卡地址；
+- `CMD7` 用 `RCA<<16` 发出并得到响应；
+- `CMD52` 的 R5 也正常返回 —— 之前的 `-EIO`（flags 全 1）彻底消失。
+
+## X.3 三个必须同时修好才通的 bug
+
+| # | Bug | 后果 |
+|---|---|---|
+| 1 | `waitresponse()` **末尾缺 `return OK`**（整块替换时被删） | 返回不确定值（53）→ `sdio_probe` 误判失败、CMD3/CMD7 不发 |
+| 2 | 上层成功判据写成 `ret < 0` | 把 53 当成成功 → "枚举成功"假象掩盖了 bug #1 |
+| 3 | 完成位**没有在发命令前清掉** | 轮询看到上条命令的残留完成位 → 响应"迟到"、读到旧的 `RESP0` |
+| 4 | 长时间依赖中断事件 | 该中断从未送达本驱动；改为轮询后才开始工作 |
+
+**这四个问题互相掩盖**：中断不工作 → 改用轮询 → 暴露完成位残留 → 修了以后
+暴露 `waitresponse` 缺 return → 修了以后暴露上层判据把失败当成功。
+**只有四个一起修好，链路才通。**
+
+## X.4 现在的位置
+
+- ✅ 时钟、引脚、物理连线、从机（C6 一直正常）
+- ✅ SDIO 枚举（CMD0/5/3/7）
+- ✅ 卡功能（FN1、512 字节块）
+- ✅ **ESP-Hosted 帧层（hdr v1、12 字节头、校验和开启）**
+- ⏭ 下一步：ESP-Hosted **协议层**（RPC 握手）→ 远端 WiFi netdev（`wlan0`）
+
+`ifconfig` 目前只显示 `eth0`，符合预期 —— `wlan0` 要等协议层把远端网络接口注册上来。

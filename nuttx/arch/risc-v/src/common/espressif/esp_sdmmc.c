@@ -1702,11 +1702,13 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
       }
 
     syslog(LOG_INFO,
-           "esp_sdmmc: CMD%.2u resp %08" PRIx32 " -> %08" PRIx32 " %s\n",
+           "esp_sdmmc: CMD%.2u resp %08" PRIx32 " -> %08" PRIx32 " %s "
+           "(rintsts=%08" PRIx32 ")\n",
            (unsigned)(cmd & MMCSD_CMDIDX_MASK), resp_before,
            *(volatile uint32_t *)&hw->resp[0],
            (*(volatile uint32_t *)&hw->resp[0] != resp_before) ? "CHANGED"
-                                                             : "unchanged");
+                                                             : "unchanged",
+           sdmmc_ll_get_intr_status(hw));
 
     if (!done)
       {

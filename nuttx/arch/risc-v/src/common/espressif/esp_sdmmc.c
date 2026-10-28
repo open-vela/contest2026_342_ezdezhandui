@@ -870,6 +870,15 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
   sdmmc_ll_set_clock_div(hw, 2);
   sdmmc_ll_init_phase_delay(hw);
 
+  /* All four drive/sample clock-edge combinations were tried here and the
+   * analyser-plus-console result was identical every time: the companion never
+   * answered. The companion's own build uses
+   * CONFIG_EH_TRANSPORT_CP_SDIO_PSEND_PSAMPLE ("send at positive edge, sample at
+   * positive edge"), which is what motivated trying them, so the negative result
+   * is worth recording: clock-edge alignment is not why it stays silent.
+   * Espressif's phase settings are left untouched.
+   */
+
   /* A probe that flipped reg_sdio_ls_sam_clk_edge_sel to 1 (sampling the
    * incoming CMD/DAT on the other clock edge) was tried here and changed
    * nothing -- the companion still did not answer. Removed rather than kept as

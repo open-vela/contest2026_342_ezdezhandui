@@ -4445,3 +4445,47 @@ tools/build_flash/c6_hosted_new/flash.sh
 ```
 
 即可烧入这份"干净重建 + 配置逐项核对过"的固件，然后复跑主机侧探测。
+
+## S.20 第 87 轮：四个时钟边沿组合全部试过，都不是原因
+
+### S.20.1 动机来自 C6 自己的时序配置
+
+C6 固件的 sdio slave 时序是：
+
+```
+CONFIG_EH_TRANSPORT_CP_SDIO_PSEND_PSAMPLE=y
+    "Send at positive edge, sample at positive edge"
+```
+
+这是 ESP-IDF `sdio_slave_timing_t` 的四选一，另有
+`NSEND_PSAMPLE` / `PSEND_NSAMPLE` / `NSEND_NSAMPLE`。
+
+主机侧对应两个相位寄存器：`reg_sdio_ls_drv_clk_edge_sel`（驱动边沿）与
+`reg_sdio_ls_sam_clk_edge_sel`（采样边沿），`sdmmc_ll_init_phase_delay()`
+默认给的是 `drv=1, sam=0`。若主机在与从机采样相同的边沿上驱动，
+每一位都在跳变中被采走，从机就会"收到合法帧却解不出来"。
+
+### S.20.2 四种组合逐一上机
+
+| drv | sam | 结果 |
+|---|---|---|
+| 1 | 0 | （Espressif 默认）`probe -> -110` |
+| 1 | 1 | `-110` |
+| 0 | 0 | `-110` |
+| **0** | **1** | **`-110`** |
+
+**四种组合全部无变化。** 探测已全部撤回，恢复 Espressif 的默认相位设置。
+
+### S.20.3 这条也排除了
+
+| 项 | 状态 |
+|---|---|
+| 时钟频率 / 连续性 | ✅ 实测 403 kHz、连续 |
+| CIU 执行命令 | ✅ |
+| CMD0 / CMD5 在线上的合法性 | ✅ CRC7 校验通过 |
+| 等待时间 | ✅ 1000 与 2500 ms 都试过 |
+| **时钟边沿对齐（四种组合）** | ✅ **本轮全部试过，均无效** |
+| C6 应答 | 🔴 仍无 |
+
+**主机侧可调的东西到这一轮已经真的试完了。** 剩下的只能是：
+C6 固件（需人工按键才能烧）、或硬件。

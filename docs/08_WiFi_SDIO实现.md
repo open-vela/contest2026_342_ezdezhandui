@@ -7000,3 +7000,82 @@ send_task
 **这三条都可能，但都没有可以直接在主机侧验证的抓手了。**
 要区分它们，需要**用示波器探到 C6 一侧**看它是否真的在驱动数据线，
 或者**用一个已知良好的 SDIO 从机做对照**。
+
+### AA.79 第 131–132 轮：**发现卡一直工作在 4-bit 模式，而主机是 1-bit**
+
+#### 线索
+
+`esp_hosted_sdio.c` 里那段"保持 1-bit"的代码，其实现是：
+
+```c
+ret = -ENOSYS;
+if (ret < 0)
+  {
+    syslog(LOG_WARNING, "%s: 4-bit bus not available, staying 1-bit: %d\n", ...);
+  }
+```
+
+**即 `sdio_set_wide_bus()` 从来没有被调用过**（早先为了排除 4-bit 干扰，
+把它换成了一个固定失败的桩）。**结果是卡的 CCCR 总线宽度寄存器从未被写过。**
+
+#### 把宽度显式写一遍之后，读回来的值说明了一切
+
+```c
+uint8_t busif = 0;
+sdio_io_rw_direct(sdio, false, 0, SDIO_CCCR_BUS_IF, 0, &busif);   /* 先读 */
+```
+
+真机输出：
+
+```
+esp_hosted_sdio: card bus width set to 1 bit (read 42, wrote 41, ret 0)
+```
+
+**读到的 `BUS_IF = 0x42`。**
+
+按 NuttX 的定义（`nuttx/include/nuttx/sdio.h`）：
+
+```c
+#define SDIO_CCCR_BUS_IF_WIDTH_MASK      0x03   /* Bus width configuration */
+#define SDIO_CCCR_BUS_IF_1_BIT           0x01   /* 1 bit bus width setting */
+```
+
+**`0x42 & 0x03 = 0b10` —— 这是 4-bit 总线宽度。**
+
+**即：卡一直工作在 4-bit 模式，而主机侧的驱动只驱动一条数据线（1-bit）。**
+
+#### 这正好解释了那个最难解释的现象
+
+| 阶段 | 4-bit 卡 vs 1-bit 主机 |
+|---|---|
+| **命令阶段** | ✅ **正常** —— `CMD` 无论 1-bit 还是 4-bit 都只有一根线 |
+| **数据阶段** | 🔴 **失效** —— 卡按 4 条线组织数据，主机只驱动/采样 1 条 |
+
+**"命令通、数据不通"这个特征，与总线宽度不匹配的表现完全一致。**
+
+#### 已修复
+
+在 bring-up 里显式把 CCCR 的总线宽度写为 1-bit：
+
+```
+read 42 -> wrote 41   (bits[1:0]: 0b10 -> 0b01)
+```
+
+**修复后真机：**
+
+```
+card bus width set to 1 bit (read 42, wrote 41, ret 0)
+card function ready (FN1, 512-byte blocks), frame layer up
+packet queued: raw=03c0003c len=60
+payload[60] = 00 00 00 ...      <- 仍然为零
+```
+
+**负载仍然为零** —— 宽度不匹配是一个真实缺陷（该修），但看来不是唯一的原因。
+
+#### 需要确认的一点
+
+**从机的 `sdio_slave` 是在它自己启动时按当时的宽度配置的**，而 CCCR 的宽度改动发生在
+枚举之后。**从机可能需要一次复位才会按新的（1-bit）宽度重新初始化它的数据通路。**
+
+**下一轮**：把从机的 `EN`（GPIO54）在设定宽度之后再脉冲一次，让从机重新初始化，
+然后再读一次包。**这是本轮留下的、最直接的一个动作。**

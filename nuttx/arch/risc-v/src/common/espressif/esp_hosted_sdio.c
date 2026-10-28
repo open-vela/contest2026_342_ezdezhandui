@@ -524,12 +524,36 @@ int esp_hosted_sdio_initialize(void)
    * so 4-bit is not required and may itself be part of what is not coming up.
    */
 
-  ret = -ENOSYS;
-  if (ret < 0)
-    {
-      syslog(LOG_WARNING, "%s: 4-bit bus not available, staying 1-bit: %d\n",
-             HOSTED_TAG, ret);
-    }
+  /* Put the bus width in a known state on both sides.
+   *
+   * sdio_set_wide_bus() (which would ask for 4 bits) is not called here, so the
+   * card's CCCR was never written and its width was whatever it powered up
+   * with. Setting it explicitly to 1 bit removes any chance of a mismatch:
+   * a card left in 4-bit mode against a host driving one data line would answer
+   * commands normally -- CMD is a single wire either way -- and deliver nothing
+   * during a data phase, which is precisely the failure being chased.
+   */
+
+  {
+    uint8_t busif = 0;
+    int rr = sdio_io_rw_direct(sdio, false, 0, SDIO_CCCR_BUS_IF, 0, &busif);
+
+    if (rr == OK)
+      {
+        uint8_t want = busif & ~SDIO_CCCR_BUS_IF_WIDTH_MASK;
+
+        want |= SDIO_CCCR_BUS_IF_1_BIT;
+
+        ret = sdio_io_rw_direct(sdio, true, 0, SDIO_CCCR_BUS_IF, want, NULL);
+
+        syslog(LOG_INFO, "%s: card bus width set to 1 bit (read %02x, wrote %02x, ret %d)\n",
+               HOSTED_TAG, busif, want, ret);
+      }
+    else
+      {
+        syslog(LOG_WARNING, "%s: cannot read CCCR bus width: %d\n", HOSTED_TAG, rr);
+      }
+  }
 
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;

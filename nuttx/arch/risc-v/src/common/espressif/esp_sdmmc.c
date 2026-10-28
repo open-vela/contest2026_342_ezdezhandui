@@ -966,6 +966,11 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
   sdmmc_ll_set_clock_div(hw, 8);
   sdmmc_ll_init_phase_delay(hw);
 
+  /* Sampling the data phase on the other edge was tried here and the payload
+   * still came back as zeros, so the phase settings are not what is keeping the
+   * data out. Defaults left in place.
+   */
+
   /* All four drive/sample clock-edge combinations were tried here and the
    * analyser-plus-console result was identical every time: the companion never
    * answered. The companion's own build uses

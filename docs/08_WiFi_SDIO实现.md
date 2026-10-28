@@ -5173,3 +5173,50 @@ esp_hosted_sdio: FN0 block size failed: -5      (-EIO)
 - **SDIO 枚举（CMD0/5/3/7）已经稳定通过** —— 这是本任务最实质的突破；
 - 失败点固定在枚举之后第一个 CMD52 写操作；
 - 驱动自身的错误分支全部未触发，`-EIO` 由 NuttX 对 R5 flags 的解释产生。
+
+### V.9 **根因确认：CMD52 的响应从未到达，`resp[0]` 还是 CMD5 的旧值**
+
+把 `recvshort()` 交出去的原始响应字打出来后：
+
+```
+esp_sdmmc: short response raw=20ffff00 (cmd=000001b4)    <- CMD52
+esp_hosted_sdio: FN0 block size failed: -5
+```
+
+**`0x20ffff00` 与前面 CMD5 的 `RESP0` 完全相同。**
+
+`0x20ffff00` 按 NuttX 的 `sdio_resp_r5` 位序解出来：
+
+| 位 | 字段 | 值 |
+|---|---|---|
+| [7:0] | data | 0x00 |
+| [8] | out_of_range | 1 |
+| [9] | function_number | 1 |
+| [10] | rfu | 1 |
+| **[11]** | **error** | **1** |
+
+—— **bits[15:8] 全是 1，四个标志位全被置起，这不是一个真实的 R5，而是把
+CMD5 的 OCR 当成了 R5 来解。**
+
+**所以链条是：**
+1. `CMD52` 发出去了（日志有 `issue CMD52`）；
+2. **但没有收到 CMD52 的响应** —— `RESP0` 里仍然是 CMD5 的 OCR；
+3. `recvshort()` 忠实地把 `RESP0` 交出去；
+4. NuttX 把这份"旧数据"当 R5 解析，读到 `error=1`，返回 `-EIO`。
+
+### V.10 由此产生的新问题：为什么 CMD5 有响应、CMD52 没有？
+
+这条比之前的疑问更具体。可能的方向：
+
+1. `CMD7`（选卡）实际没有成功 —— 如果卡没进入 Transfer State，
+   后续的 CMD52 会被忽略；而 `sdio_probe()` 报"成功"可能是
+   `waitresponse` 看到**残留的 Command Done 位**而误判；
+2. 命令之间的间隔/时序问题；
+3. CMD52 的响应类型（R5）在控制器侧没有被正确处理。
+
+**下一轮先加一条判据：`waitresponse` 里除了看 Command Done，还要确认
+`RESP0` 在本次命令后**确实变了**（或读 `RINTSTS` 的响应错误位），
+以此区分"真收到响应"与"看到残留的完成位"。**
+
+这条其实正是附录 S.29 那条教训的正解 —— 当时我用"命令被接受"当"收到响应"，
+现在可以把它做成一个真正的判据。

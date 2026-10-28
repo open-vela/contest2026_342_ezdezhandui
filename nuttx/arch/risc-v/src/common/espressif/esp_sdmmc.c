@@ -1730,9 +1730,15 @@ static int esp_sdmmc_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
 {
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
 
-  UNUSED(cmd);
-
   *rshort = priv->hw->resp[0];
+
+  /* Log the raw word: NuttX parses R5's flags out of it (error is bit 11), and
+   * the block-size write is the first command that depends on those bits.
+   */
+
+  syslog(LOG_INFO, "esp_sdmmc: short response raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
+         *(volatile uint32_t *)&priv->hw->resp[0], cmd);
+
   return OK;
 }
 

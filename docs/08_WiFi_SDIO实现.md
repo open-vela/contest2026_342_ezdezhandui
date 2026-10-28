@@ -4304,3 +4304,76 @@ HINT: The component 'esp_hosted' could not be found.
 `main/CMakeLists.txt` 或用 `idf.py add-dependency` 显式引入），
 或直接用组件管理器从 `components.espressif.com` 拉取
 `espressif/esp_hosted==3.0.10`（需要联网到该站点）。
+
+## S.18 第 83 轮：**C6 固件终于构建成功** —— 只差手动按键烧录
+
+### S.18.1 组件解析问题的解法
+
+上一轮卡在 `The component 'esp_hosted' could not be found`。本轮找到了原因与解法：
+
+示例的 `main/idf_component.yml` 里，`espressif/esp_hosted` 写的是
+`override_path: "../../../../.."`，但**这套 IDF 上没有把这个 override 解析成组件**。
+把那一项改成普通版本依赖：
+
+```yaml
+dependencies:
+  espressif/esp_hosted:
+    version: "3.0.10"          # 去掉 override_path
+```
+
+之后 `idf.py set-target esp32c6` **通过**，组件管理器从
+`components.espressif.com` 取到了 `espressif/esp_hosted==3.0.10`。
+
+### S.18.2 构建成功，且默认配置正好匹配本板
+
+```
+$ idf.py build      -> rc=0
+```
+
+生成的 `sdkconfig` 与交付固件的 SDIO 配置**逐项一致**：
+
+```
+CONFIG_EH_TRANSPORT_CP_SDIO=y
+CONFIG_EH_TRANSPORT_CP_SDIO_MODE_SW_AGGR=y
+CONFIG_EH_TRANSPORT_CP_SDIO_GPIO_RESET=-1
+CONFIG_EH_TRANSPORT_CP_SDIO_HIGH_SPEED=y
+CONFIG_EH_TRANSPORT_CP_SDIO_PIN_CMD=18
+CONFIG_EH_TRANSPORT_CP_SDIO_PIN_CLK=19
+CONFIG_EH_TRANSPORT_CP_SDIO_PIN_D0=20   (D1=21 …)
+```
+
+产出的四个镜像已收进交付树 `tools/build_flash/c6_hosted_new/`：
+
+| 文件 | 大小 |
+|---|---|
+| `bootloader.bin` | 21,824 B |
+| `partition-table.bin` | 3,072 B |
+| `ota_data_initial.bin` | 8,192 B |
+| `eh_cp_network_split_station.bin` | 1,115,248 B |
+
+### S.18.3 卡在最后一步：C6 无法自动进入下载模式
+
+`idf.py -p /dev/ttyUSB1 flash` 失败：
+
+```
+Connecting......................................
+A fatal error occurred: Failed to connect to ESP32-C6: No serial data received.
+```
+
+`--before no_reset` 也一样。原因在交付树自己的脚本里早就写着
+（`tools/build_flash/c6_hosted/flash_c6.sh` 第 12-15 行）：
+
+> 这颗 CP2102 的 DTR/RTS **没有接到 C6 的 EN/BOOT**，esptool 无法自动进入下载模式。
+> 需要**按住板上 BOOT（GPIO9）→ 按一下 RESET（或断电重上电）→ 松开 BOOT**。
+
+**即最后一步必须由人来按键，软件替代不了。**
+
+### S.18.4 下一轮
+
+1. 人按住 BOOT → 按 RESET → 松开 BOOT；
+2. 立刻跑 `tools/build_flash/c6_hosted_new/` 里这套镜像的烧录
+   （偏移：`0x0` bootloader / `0x8000` partition-table / `0xd000` otadata /
+   **`0x10000` app**）；
+3. 然后复跑主机侧探测，看这份"干净重建 + 逐项匹配配置"的从机是否应答。
+
+若这份固件仍不应答，那基本可以排除"C6 固件内容"这个方向，把问题归到硬件。

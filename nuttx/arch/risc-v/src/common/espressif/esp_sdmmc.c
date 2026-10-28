@@ -816,7 +816,15 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
         return;
 
       case CLOCK_IDMODE:
-        div = 159;              /* 160 MHz / 320 = 500 kHz */
+        /* Identification clock, 100-400 kHz as the SD specification requires.
+         *
+         * 159 was chosen for a 160 MHz source and came out at about 630 kHz
+         * once the working source turned out to be the SDIO PLL (200 MHz) --
+         * above the 400 kHz identification limit, which is a rate a slave is
+         * entitled to ignore. 334 puts it near 300 kHz.
+         */
+
+        div = 334;
         break;
 
       case CLOCK_MMC_TRANSFER:

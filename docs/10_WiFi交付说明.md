@@ -102,3 +102,36 @@ tools/build_flash/c6_hosted_new/flash.sh
 按"能真机复现"的标准，本任务当前可交付的是 **ES8311 音频与语言播放**
 （见 `docs/07_ES8311音频驱动实现.md`、`docs/STATUS.md`）；WiFi 部分交付的是
 主机侧驱动与完整的排查记录。
+
+## 六、驱动实现的完整性（逐方法核对）
+
+`esp_sdmmc.c` 实现了 NuttX `struct sdio_dev_s` 的**全部 19 个方法**，逐个核对确认
+都有实质实现（不是空桩）：
+
+| 方法 | 定义行 | 方法 | 定义行 |
+|---|---|---|---|
+| `lock` | 1236 | `waitresponse` | 1555 |
+| `reset` | 2148 | `waitenable` | 1655 |
+| `capabilities` | 1161 | `eventwait` | 1680 |
+| `status` | 1174 | `callbackenable` | 1708 |
+| `widebus` | 1208 | `registercallback` | 1716 |
+| `clock` | 823 | `dmarecvsetup` | 1512 |
+| `attach` | 1258 | `dmasendsetup` | 1531 |
+| `sendcmd` | 1296 | `recvsetup` | 1477 |
+| `blocksetup` | 1369 | `sendsetup` | 1486 |
+| `cancel` | 1495 | | |
+
+配套实现还包括：
+
+- **IDMAC 描述符链**（`struct esp_sdmmc_dmadesc_s`）与内部 DMA 初始化；
+- **CLIC 中断**接入与事件/唤醒掩码（`xfrmask` / `waitmask` / `enablewait`）；
+- **两个 slot 的引脚接入方式**：slot 0 走 IO_MUX、slot 1 走 GPIO 矩阵，
+  由 `esp_sdmmc_configpins()` 按 slot 分支处理；
+- **时钟提交序列**：按 Espressif 的三步（禁用→编程→重新使能）各发一次
+  `update_clk_reg` 命令并检查完成；
+- **SDIO 时钟源上电**：`sdmmc_ll_enable_sdio_pll()`（PMU 级）；
+- **bring-up 诊断**：`esp_sdmmc_sample_idle()`、`esp_sdmmc_identify_pins()`、
+  `esp_sdmmc_report_routing()` —— 这三个是排查期间加的，用来在不接调试器时
+  判断"线是否健康、哪根是哪根、路由是否真的生效"，都保留在代码里并写清了用途。
+
+**结论：驱动实现本身是完整的**；端到端未通的原因不在驱动代码，而在从机侧。

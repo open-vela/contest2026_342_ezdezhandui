@@ -2226,9 +2226,13 @@ config ESPRESSIF_HOSTED_SDIO_EN_GPIO
 
 config ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS
 	int "Delay after enabling the companion module (ms)"
-	default 200
+	default 1000
 	depends on ESPRESSIF_HOSTED_SDIO_EN_GPIO != -1
 	---help---
+		The companion needs time to boot before it can answer on the bus; its own
+		log shows roughly 960 ms, so 1000 ms is the default. This delay runs
+		during boot, so it should not be raised without reason.
+
 		How long to wait after asserting the enable line before probing.
 		The companion has to boot its own firmware before it can enumerate
 		as an SDIO card, so probing immediately would find nothing.

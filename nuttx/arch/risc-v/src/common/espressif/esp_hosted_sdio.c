@@ -122,7 +122,16 @@
  * and an absent companion costs the user 1.5 s rather than 5.
  */
 
-#define ESP_HOSTED_SDIO_PROBE_TRIES       12
+/* Probe window.
+ *
+ * The companion's own log shows its SDIO slave is not up until roughly 960 ms
+ * after release, and that wait is already spent in the settle delay below, so
+ * only a short confirmation window is needed here. Keeping it short matters
+ * because this runs during boot: a companion that never answers should cost a
+ * couple of seconds, not the four that twelve probes would add.
+ */
+
+#define ESP_HOSTED_SDIO_PROBE_TRIES       4
 #define ESP_HOSTED_SDIO_PROBE_INTERVAL_MS 250
 
 /* Defaults for the companion enable line.
@@ -253,13 +262,15 @@ int esp_hosted_sdio_initialize(void)
              HOSTED_TAG, CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO,
              CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS);
 
-      /* The companion's own log shows its SDIO slave is not up until roughly
-       * 960 ms after release, so probing before that only measures its boot
-       * time. The reference implementation for this board waits 1000 ms here
-       * for exactly this reason.
+      /* Wait out the companion's own boot.
+       *
+       * Its log shows the SDIO slave is not ready until roughly 960 ms after
+       * release, so this is the one delay that genuinely cannot be shortened.
+       * It comes from Kconfig rather than being hardcoded here, so a board with
+       * a different companion can tune it without touching the driver.
        */
 
-      nxsig_usleep(1000000);
+      nxsig_usleep(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS * 1000);
     }
 #endif
 

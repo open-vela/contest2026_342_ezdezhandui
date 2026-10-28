@@ -851,6 +851,59 @@ int esp_hosted_sdio_initialize(void)
                          in[0], in[1], in[2], in[3]);
                 }
 
+                /* Find where the payload actually lives.
+                 *
+                 * Each read dequeues the packet, so ask the companion for a
+                 * fresh one before every attempt: re-write the host-ready
+                 * register, wait for PACKET_LEN to rise, then read that
+                 * address. Sampling several offsets shows which region of the
+                 * window carries data.
+                 */
+
+                for (scan = 0; scan < 8; scan++)
+                  {
+                    static uint8_t s2[512] __attribute__((aligned(64)));
+                    uint32_t off = (uint32_t)scan * 512u;
+                    uint32_t a   = 0x1f800u - 512u - off;
+                    uint8_t  l4[4];
+                    uint32_t rl;
+                    uint8_t  ready = 0x03;
+                    int k;
+                    int nz = 0;
+                    int pr;
+
+                    sdio_io_rw_direct(sdio, true, 1, 0x0008c, ready, NULL);
+                    nxsig_usleep(200000);
+
+                    sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &l4[0]);
+                    sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &l4[1]);
+                    sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &l4[2]);
+                    sdio_io_rw_direct(sdio, false, 1, 0x00063, 0, &l4[3]);
+                    rl = (uint32_t)l4[0] | ((uint32_t)l4[1] << 8) |
+                         ((uint32_t)l4[2] << 16) | ((uint32_t)l4[3] << 24);
+
+                    memset(s2, 0xaa, sizeof(s2));
+
+                    /* Read the whole block that ends at the window end. */
+
+                    pr = sdio_io_rw_extended(sdio, false, 1, a, true, s2,
+                                             512u, 1);
+
+                    for (k = 0; k < 512; k++)
+                      {
+                        if (s2[k] != 0xaa)
+                          {
+                            nz++;
+                          }
+                      }
+
+                    syslog(LOG_INFO,
+                           "%s: scan addr %05" PRIx32 " len %06" PRIx32
+                           ": ret %d, written %d, head %02x %02x %02x %02x %02x %02x\n",
+                           HOSTED_TAG, a, rl, pr, nz,
+                           s2[0], s2[1], s2[2], s2[3], s2[4], s2[5]);
+                  }
+
                 (void)scan;
                 syslog(LOG_INFO, "%s: window scan done\n", HOSTED_TAG);
               }

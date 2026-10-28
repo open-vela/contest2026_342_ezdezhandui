@@ -1662,6 +1662,7 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 
   if ((cmd & MMCSD_RESPONSE_MASK) == MMCSD_NO_RESPONSE)
     {
+      syslog(LOG_INFO, "esp_sdmmc: waitresponse -> OK (no response phase)\n");
       return OK;
     }
 
@@ -1713,6 +1714,7 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
                "(rintsts=%08" PRIx32 " resp0=%08" PRIx32 ")\n",
                *(volatile uint32_t *)&hw->rintsts,
                *(volatile uint32_t *)&hw->resp[0]);
+        syslog(LOG_INFO, "esp_sdmmc: waitresponse -> -ETIMEDOUT\n");
         return -ETIMEDOUT;
       }
 
@@ -1720,6 +1722,7 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
       {
         syslog(LOG_ERR, "esp_sdmmc: response error (rintsts=%08" PRIx32 ")\n",
                *(volatile uint32_t *)&hw->rintsts);
+        syslog(LOG_INFO, "esp_sdmmc: waitresponse -> -EIO (RE set)\n");
         return -EIO;
       }
   }

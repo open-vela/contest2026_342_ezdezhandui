@@ -5330,3 +5330,42 @@ OCR，`recv_r5` 把它当 R5 解，flags 全是 1，NuttX 判 `error`，返回 `
 被上层当成成功。**
 
 这两点一解决，CMD3/CMD7 就能发出去，整条链路应当贯通。
+
+### V.17 第 104 轮：把 `waitresponse` 的返回值也打出来
+
+给 `waitresponse()` 的每个返回点加日志后，完整序列是：
+
+```
+issue CMD0  arg=0x00000000
+waitresponse -> OK (no response phase)          <- CMD0 无响应，直接返回 ✓
+issue CMD5  arg=0x00000000
+CMD05 resp 00000000 -> 20ffff00 CHANGED         <- 第 1 条 CMD5 收到响应
+short response raw=20ffff00 (cmd=00000145)      <- RECVR4
+issue CMD5  arg=0x00000300
+CMD05 resp 20ffff00 -> 20ffff00 unchanged
+companion enumerated                            <- 紧接着就报枚举成功
+issue CMD52 arg=0x80002000
+```
+
+**关键：第 2 条 CMD5 之后，"CMD05 resp ... unchanged" 打出来了，
+但 `waitresponse` 的返回日志一条都没有，然后直接就是 "companion enumerated"。**
+
+两种可能：
+
+1. 我这次加的返回日志**没覆盖到函数末尾那个 `return OK`**
+   （用的匹配串没命中，属于又一次锚点问题）—— 那说明它返回了 OK，
+   但 `sdio_probe` 之后仍应发 CMD3，而 CMD3 确实没出现；
+2. 函数在中途以别的路径返回了。
+
+**无论哪种，"第 2 条 CMD5 之后 `sdio_probe` 直接返回成功、且没有发 CMD3"
+这个事实是确定的。**
+
+### V.18 这一轮的净结论
+
+- `waitresponse` 对 CMD0（无响应）正确短路 ✓；
+- 第 1 条 CMD5 的响应被正确捕获（`CHANGED`）、RECVR4 也走到了 ✓；
+- **第 2 条 CMD5 之后流程直接跳到"枚举成功"，`CMD3`/`CMD7` 完全没发出**；
+- 因此卡从未进入 Transfer State，后续 CMD52 必然无响应。
+
+**下一轮需要把 `waitresponse` 末尾的返回日志补全（这次没匹配上），
+并确认 `sdio_probe` 在 CMD3 之前到底走了哪个分支。**

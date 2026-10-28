@@ -4212,3 +4212,52 @@ RESULT: all checks passed
 | ES8311 音频 / 语言播放 | ✅ 真机验证 |
 | 主机侧 SDIO（时钟/CIU/CMD0/CMD5）| ✅ 逐条验证，含 CRC7 |
 | C6 应答 | 🔴 仍无 |
+
+## S.16 第 81 轮：确认 C6 固件对应的 esp-hosted 版本是 **v3.0.10**
+
+### S.16.1 线索来自 C6 自己
+
+C6 的启动日志里有一行版本号：
+
+```
+I (730) ehcp_core:                 ESP-Hosted Firmware version :: EH-3.0.10
+```
+
+### S.16.2 与源码标签对上
+
+`esp-hosted-mcu` 的 tag 列表里正好有 `v3.0.10`。把它取下来核对**配置键**：
+
+```
+$ grep -rn "EH_TRANSPORT_CP_SDIO_PIN_CMD" esp-hosted-mcu-3.0.10/
+coprocessor/eh_cp_core/include/eh_cp_master_config.h:509:  define EH_CP_SDIO_PIN_CMD  CONFIG_EH_TRANSPORT_CP_SDIO_PIN_CMD
+coprocessor/eh_cp_transport/Kconfig.cp.sdio:70:           config EH_TRANSPORT_CP_SDIO_PIN_CMD
+```
+
+**与交付固件 `tools/build_flash/c6_hosted/sdkconfig.esp32c6.sdio` 里用的
+`CONFIG_EH_TRANSPORT_CP_SDIO_PIN_CMD` 完全一致。**
+
+（对比：`main` 分支已经迁到新的 `eh.py` 体系，配置键不匹配 —— 这解释了
+第 80 轮为什么"用 main 重建"不可行。**缺的是版本，不是网络。**）
+
+### S.16.3 但重建仍不是一条命令
+
+v3.0.10 的构建入口同样是 `eh.py`（一个会自行拉取 ESP-IDF 的编排器），
+而且它的 `examples/` 布局里**没有与交付固件同名的 app**（`eh_cp_wifi_sta`）。
+要用它重建出等价固件，需要：
+
+1. `eh.py set-idf-path /home/ez/esp/esp-idf`（复用本机已有 IDF，避免重新下载）；
+2. 选一个 coprocessor 工程并 `set-target esp32c6`；
+3. 把交付固件那份 `sdkconfig.esp32c6.sdio` 的 SDIO 相关项套上去
+   （尤其是要改的那一项，如 `CONFIG_EH_TRANSPORT_CP_SDIO_HIGH_SPEED`）；
+4. 构建后占用 `/dev/ttyUSB1` 烧录（当前被 Tabby 的串口标签页独占）。
+
+**这是一条可行但多步骤的路径，本轮没有走完。**
+
+### S.16.4 本轮的可复用产出
+
+| 结论 | 价值 |
+|---|---|
+| C6 固件 = esp-hosted-mcu **v3.0.10** | 以后重建/对比有明确版本可循 |
+| 该版本配置键与交付 sdkconfig 一致 | 重建出的固件可与现有固件逐项对比 |
+| `main` 分支配置键已变 | 避免再走"用 main 重建"的弯路 |
+| esp-hosted 源码已恢复到 `/tmp/esp-hosted-mcu`（v3.0.10 在 `/tmp/esp-hosted-mcu-3.0.10`）| 帧层测试可跑 |

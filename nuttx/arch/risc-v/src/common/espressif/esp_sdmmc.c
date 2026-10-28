@@ -97,6 +97,7 @@
 #include <esp_clk_tree.h>
 #include <esp_rom_gpio.h>
 #include <soc/hp_sys_clkrst_struct.h>
+#include <soc/gpio_reg.h>
 #include <soc/gpio_sig_map.h>
 #include <soc/sdmmc_pins.h>
 
@@ -563,6 +564,48 @@ void esp_sdmmc_identify_pins(void)
   syslog(LOG_INFO, "esp_sdmmc: pin identification done\n");
 }
 
+/****************************************************************************
+ * Name: esp_sdmmc_report_routing
+ *
+ * Description:
+ *   Read back the GPIO-matrix output selection of the slot's pads and say
+ *   whether each one really points at the controller signal it should.
+ *
+ *   esp_rom_gpio_connect_out_signal() is a ROM call; if it silently does
+ *   nothing on this part, the pads stay on SIG_GPIO_OUT_IDX and neither the
+ *   clock nor the command output ever reaches them -- which is exactly what
+ *   the analyser shows. Reading the field back is the way to tell "the
+ *   routing call failed" apart from "the controller is not driving".
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_report_routing(void)
+{
+  static const char *const names[3] = { "CLK", "CMD", "D0" };
+  const int pins[3] =
+  {
+    CONFIG_ESPRESSIF_SDMMC_CLK, CONFIG_ESPRESSIF_SDMMC_CMD,
+    CONFIG_ESPRESSIF_SDMMC_D0
+  };
+  const uint32_t want[3] =
+  {
+    SD_CARD_CCLK_2_PAD_OUT_IDX, SD_CARD_CCMD_2_PAD_OUT_IDX,
+    SD_CARD_CDATA0_2_PAD_OUT_IDX
+  };
+  int i;
+
+  for (i = 0; i < 3; i++)
+    {
+      uintptr_t reg = GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * (uintptr_t)pins[i];
+      uint32_t got = (uint32_t)REG_GET_FIELD(reg, GPIO_FUNC0_OUT_SEL);
+      syslog(LOG_INFO,
+             "esp_sdmmc: routing %s(GPIO%d): out_sel=%" PRIu32
+             " want=%" PRIu32 " %s (256 = plain GPIO)\n",
+             names[i], pins[i], got, want[i],
+             (got == want[i]) ? "OK" : "*** NOT ROUTED ***");
+    }
+}
+
 void esp_sdmmc_route_pins(void)
 {
   esp_sdmmc_configpins(CONFIG_ESPRESSIF_SDMMC_SLOT,
@@ -712,6 +755,7 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
 
   sdmmc_ll_set_card_clock_div(hw, priv->slot, div);
   sdmmc_ll_enable_card_clock(hw, priv->slot, true);
+
 
   /* A probe that pointed slot 0 at the cclk_in_sdio source was tried here and
    * made no difference, so the per-card source mapping is not what stops the
@@ -1662,6 +1706,12 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * CLKSRC, and a reference implementation for this same board does the same.
    */
 
+  /* Probe: PLL_F160M is the documented default, but the analyser shows no
+   * clock ever reaches the pad with it selected. The SDIO PLL is the other
+   * supported source; if a clock appears with it, the problem is the source,
+   * not the controller.
+   */
+
   esp_clk_tree_enable_src((soc_module_clk_t)SDMMC_CLK_SRC_DEFAULT, true);
   clk_gate_ll_ref_160m_clk_en(true);
 
@@ -1681,6 +1731,14 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    */
 
   sdmmc_ll_set_clock_div(hw, 2);
+
+  /* Three clock-path probes were tried here and the analyser rejected all of
+   * them, so they are not kept: switching the source to SDIO_PLL, forcing
+   * reg_sdio_ls_clk_div_num (the one field in this path that nothing in the
+   * HAL ever writes, left at its reset value of 0) to 1, and taking the
+   * high-speed path instead via sdmmc_ll_set_clock_div(hw, 1). In every case
+   * CLK stayed at a constant level. See docs/08 appendix Q.
+   */
   sdmmc_ll_init_phase_delay(hw);
 
   /* Let the selected controller clock propagate before the controller is

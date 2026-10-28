@@ -120,6 +120,17 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno);
 void esp_sdmmc_route_pins(void);
 
 /****************************************************************************
+ * Name: esp_sdmmc_report_routing
+ *
+ * Description:
+ *   Read back each pad's GPIO-matrix output selection and report whether it
+ *   really points at the controller signal it should.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_report_routing(void);
+
+/****************************************************************************
  * Name: esp_sdmmc_identify_pins
  *
  * Description:

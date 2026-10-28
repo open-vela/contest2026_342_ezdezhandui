@@ -354,6 +354,8 @@ int esp_hosted_sdio_initialize(void)
   nxsig_usleep(20000);
 
   g_hosted_state = ESP_HOSTED_SDIO_HOST_READY;
+  esp_sdmmc_report_routing();
+
   syslog(LOG_INFO, "%s: SDIO host ready on slot %d\n",
          HOSTED_TAG, CONFIG_ESPRESSIF_HOSTED_SDIO_SLOT);
 

@@ -3247,3 +3247,78 @@ CH 6..15  : transitions=     0  high=  0.0%   (未接)
 
 下一轮的方向因此明确：查"为什么 DW MSHC 的 CCLK 没有真正翻转"，
 而不是继续查 C6 侧或引脚。
+
+---
+
+# 附录 Q：时钟为什么不出来 —— 把配置项逐一排除
+
+有了能即时判读波形的分析仪，这一轮把"CLK 上为什么没有时钟"的候选原因**逐个做实验排除**。
+
+## Q.1 先确认：路由是对的，信号索引也是对的
+
+**路由读回**（新加 `esp_sdmmc_report_routing()`，读 `GPIO_FUNCn_OUT_SEL_CFG`）：
+
+```
+routing CLK(GPIO18): out_sel=0 want=0 OK (256 = plain GPIO)
+routing CMD(GPIO19): out_sel=1 want=1 OK
+routing D0 (GPIO14): out_sel=2 want=2 OK
+```
+
+`out_sel` 确实指向 SDMMC 的信号，不是留在普通 GPIO 上。
+
+**信号索引**与 IDF 自己的表对照（`components/esp_hal_sd/esp32p4/sdmmc_periph.c`）：
+
+```c
+sdmmc_slot_gpio_sig[1] = {
+    .clk = SD_CARD_CCLK_2_PAD_OUT_IDX,     /* 与本驱动用的完全一致 */
+    .cmd = SD_CARD_CCMD_2_PAD_OUT_IDX,
+    ...
+};
+```
+
+**两项都排除。**
+
+## Q.2 逐位解码时钟寄存器：配置项全都在
+
+`HP_SYS_CLKRST.peri_clk_ctrl01 = 0x01000601`：
+
+| 位 | 字段 | 值 |
+|---|---|---|
+| [22] | `reg_sdio_hs_mode` | 0（低速路径）|
+| [23] | `reg_sdio_ls_clk_src_sel` | 0 |
+| **[24]** | **`reg_sdio_ls_clk_en`** | **1 ✓** |
+
+`peri_clk_ctrl02 = 0x38820200`：
+
+| 位段 | 字段 | 值 | 期望（div=2）|
+|---|---|---|---|
+| [7:0] | `reg_sdio_ls_clk_div_num` | **0** | 无人设置 |
+| [12:9] | `reg_sdio_ls_clk_edge_l` | 1 | div-1 = 1 ✓ |
+| [16:13] | `reg_sdio_ls_clk_edge_h` | 0 | div/2-1 = 0 ✓ |
+| [20:17] | `reg_sdio_ls_clk_edge_n` | 1 | div-1 = 1 ✓ |
+| [24:23] | `reg_sdio_ls_drv_clk_edge_sel` | 1 | 由 dout_delay_phase 设置 ✓ |
+
+**除了 `div_num`，每一项都符合 `sdmmc_ll_set_clock_div(hw, 2)` 应当写出的值。**
+
+## Q.3 三个针对性实验，全部被分析仪否掉
+
+| # | 实验 | 依据 | 结果 |
+|---|---|---|---|
+| 1 | 时钟源换成 **SDIO_PLL** | PLL_F160M 可能没跑 | **无时钟** |
+| 2 | 强制 `reg_sdio_ls_clk_div_num = 1` | 这是该路径上**唯一无人写过**的字段，复位值 0，名字是"分频数"，而 0 不是可用的分频值 | **无时钟** |
+| 3 | 改走**高速路径**（`sdmmc_ll_set_clock_div(hw, 1)` → `hs_mode=1`）| 低速路径本身可能有问题 | **无时钟** |
+
+三个实验都已撤回，代码里只留下注释说明试过什么、为什么不留。
+
+## Q.4 结论
+
+**不是路由、不是信号索引、不是时钟源、不是低速/高速路径、不是那个没人写的分频字段。**
+
+而**控制器输出端整体是死的**：不仅 CLK 不动，**CMD 也从未出现任何驱动活动**
+（CH0 全程 100% 高、零跳变），而命令期间 CMD 本应被控制器主动驱动。
+
+所有"配置类"读数都是对的，而 CIU 什么都不驱动 —— 这说明问题在
+**CIU 自己的时钟（cclk_in）没有真正运行**，而不是某一项配置写错了。
+
+下一轮应当从"P4 的 SDMMC 时钟树如何真正启动"入手（例如对照 ESP-IDF 的
+`sdmmc_host_init` 全序列逐调用比对），而不是继续调单个寄存器。

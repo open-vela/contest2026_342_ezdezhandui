@@ -5568,3 +5568,57 @@ CMD52 resp 00001e00 -> 00001040 CHANGED (rintsts=00000000)   <- FN0 块大小写
 - ⏭ 下一步：ESP-Hosted **协议层**（RPC 握手）→ 远端 WiFi netdev（`wlan0`）
 
 `ifconfig` 目前只显示 `eth0`，符合预期 —— `wlan0` 要等协议层把远端网络接口注册上来。
+
+---
+
+# 附录 Y：**双向数据通路验证成功**
+
+## Y.1 读从机寄存器
+
+枚举通过后，用 CMD52 读从机 SLCHOST 窗口里的几个寄存器：
+
+```
+esp_hosted_sdio: slave PACKET_LEN   [00060] = 00 (ret 0)
+esp_hosted_sdio: slave TOKEN_RDATA  [00044] = 00 (ret 0)
+esp_hosted_sdio: slave SCRATCH0     [0006c] = 00 (ret 0)
+esp_hosted_sdio: slave SCRATCH7     [0008c] = 00 (ret 0)
+```
+
+**全部 `ret 0`（CMD52 成功）**，值为 0 —— `PACKET_LEN = 0` 表示从机当前没有待发
+数据，合理。
+
+地址取从机 SLCHOST 窗口（`0x3FF55000`）的低 10 位
+（`ESP_ADDRESS_MASK = 0x3FF`），与参考实现一致。
+
+## Y.2 **写入再读回：完全一致**
+
+```
+esp_hosted_sdio: scratch14 loopback: wrote 5a (ret 0), read 5a (ret 0) -- MATCHES
+```
+
+**这是本任务最关键的一条证据之一：**
+
+- 写入 `SCRATCH_REG_14`（`0x0B4`）值 `0x5A`，CMD52 返回 `0`（成功）；
+- 读回同一个寄存器，得到 `0x5A`，**与写入值完全一致**；
+- 返回值同样都是 `0`。
+
+**说明主机真的把字节推进了 C6 的寄存器文件，而 C6 也真的保存了它** ——
+不是"一张只会应答、不留痕迹的卡"。
+
+之所以选 `SCRATCH_REG_14`：它不属于 esp-hosted 的包协议
+（包协议用 `PACKET_LEN`/`TOKEN_RDATA`/`SCRATCH_7`），写它不会干扰从机状态。
+
+## Y.3 这一步意味着什么
+
+| 层 | 状态 |
+|---|---|
+| 时钟 / 引脚 / 物理连线 | ✅ |
+| SDIO 枚举（CMD0/5/3/7）| ✅ 稳定 |
+| 卡功能（FN1、512 字节块）| ✅ 稳定 |
+| **CMD52 寄存器读写（双向）** | ✅ **本轮验证：写入读回一致** |
+| ESP-Hosted 帧层 | ✅ 上线 |
+| CMD53 块数据通路 | ⏭ 下一步 |
+| 协议层（RPC → `wlan0`）| ⏭ |
+
+**主机与 C6 之间的双向寄存器通道已经确凿可用。** 这是实现 CMD53 数据通路的直接基础
+—— esp-hosted 的数据通路正是建立在"主机读写从机寄存器 + CMD53 搬运数据"之上。

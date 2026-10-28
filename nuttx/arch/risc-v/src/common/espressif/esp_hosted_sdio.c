@@ -558,11 +558,61 @@ int esp_hosted_sdio_initialize(void)
            eh_frame_checksum_enabled() ? "on" : "off");
   }
 
-  /* The data path itself is not wired yet: moving frames over SDIO needs the
-   * CMD53 buffer protocol (packet-length and token registers) on top of the
-   * card function brought up above. That work is deliberately left until the
-   * companion answers on this bus -- see docs/08 appendix F.
+  /* Read a few of the companion's slave registers.
+   *
+   * Now that the card answers, this is the cheapest way to prove the register
+   * channel really carries data in both directions: the slave keeps its
+   * packet-length and token registers in SCRATCH space, and a read that comes
+   * back with a plausible value (rather than all-ones or all-zeros) means CMD52
+   * is exchanging real bytes with the companion's own logic, not just talking
+   * to a card that acknowledges and forgets.
+   *
+   * Addresses are the low 17 bits of the slave's SLCHOST window (0x3FF55000).
    */
+
+  {
+    static const struct
+    {
+      const char *name;
+      uint32_t    addr;
+    } regs[] =
+    {
+      { "PACKET_LEN", 0x00060 },
+      { "TOKEN_RDATA", 0x00044 },
+      { "SCRATCH0", 0x0006c },
+      { "SCRATCH7", 0x0008c },
+    };
+
+    int i;
+
+    for (i = 0; i < (int)(sizeof(regs) / sizeof(regs[0])); i++)
+      {
+        uint8_t val = 0;
+        int r = sdio_io_rw_direct(sdio, false,
+                                  /* function 1 = the companion's data function */
+                                  1, regs[i].addr, 0, &val);
+        syslog(LOG_INFO, "%s: slave %-12s [%05" PRIx32 "] = %02x (ret %d)\n",
+               HOSTED_TAG, regs[i].name, regs[i].addr, val, r);
+      }
+
+    /* Now drive one: SCRATCH 14 is not part of the packet protocol, so writing
+     * it cannot confuse the companion, and reading the same value back proves
+     * the host really does push bytes into the companion's register file rather
+     * than a card that merely acknowledges writes.
+     */
+
+    {
+      uint8_t written = 0x5a;
+      uint8_t readback = 0;
+      int w = sdio_io_rw_direct(sdio, true, 1, 0x000b4, written, NULL);
+      int rb = sdio_io_rw_direct(sdio, false, 1, 0x000b4, 0, &readback);
+
+      syslog(LOG_INFO,
+             "%s: scratch14 loopback: wrote %02x (ret %d), read %02x (ret %d) %s\n",
+             HOSTED_TAG, written, w, readback, rb,
+             readback == written ? "-- MATCHES" : "-- differs");
+    }
+  }
 
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;

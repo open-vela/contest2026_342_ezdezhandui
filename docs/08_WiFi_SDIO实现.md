@@ -4261,3 +4261,46 @@ v3.0.10 的构建入口同样是 `eh.py`（一个会自行拉取 ESP-IDF 的编�
 | 该版本配置键与交付 sdkconfig 一致 | 重建出的固件可与现有固件逐项对比 |
 | `main` 分支配置键已变 | 避免再走"用 main 重建"的弯路 |
 | esp-hosted 源码已恢复到 `/tmp/esp-hosted-mcu`（v3.0.10 在 `/tmp/esp-hosted-mcu-3.0.10`）| 帧层测试可跑 |
+
+## S.17 第 82 轮：尝试用 v3.0.10 重建 C6 固件，卡在组件解析
+
+### S.17.1 已确认的前提
+
+- ESP-IDF 可用：`/home/ez/esp/esp-idf`，版本 **v5.5.6**（满足 v3.0.10 要求的 `>=5.5`）；
+- v3.0.10 有 `examples/network_split/station/cp` 这个 coprocessor 工程，
+  且带 `sdkconfig.defaults.esp32c6`；
+- 仓库根的 `idf_component.yml` 声明组件名 `esp_hosted`，
+  `targets` 列表**包含 esp32c6**；
+- 该示例的 `main/idf_component.yml` 里已经写了
+  `override_path: "../../../../.."`（正好指回仓库根）。
+
+### S.17.2 但 `idf.py set-target esp32c6` 失败
+
+```
+HINT: The component 'esp_hosted' could not be found.
+```
+
+试过的手段都没有解决：
+
+| 尝试 | 结果 |
+|---|---|
+| 用软链接把仓库挂成 `esp_hosted` 组件 + `EXTRA_COMPONENT_DIRS` | 找不到 |
+| 改为**复制**成 `esp_hosted` 组件目录 + `EXTRA_COMPONENT_DIRS` | 找不到 |
+| 清掉 `build/ sdkconfig managed_components/ dependencies.lock` 后重来 | 找不到 |
+
+即：示例自带的 `override_path` 在这套 IDF 上没有被解析成组件。
+**本轮停在这里，没有产出可烧录的 C6 固件。**
+
+### S.17.3 本轮结论
+
+| 项 | 状态 |
+|---|---|
+| C6 固件版本 | ✅ v3.0.10（上一轮确定）|
+| ESP-IDF 可用性 | ✅ v5.5.6 |
+| **C6 固件重建** | 🔴 **卡在组件 `esp_hosted` 的解析** |
+| C6 应答 | 🔴 仍无 |
+
+要继续需要：解决 `override_path` 为何不生效（可能需要在示例的
+`main/CMakeLists.txt` 或用 `idf.py add-dependency` 显式引入），
+或直接用组件管理器从 `components.espressif.com` 拉取
+`espressif/esp_hosted==3.0.10`（需要联网到该站点）。

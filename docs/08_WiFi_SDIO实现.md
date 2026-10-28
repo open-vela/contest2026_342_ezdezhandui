@@ -4489,3 +4489,71 @@ CONFIG_EH_TRANSPORT_CP_SDIO_PSEND_PSAMPLE=y
 
 **主机侧可调的东西到这一轮已经真的试完了。** 剩下的只能是：
 C6 固件（需人工按键才能烧）、或硬件。
+
+---
+
+# 附录 T：**用自建固件实测 —— C6 固件内容不是原因**
+
+用户按住 BOOT 让 C6 进入下载模式后，完成了这次关键实验。
+
+## T.1 烧录结果
+
+```
+$ python3 -m esptool --chip esp32c6 -p /dev/ttyUSB1 ... chip_id
+Chip is ESP32-C6FH4                                   <-- 进入下载模式
+$ tools/build_flash/c6_hosted_new/flash.sh
+Wrote 1115248 bytes (638024 compressed) at 0x00010000 in 16.0 seconds
+Hash of data verified.
+Hard resetting via RTS pin...
+```
+
+四个镜像全部写入并通过 hash 校验。
+
+## T.2 自建固件的启动日志（经 Tabby 读 C6 console）
+
+```
+I (432) ehcp_core: Supported features are: - WLAN over SDIO
+I (466) SDIO_SLAVE: Using SDIO interface (TX_MODE=0)
+I (470) SDIO_SLAVE: SDIO datapath mode: SW_AGGR
+I (474) SDIO_SLAVE: rx_buf_size=15872
+I (478) SDIO_SLAVE: [mem:sdio_init] free=290680 min=290680 largest=270336
+I (484) ehcp_core: host reset handler task started
+...
+I (15436) ehcp_event_handler: TX evt → host: event_id=2 msg_id=0x0308 len=41
+I (15531) ehcp_core: wait for data path to be opened
+```
+
+**从机的 SDIO slave 初始化完成、零错误，与原来那份固件的启动序列一致。**
+
+（这份 `network_split/station` 示例还会自己去连 AP，并报
+`reason 201: NO_AP_FOUND` —— 那是应用层行为，与 SDIO 链路无关。）
+
+## T.3 但主机侧结果完全不变
+
+```
+esp_hosted_sdio: probe 1/4 -> -110, retrying
+esp_hosted_sdio: probe 2/4 -> -110, retrying
+probe 3/4 -> -110 ... probe 4/4 -> -110
+esp_hosted_sdio: no SDIO response from the companion module: -110
+```
+
+## T.4 这条排除的分量
+
+至此"C6 固件内容"这一项被**实验排除**，而不是靠推测：
+
+| 被排除项 | 依据 |
+|---|---|
+| C6 固件**版本/配置** | 用 esp-hosted-mcu **v3.0.10** 从源码重建，`sdkconfig` 与交付固件逐项一致 |
+| C6 固件**完整性** | 四个镜像 hash 校验通过 |
+| C6 是否**正常启动** | 启动日志完整、零错误、SDIO slave 初始化完成 |
+| **结果** | **与原先完全相同的 `-110`** |
+
+## T.5 现在的范围只剩硬件
+
+主机侧已穷举（附录 R/S）、从机固件已被实验排除，剩下唯一没有被验证过的环节是
+**物理层**：
+
+1. P4 与 C6 之间那六根线是否真的连通 —— 需要万用表；
+2. C6 的 SDIO slave 引脚是否真的被芯片驱动 —— 需要示波器探到 C6 一侧。
+
+**这两项都超出本会话能做到的范围。**

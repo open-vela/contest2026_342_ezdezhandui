@@ -677,12 +677,25 @@ int esp_hosted_sdio_initialize(void)
           sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &len_x);
           sdio_io_rw_direct(sdio, false, 1, 0x00050, 0, &st);
 
-          if (len_lo || len_hi || len_x || st)
-            {
-              syslog(LOG_INFO,
-                     "%s: t=%dms PACKET_LEN=%02x %02x %02x INT_RAW=%02x\n",
-                     HOSTED_TAG, (i + 1) * 100, len_lo, len_hi, len_x, st);
-            }
+          {
+            uint8_t stst = 0;
+            uint8_t tok[4];
+            uint32_t token;
+
+            sdio_io_rw_direct(sdio, false, 1, 0x00058, 0, &stst);
+            sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &tok[0]);
+            sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &tok[1]);
+            sdio_io_rw_direct(sdio, false, 1, 0x00046, 0, &tok[2]);
+            sdio_io_rw_direct(sdio, false, 1, 0x00047, 0, &tok[3]);
+            token = (uint32_t)tok[0] | ((uint32_t)tok[1] << 8) |
+                    ((uint32_t)tok[2] << 16) | ((uint32_t)tok[3] << 24);
+
+            syslog(LOG_INFO,
+                   "%s: t=%dms LEN=%02x %02x %02x INT_RAW=%02x INT_ST=%02x "
+                   "TOKEN=%08" PRIx32 "\n",
+                   HOSTED_TAG, (i + 1) * 100, len_lo, len_hi, len_x, st,
+                   stst, token);
+          }
         }
 
       /* Read the queued packet.

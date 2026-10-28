@@ -548,6 +548,12 @@ int esp_hosted_sdio_initialize(void)
 
         syslog(LOG_INFO, "%s: card bus width set to 1 bit (read %02x, wrote %02x, ret %d)\n",
                HOSTED_TAG, busif, want, ret);
+
+        /* Taking both sides to four bits was tried here as well -- CCCR went
+         * back to 0x42 and sdio_set_wide_bus() returned success -- and the
+         * payload still came back as zeros. The link stays on one bit, which is
+         * what the reference implementation for this board uses.
+         */
       }
     else
       {

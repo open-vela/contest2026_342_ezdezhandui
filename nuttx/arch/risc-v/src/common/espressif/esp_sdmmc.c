@@ -1845,52 +1845,6 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * "correct", no waveform anywhere, and CMD0 unable to emit its 80 clocks.
    */
 
-  /* First of two CIU liveness checks.
-   *
-   * A command carrying only update_clk_reg needs no card to answer and no
-   * command index to be valid; it completes as soon as the CIU is running. Log
-   * it here (clock source selected, system divider not yet programmed) and
-   * again at the end of the clock path, and the two lines say whether the
-   * divider/edge programming is what starts the CIU or whether it never runs.
-   *
-   * This one is expected to fail: the system-side divider has not been
-   * programmed yet, so there is no cclk_in to run the CIU with.
-   */
-
-  {
-    sdmmc_hw_cmd_t t;
-    clock_t st = clock_systime_ticks();
-
-    memset(&t, 0, sizeof(t));
-    t.card_num       = (uint32_t)priv->slot;
-    t.update_clk_reg = 1;
-    t.wait_complete  = 1;
-    t.start_command  = 1;
-
-    sdmmc_ll_set_command_arg(hw, 0);
-    sdmmc_ll_set_command(hw, t);
-
-    while (hw->cmd.start_command != 0)
-      {
-        if (clock_systime_ticks() - st > SDMMC_CMDTIMEOUT)
-          {
-            break;
-          }
-      }
-
-    syslog(LOG_INFO,
-           "esp_sdmmc: CIU liveness check: update command %s before any clock "
-           "programming (cmd=%08" PRIx32 " ctrl=%08" PRIx32
-           " rintsts=%08" PRIx32 ")\n",
-           (hw->cmd.start_command == 0) ? "COMPLETED" : "did not complete",
-           hw->cmd.val, hw->ctrl.val, hw->rintsts.val);
-
-    if (hw->cmd.start_command != 0)
-      {
-        sdmmc_ll_reset_controller(hw);
-      }
-  }
-
   sdmmc_ll_set_clock_div(hw, 2);
 
   /* Three clock-path probes were tried here and the analyser rejected all of
@@ -1985,10 +1939,68 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    */
 
   sdmmc_ll_init_dma(hw);
-  sdmmc_ll_enable_dma(hw, false);
+
+  /* Deliberately NOT followed by sdmmc_ll_enable_dma(hw, false).
+   *
+   * Those two calls used to sit next to each other and cancel each other out:
+   * init_dma() sets CTRL.dma_enable, enable_dma(false) clears it again, and the
+   * controller was left configured for internal DMA with its DMA interface
+   * switched off. The comment above this block already described the
+   * consequence -- a CIU that accepts a command and never executes it -- while
+   * the line underneath re-created it. That is the whole failure: every command
+   * stalls with start_command still set, so no clock update is ever committed,
+   * so no card clock ever appears.
+   */
 
   sdmmc_ll_enable_global_interrupt(hw, true);
 
+  sdmmc_ll_enable_global_interrupt(hw, true);
+
+  /* First of two CIU liveness checks.
+   *
+   * A command carrying only update_clk_reg needs no card to answer and no
+   * command index to be valid; it completes as soon as the CIU is running. Log
+   * it here (clock source selected, system divider not yet programmed) and
+   * again at the end of the clock path, and the two lines say whether the
+   * divider/edge programming is what starts the CIU or whether it never runs.
+   *
+   * This one is expected to fail: the system-side divider has not been
+   * programmed yet, so there is no cclk_in to run the CIU with.
+   */
+
+  {
+    sdmmc_hw_cmd_t t;
+    clock_t st = clock_systime_ticks();
+
+    memset(&t, 0, sizeof(t));
+    t.card_num       = (uint32_t)priv->slot;
+    t.update_clk_reg = 1;
+    t.wait_complete  = 1;
+    t.start_command  = 1;
+
+    sdmmc_ll_set_command_arg(hw, 0);
+    sdmmc_ll_set_command(hw, t);
+
+    while (hw->cmd.start_command != 0)
+      {
+        if (clock_systime_ticks() - st > SDMMC_CMDTIMEOUT)
+          {
+            break;
+          }
+      }
+
+    syslog(LOG_INFO,
+           "esp_sdmmc: CIU liveness check: update command %s before any clock "
+           "programming (cmd=%08" PRIx32 " ctrl=%08" PRIx32
+           " rintsts=%08" PRIx32 ")\n",
+           (hw->cmd.start_command == 0) ? "COMPLETED" : "did not complete",
+           hw->cmd.val, hw->ctrl.val, hw->rintsts.val);
+
+    if (hw->cmd.start_command != 0)
+      {
+        sdmmc_ll_reset_controller(hw);
+      }
+  }
   priv->initialized = true;
 
   mcinfo("SDMMC slot %d up: CLK=%d CMD=%d D0..D3=%d,%d,%d,%d\n",

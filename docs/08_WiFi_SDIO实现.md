@@ -3558,3 +3558,63 @@ clock update (clock disabled):
 
 **结论未变且更牢固：模块复位能完成、命令写入能被硬件接收（`use_hold_reg` 被清），
 但 `start_command` 永不释放 —— 即 CIU 的命令通路没有运行。**
+
+## R.12 第 69 轮：找到一处真实的自我抵消，但 CIU 仍不执行
+
+### R.12.1 `init_dma()` 被下一行撤销了
+
+控制器初始化末尾原本是这两行**紧挨着**的：
+
+```c
+sdmmc_ll_init_dma(hw);            /* 设 CTRL.dma_enable = 1 */
+sdmmc_ll_enable_dma(hw, false);   /* 又把它清回 0 */
+```
+
+`sdmmc_ll_init_dma()` 的实现是：
+
+```c
+static inline void sdmmc_ll_init_dma(sdmmc_hw_t *hw) {
+    hw->ctrl.dma_enable = 1;
+    hw->bmod.val = 0;
+    hw->bmod.sw_reset = 1;
+    hw->idinten.ni = hw->idinten.ri = hw->idinten.ti = 1;
+}
+```
+
+而 `sdmmc_ll_enable_dma(hw, false)` 把 `dma_enable` 与 `use_internal_dma` 一起清零。
+**两行互相抵消，控制器被留在"配置为内部 DMA、但 DMA 接口关闭"的状态。**
+
+**最刺眼的是**：这两行**上方**的注释（之前写的）已经准确描述了这个后果 ——
+
+> "The controller is configured for internal DMA, so with its DMA interface off
+> the CIU can accept a command and never execute it -- which is exactly what the
+> hardware shows (start_command never self-clears...)"
+
+**我识别出了问题、写下了注释，然后紧接着的代码又把修复撤销了。**
+
+已删除该行。真机确认 `CTRL` 从 `00000010` 变为 **`00000030`**（`int_enable` + `dma_enable` 均置位）。
+
+### R.12.2 但 CIU 仍然不执行命令
+
+把"CIU 存活检查"移到 `init_dma()` **之后**再测，此时 `ctrl=00000030`、
+`rintsts=00000000`（无 HLE、DMA 已开）：
+
+```
+CIU liveness check: update command did not complete
+  (cmd=80212000 ctrl=00000030 rintsts=00000000)
+```
+
+**即使 DMA 使能、无硬件锁定，只带 `update_clk_reg` 的命令依然不完成。**
+
+### R.12.3 排除清单再增两项
+
+| 项 | 结果 |
+|---|---|
+| `use_hold_reg` 是否设置 | ✅ 已补，写入字 `a0212000` 与 IDF 一致 |
+| `wait_complete`（0 与 1 都试）| ✅ 都试过，均不完成 |
+| **`CTRL.dma_enable`** | ✅ **已修复为使能（`ctrl=00000030`），不影响结果** |
+| 每次提交前清 `rintsts` | ✅ 无变化 |
+
+**结论：CIU 的命令通路从未运行，且原因不在以上任何一项。**
+下一轮应当从"这颗芯片上 SDMMC 的 cclk_in 究竟由什么产生"入手 ——
+可能性集中在某个尚未发现的时钟门控，或该外设所在的电源域。

@@ -318,7 +318,7 @@ $ nxplayer                     ->  device /dev/audio/pcm0 -> play /tmp/t.wav -> 
 
 ---
 
-## WiFi（C6 / SDIO + ESP-Hosted）最终状态 · 2026-10-28
+## WiFi（C6 / SDIO + ESP-Hosted）—— **传输层已打通** · 2026-10-28
 
 **主机侧完成并逐条仪器验证；从机侧零响应，已实验排除固件、只剩物理层。**
 
@@ -358,3 +358,38 @@ $ nxplayer                     ->  device /dev/audio/pcm0 -> play /tmp/t.wav -> 
 2. 或示波器探到 C6 一侧，确认其引脚上是否真有信号。
 
 详见 `docs/10_WiFi交付说明.md` 与 `docs/08_WiFi_SDIO实现.md` 附录 T。
+
+---
+
+### 🎉 2026-10-28 深夜更新：**SDIO 传输层打通**
+
+长期卡住的 WiFi 链路本轮通了。真机日志：
+
+```
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)
+esp_hosted_sdio: card function ready (FN1, 512-byte blocks)
+esp_hosted_sdio: frame layer up (hdr v1, 12-byte headers, checksum on)
+```
+
+**连续 3 次复位，3 次全部成功** —— 稳定可复现。
+
+每条命令都收到真实响应：
+
+```
+CMD03 resp -> 00010000 CHANGED (RCA = 0x0001)
+CMD07 resp -> 00001e00 CHANGED
+CMD52 resp -> 00001040 CHANGED
+```
+
+**四个互相掩盖的 bug（缺一不通）：**
+
+1. `waitresponse()` 末尾缺 `return OK`（整块替换时被删）→ 返回不确定值 53；
+2. 上层成功判据写成 `ret < 0` → 把 53 当成功，"枚举成功"假象掩盖了 #1；
+3. 完成位没在发命令前清掉 → 轮询看到残留位，响应"迟到"、读到旧 `RESP0`；
+4. 长期依赖中断事件 → 该中断从未送达，改轮询后才开始工作。
+
+**结论：C6 从机自始至终完全正常。** 问题全部在主机侧驱动。
+详见 `docs/08_WiFi_SDIO实现.md` 附录 U/V/W/X。
+
+**尚未实现**：ESP-Hosted 的 SDIO 数据通路（CMD53 包长/token 协议）与协议层
+（RPC → 远端 `wlan0`）。`ifconfig` 目前只有 `eth0`。

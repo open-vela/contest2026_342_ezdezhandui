@@ -51,13 +51,24 @@ deadline = time.time() + MINUTES * 60
 n = 0
 while time.time() < deadline:
     n += 1
-    call("start_capture")
-    call("wait_capture", timeoutMs=30000)
+    try:
+        call("start_capture")
+        call("wait_capture", timeoutMs=30000)
 
-    total = call("get_samples", channelIndex=0, channelType="logic",
-                 startSample=0, endSample=99999999)["sample_count"]
+        total = call("get_samples", channelIndex=0, channelType="logic",
+                     startSample=0, endSample=99999999)["sample_count"]
 
-    counts = {ch: transitions(ch, total) for ch in (0, 1, 2)}
+        counts = {ch: transitions(ch, total) for ch in (0, 1, 2)}
+    except Exception as exc:                                  # noqa: BLE001
+        # The tunnel drops now and then; a single bad round should not end the
+        # wait, because the reset this is watching for may come at any moment.
+        print("capture %d failed: %s" % (n, exc), flush=True)
+        time.sleep(1.0)
+        try:
+            init()
+        except Exception:                                     # noqa: BLE001
+            pass
+        continue
 
     # One transition is the capture-start artifact; the boot burst produces many.
     if max(counts.values()) > 1:

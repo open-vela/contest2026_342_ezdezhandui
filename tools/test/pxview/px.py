@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Minimal MCP client for the PXView signal analyzer (streamable-http)."""
-import json, sys, requests
+import json, sys, time, requests
 
 URL = "http://127.0.0.1:10110/mcp"
 H = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
 _id = [0]
 
-def _post(body):
+def _post_once(body):
     r = requests.post(URL, headers=H, json=body, timeout=60)
     data = None
     for line in r.text.splitlines():
@@ -18,6 +18,24 @@ def _post(body):
         return json.loads(data)
     except Exception:
         return {"_raw": r.text[:400]}
+
+
+def _post(body):
+    """POST with retries.
+
+    The server sits behind an SSH tunnel and occasionally emits a stray SSE
+    line that makes requests fail with BadStatusLine; without a retry a long
+    capture loop dies on the first hiccup.
+    """
+
+    last = None
+    for attempt in range(4):
+        try:
+            return _post_once(body)
+        except Exception as exc:                              # noqa: BLE001
+            last = exc
+            time.sleep(0.4 * (attempt + 1))
+    raise last
 
 def init():
     _post({"jsonrpc":"2.0","id":1,"method":"initialize",

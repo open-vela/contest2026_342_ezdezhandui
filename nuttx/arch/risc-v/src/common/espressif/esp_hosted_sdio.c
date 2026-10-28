@@ -990,11 +990,31 @@ int esp_hosted_sdio_initialize(void)
                       tx[k] = (uint8_t)(0x5a ^ (k & 0xff));
                     }
 
-                  wr = sdio_io_rw_extended(sdio, true, 1, 0x1f600u, true, tx,
-                                           512u, 1);
+                  /* Reference semantics: the payload goes at
+                   * ESP_SLAVE_CMD53_END_ADDR - length, and the host does no
+                   * token write-back -- the token register is the companion's
+                   * own count of buffers it is offering.
+                   */
 
-                  syslog(LOG_INFO, "%s: TX write 512 @1f600: ret %d\n",
-                         HOSTED_TAG, wr);
+                  wr = sdio_io_rw_extended(sdio, true, 1, 0x1f800u - 512u, true,
+                                           tx, 512u, 1);
+
+                  {
+                    uint8_t t2[4];
+                    uint32_t tok2;
+
+                    sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &t2[0]);
+                    sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &t2[1]);
+                    sdio_io_rw_direct(sdio, false, 1, 0x00046, 0, &t2[2]);
+                    sdio_io_rw_direct(sdio, false, 1, 0x00047, 0, &t2[3]);
+                    tok2 = (uint32_t)t2[0] | ((uint32_t)t2[1] << 8) |
+                           ((uint32_t)t2[2] << 16) | ((uint32_t)t2[3] << 24);
+
+                    syslog(LOG_INFO,
+                           "%s: TX write 512 @1f600: ret %d; TOKEN after = %08" PRIx32
+                           " (buffers %" PRIu32 ")\n",
+                           HOSTED_TAG, wr, tok2, (tok2 >> 16) & 0xffffu);
+                  }
 
                   /* Hand the buffer over by writing the token back, which is how
                    * the companion learns a frame is waiting.

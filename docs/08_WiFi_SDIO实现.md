@@ -3401,3 +3401,38 @@ BIU 时钟清掉、要么从未真正置起 —— **它不能证明 CIU 时钟�
   报告结果（超时则回退到控制器复位，行为不会比之前更差）；
 - 保留 `esp_sdmmc_report_routing()`、`esp_sdmmc_sample_idle()`、
   `esp_sdmmc_identify_pins()`、CIU 复位位上报等诊断 —— 它们这一轮都起了作用。
+
+## R.5 两个「CIU 存活检查」把范围缩到了 CIU 本身
+
+在时钟路径上加了一个探针：发一条**只带 `update_clk_reg`** 的命令
+（不需要卡应答、不需要命令号），它**只要 CIU 在跑就会完成**。放在两个位置各发一次：
+
+| 位置 | 结果 |
+|---|---|
+| 时钟源已选、**系统侧分频器尚未编程** | `did not complete`（`ctrl=00000000 rintsts=00000000`）|
+| 完整时钟路径走完之后（`esp_sdmmc_clock` 里那条）| `did NOT complete`（`rintsts=00001000`）|
+
+第一条是**预期会失败**的（那时还没有 cclk_in）。**有意义的是第二条**：
+**即使 `set_clock_div` 的边沿值、`cfg_update`、`select_clk_source`、
+`init_phase_delay` 的三个 `*_clk_en` 全部就位，CIU 依然不执行命令。**
+
+## R.6 现在的范围
+
+已经被读数或实验排除的：
+
+- 引脚、slot、探头映射、GPIO 矩阵路由（`out_sel` 读回）
+- SDMMC 信号索引（与 IDF 的 `sdmmc_periph.c` 表逐项一致）
+- 时钟源（PLL_F160M 与 SDIO_PLL 都试过）
+- 低速 / 高速路径（`hs_mode` 0 与 1 都试过）
+- `reg_sdio_ls_clk_div_num`（唯一无人写的字段，强制为 1 无效）
+- 时钟路径上的全部使能位（`ls_clk_en` / `slf_clk_en` / `drv_clk_en` /
+  `sam_clk_en` 均为 1，边沿值全部符合 `set_clock_div(hw,2)` 的应写值）
+- 命令字本身（逐位解码 `0x80212000`：`wait_complete=1`、`card_num=1`、
+  `update_clk_reg=1`、`start_command=1` —— 与 IDF 构造的完全相同）
+- 总线时钟与系统级复位（`sdmmc_ll_enable_bus_clock` + `sdmmc_ll_reset_register` 均调用）
+
+**剩下的可能只指向一件事：这颗 SDMMC 外设的 CIU 从未真正被时钟驱动**，
+而原因不在这条时钟路径的寄存器上。下一轮应当查：
+外设是否在某个未使能的电源域、或 `HP_SYS_CLKRST` 里是否还有一处
+SDMMC 专属的门控没有打开（例如某个 `soc_clk_ctrl` 的位），
+以及对照 IDF 从 `sd_host_create_sdmmc_controller` 起的**完整**调用序列。

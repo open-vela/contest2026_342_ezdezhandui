@@ -4168,3 +4168,47 @@ esp_hosted_sdio: probe 4/4 -> -110
 
 下一步需要其中之一：恢复 esp-hosted / C6 工程目录后重建固件，
 或从硬件侧确认 C6 的 SDIO slave 引脚是否真的被使能。
+
+## S.15 第 80 轮：恢复了 esp-hosted 源码，帧层测试重新可跑
+
+### S.15.1 源码恢复
+
+上一轮发现 `/tmp` 被清空导致 esp-hosted-mcu 源码与 C6 的 ESP-IDF 工程目录都不在了。
+本轮用**能绕过 GnuTLS 问题的 codeload tarball 方式**重新取到：
+
+```
+curl -sL -o eh.tgz https://codeload.github.com/espressif/esp-hosted-mcu/tar.gz/refs/heads/main
+tar xzf eh.tgz        ->  /tmp/esp-hosted-mcu-main   (2.9 MB)
+ln -sfn /tmp/esp-hosted-mcu-main /tmp/esp-hosted-mcu
+```
+
+`tools/test/eh_frame/run.sh` 默认就找 `/tmp/esp-hosted-mcu`，路径接上后
+**帧层往返测试重新通过**：
+
+```
+[frame][W] v1 checksum mismatch: stored=592 calc=757 len=8 offset=12 total=20
+corrupted decode=2
+RESULT: all checks passed
+```
+
+（那行 `checksum mismatch` 是**负向用例**的预期输出 —— 测试故意篡改一帧并验证
+校验和能检出它。）
+
+### S.15.2 但用这份源码重建 C6 固件不可行
+
+这份 `main` 分支的 esp-hosted-mcu 已经迁到新的 `eh.py` 构建体系，
+**配置键与交付固件所用的旧版（`CONFIG_EH_TRANSPORT_CP_SDIO_*`）不匹配**。
+要重建**同样的** C6 固件，需要对应的旧版源码，而不是 `main`。
+
+所以"换一份 C6 固件"这个实验本轮仍然做不成 —— 缺的不是网络，而是**版本**。
+
+### S.15.3 当前交付状态
+
+| 项 | 状态 |
+|---|---|
+| 构建 | ✅ 0 error |
+| 清单一致性 | ✅ 354 条一致 |
+| 帧层往返测试 | ✅ **本轮恢复可跑，全部通过** |
+| ES8311 音频 / 语言播放 | ✅ 真机验证 |
+| 主机侧 SDIO（时钟/CIU/CMD0/CMD5）| ✅ 逐条验证，含 CRC7 |
+| C6 应答 | 🔴 仍无 |

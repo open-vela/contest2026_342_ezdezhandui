@@ -830,11 +830,51 @@ int esp_hosted_sdio_initialize(void)
                * happening.
                */
 
-              if (nblk < 3u)
+              /* The address IS the requested length.
+               *
+               * From the ESP SDIO slave protocol documentation:
+               *
+               *   requested length = 0x1F800 - address
+               *
+               * and "in cases where the data is longer than the requested length,
+               * the data will be zero filled (when sending)". Reading with an
+               * address that encodes 60 bytes while asking CMD53 for 512 makes
+               * the whole response zero filled -- which is exactly what every
+               * attempt has returned.
+               *
+               * So the address must encode a length at least as large as the
+               * transfer: for a 512-byte read that is 0x1F800 - 512 = 0x1F600.
+               */
+
+              /* Follow the documented FIFO access pattern exactly.
+               *
+               * The protocol doc's worked example reads 1031 bytes as a
+               * 1024-byte block transfer to address 0x1F800-1031 followed by a
+               * byte transfer to 0x1F800-7. The address always encodes the
+               * TOTAL requested length; block mode takes whole blocks and byte
+               * mode takes the remainder.
+               *
+               * 60 bytes is less than one block, so the whole packet is a byte
+               * mode transfer at 0x1F800 - 60 with a count of 60.
+               */
+
+              if (len <= 512u)
                 {
-                  nblk    = 3u;
-                  aligned = 0x1f800u - 1536u;
-                  skip    = addr - aligned;
+                  aligned = 0x1f800u - len;
+                  skip    = 0;
+
+                  r = sdio_io_rw_extended(sdio, false, 1, aligned, true,
+                                          payload, (unsigned)len, 0);
+
+                  syslog(LOG_INFO,
+                         "%s: RX byte mode: ret %d, addr %05" PRIx32
+                         ", count %" PRIu32 "\n",
+                         HOSTED_TAG, r, aligned, len);
+                }
+              else
+                {
+                  aligned = 0x1f800u - (uint32_t)nblk * 512u;
+                  skip    = 0;
                 }
 
               memset(payload, 0, sizeof(payload));
@@ -856,8 +896,8 @@ int esp_hosted_sdio_initialize(void)
                                       512u, 1);
 
               syslog(LOG_INFO,
-                     "%s: RX ret %d, addr %05" PRIx32 " (512-byte block read, the address actually sent)\n",
-                     HOSTED_TAG, r, addr);
+                     "%s: RX ret %d, addr %05" PRIx32 " (requested length %" PRIu32 ")\n",
+                     HOSTED_TAG, r, aligned, 0x1f800u - aligned);
 
               {
                 uint8_t t[4];

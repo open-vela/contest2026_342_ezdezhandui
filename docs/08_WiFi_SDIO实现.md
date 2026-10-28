@@ -7543,3 +7543,104 @@ DMA 与 cache、数据线驱动电平。
 **负载读出来始终为零，数据阶段波形上没有可解析内容。**
 
 **要再进一步，必须在主机侧之外观测。**
+
+### AA.99 第 143–144 轮：**按协议文档精确实现 FIFO 读取 —— 结果仍是零**
+
+#### 找到了官方文档里的确切规则
+
+`esp_sdio_slave_protocol.rst`（ESP SDIO 从机协议）：
+
+```
+0x090 - 0x1F7FF are reserved for FIFOs.
+
+The address of CMD53 is related to the length requested to read from or write
+to the slave in a single transfer:
+        requested length = 0x1F800 - address
+
+The slave responds to data that has a length equal to the length field of CMD53.
+In cases where the data is longer than the requested length, the data will be
+zero filled (when sending) or discarded (when receiving).
+```
+
+以及一个完整的例子：
+
+```
+给定 block size = 512，要读 1031 字节：
+1. CMD53 块模式, block count = 2 (1024) 到地址 0x1F3F9 = 0x1F800 - 1031
+2. 再 CMD53 字节模式, byte count = 8 到地址 0x1F7F9 = 0x1F800 - 7
+```
+
+**规则很清楚：地址编码的是"总请求长度"；块模式取整块，余数用字节模式。**
+
+**这解释了我之前"读出来全零"的一个机制**：我用 `addr = 0x1F7C4`（编码请求长度 60）
+却发出 512 字节的块传输 —— **请求长度小于传输长度，整段响应会被零填充。**
+
+#### 按文档精确实现
+
+60 字节小于一个块，所以整包应当是一次**字节模式**传输：
+地址 `0x1F800 - 60 = 0x1F7C4`、count = 60。
+
+真机结果：
+
+```
+esp_hosted_sdio: packet queued: raw=03c0003c len=60
+esp_hosted_sdio: RX byte mode: ret 0, addr 1f7c4, count 60
+esp_hosted_sdio: payload[60] = 00 00 00 ... (全零)
+```
+
+**地址、模式、长度全部符合文档，CMD53 返回成功，数据仍然是零。**
+
+### AA.100 文档里还有一条关键的：中断语义
+
+同一份文档：
+
+```
+SDIO interrupts are "level sensitive". For host interrupts, the slave sends an
+interrupt by pulling the DAT1 line down at a proper time. The host detects when
+the interrupt line is pulled down and reads the INT_ST register to determine the
+source of the interrupt. After that, the host can clear the interrupt bits by
+writing the INT_CLR register and process the interrupt.
+If all the sources are cleared (or masked), the DAT1 line goes inactive.
+```
+
+**两条要点：**
+
+1. **`DAT1` 被拉低 = 从机在向主机通报中断**（这印证了附录 AA.87 的方向判断）；
+2. **主机应当读 `INT_ST` 确定中断源，再写 `INT_CLR` 清除；清干净后 `DAT1` 才会恢复。**
+
+#### 但实测与这两条都对不上
+
+- **`INT_ST` 一直是 0** —— 即从机没有任何待处理的、未被屏蔽的中断源；
+- **写了 `INT_CLR`（全 `0xFF`）之后 `DAT1` 仍然是低**（附录 AA.97）。
+
+**`INT_ST = 0` 是一个决定性的读数**：按文档，它表示**从机当前没有要告诉主机的
+"新包"事件**。
+
+**即：从机的发送 FIFO 里没有数据。**
+
+这与"读出来是零"完全一致 —— **不是读法错了，是没有东西可读。**
+
+### AA.101 那么 `PACKET_LEN = 60` 是什么
+
+`PACKET_LEN` 寄存器读回 `0x03C0003C`（低 20 位 = 60），但 `INT_ST = 0`
+（没有新包中断）。
+
+**两者矛盾。** 按文档，长度寄存器反映 FIFO 里可读的字节数，而 `INT_ST` 的
+"新包"位反映是否刚有包排入。
+
+**唯一自洽的解释是：那个 60 是从机内部状态的残留值，而真正的"有包待取"信号
+从未产生** —— 也就是说，**从机软件的 `sdio_slave_transmit()` 并没有真正把数据
+填进发送 FIFO**（尽管它在日志里说"Send slave up event"）。
+
+### AA.102 最终的判断
+
+| 侧 | 证据 |
+|---|---|
+| **主机侧** | 枚举、卡功能、帧层、寄存器双向读写、块/字节两种传输、DMA/cache、中断清除、地址与长度严格按协议文档 —— **全部实现并验证** |
+| **从机侧（软件层）** | 收到握手、`datapath = 1`、调用 `sdio_slave_transmit()` |
+| **从机侧（硬件层读数）** | **`INT_ST = 0`（无新包中断）、`DAT1` 恒低（中断源未清但有 0 个源）、FIFO 读回全零** |
+
+**协议文档给出了两个互相矛盾的读数（长度说有 60 字节、中断状态说没有事件），
+而实际读出来是零。这说明从机的发送通路没有真正把数据准备好。**
+
+**主机侧已经做到协议文档所要求的一切。**

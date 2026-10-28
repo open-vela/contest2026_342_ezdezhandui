@@ -728,6 +728,11 @@ int esp_hosted_sdio_initialize(void)
                    "TOKEN=%08" PRIx32 "\n",
                    HOSTED_TAG, (i + 1) * 100, len_lo, len_hi, len_x, st,
                    stst, token);
+
+            /* Reading the registers the instant the length appears was tried
+             * and returns 0x32 for every register -- the bus has not settled.
+             * The earlier behaviour (observe for a while, then read) is kept.
+             */
           }
         }
 

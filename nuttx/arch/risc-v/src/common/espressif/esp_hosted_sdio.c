@@ -786,6 +786,19 @@ int esp_hosted_sdio_initialize(void)
                      (tk >> 16) & 0xffffu);
             }
 
+            /* Sample the companion's interrupt line around the read.
+             *
+             * In 1-bit mode the slave announces a queued packet by holding DAT1
+             * low (SDIO_SLAVE_HOSTINT_SEND_NEW_PACKET). Reading DAT1 before and
+             * after says whether the companion considered the transfer taken:
+             * still low afterwards means it is still waiting, high means it let
+             * the buffer go.
+             */
+
+            esp_configgpio(CONFIG_ESPRESSIF_SDMMC_D1, INPUT | PULLUP);
+            syslog(LOG_INFO, "%s: D1 before read = %d\n", HOSTED_TAG,
+                   esp_gpioread(CONFIG_ESPRESSIF_SDMMC_D1));
+
             memset(payload, 0xaa, sizeof(payload));
 
             /* Block-only transfer, matching the reference: the payload lives at
@@ -864,6 +877,9 @@ int esp_hosted_sdio_initialize(void)
                * arithmetic predicted: if the companion lays the payload down
                * anywhere in the block, dumping a few windows finds it.
                */
+
+              syslog(LOG_INFO, "%s: D1 after read  = %d\n", HOSTED_TAG,
+                     esp_gpioread(CONFIG_ESPRESSIF_SDMMC_D1));
 
               if (r == 0)
                 {

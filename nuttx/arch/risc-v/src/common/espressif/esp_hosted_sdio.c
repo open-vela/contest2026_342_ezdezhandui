@@ -739,8 +739,16 @@ int esp_hosted_sdio_initialize(void)
 
               memset(payload, 0, sizeof(payload));
 
-              r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
-                                      nblk * 512u, nblk);
+              /* Byte mode, with the length rounded up to a whole block.
+               *
+               * The reference splits transfers at the block boundary and sends
+               * anything shorter than a block as a byte-mode CMD53. 60 bytes is
+               * short, so byte mode is what it would use here -- and unlike a
+               * block transfer it accepts the unaligned address directly.
+               */
+
+              r = sdio_io_rw_extended(sdio, false, 1, addr, true, payload,
+                                      512u, 0);
 
               syslog(LOG_INFO,
                      "%s: RX ret %d, want addr %05" PRIx32 " -> aligned %05" PRIx32
@@ -763,6 +771,58 @@ int esp_hosted_sdio_initialize(void)
                   syslog(LOG_INFO, "%s: payload[%" PRIu32 "] = %s\n",
                          HOSTED_TAG, len, hex);
                 }
+
+              /* Did the read consume the packet? And is the data somewhere else
+               * in the window? Scan a few block-aligned addresses and report any
+               * that hold something other than zeros.
+               */
+
+              {
+                uint8_t  pl2[4];
+                uint32_t after = 0;
+                uint32_t scan;
+
+                sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &pl2[0]);
+                sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &pl2[1]);
+                sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &pl2[2]);
+                sdio_io_rw_direct(sdio, false, 1, 0x00063, 0, &pl2[3]);
+                after = (uint32_t)pl2[0] | ((uint32_t)pl2[1] << 8) |
+                        ((uint32_t)pl2[2] << 16) | ((uint32_t)pl2[3] << 24);
+
+                syslog(LOG_INFO, "%s: PACKET_LEN after read = %08" PRIx32 "\n",
+                       HOSTED_TAG, after);
+
+                for (scan = 0x1f000u; scan <= 0x1f800u; scan += 0x200u)
+                  {
+                    static uint8_t probe[512] __attribute__((aligned(64)));
+                    int pr;
+                    int nz = 0;
+                    int k;
+
+                    memset(probe, 0, sizeof(probe));
+                    pr = sdio_io_rw_extended(sdio, false, 1, scan, true, probe,
+                                             512u, 1);
+
+                    for (k = 0; k < 512; k++)
+                      {
+                        if (probe[k] != 0)
+                          {
+                            nz++;
+                          }
+                      }
+
+                    if (pr != 0 || nz != 0)
+                      {
+                        syslog(LOG_INFO,
+                               "%s: block %05" PRIx32 ": ret %d nonzero %d "
+                               "first %02x %02x %02x %02x\n",
+                               HOSTED_TAG, scan, pr, nz,
+                               probe[0], probe[1], probe[2], probe[3]);
+                      }
+                  }
+
+                syslog(LOG_INFO, "%s: window scan done\n", HOSTED_TAG);
+              }
             }
           }
       }

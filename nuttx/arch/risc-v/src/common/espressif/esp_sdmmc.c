@@ -1510,6 +1510,27 @@ static int esp_sdmmc_setup_desc(struct esp_sdmmc_dev_s *priv,
       uint32_t chunk = remaining > SDMMC_DMA_MAX_BUF_LEN ?
                        SDMMC_DMA_MAX_BUF_LEN : remaining;
 
+      /* Keep the CPU cache out of the DMA's way.
+       *
+       * The controller writes straight into this buffer, but the CPU may be
+       * holding stale lines for it: without invalidating them the packet that
+       * was just transferred stays invisible and reads back as zeros -- which
+       * is exactly what the companion's first event frame did, even though the
+       * slave had handed it over and cleared PACKET_LEN.
+       *
+       * A transmit goes the other way: the data must reach RAM before the DMA
+       * reads it.
+       */
+
+      if (write)
+        {
+          up_flush_dcache((uintptr_t)addr, (uintptr_t)addr + chunk);
+        }
+      else
+        {
+          up_invalidate_dcache((uintptr_t)addr, (uintptr_t)addr + chunk);
+        }
+
       priv->desc[index].des0   = SDMMC_DESC_OWN | SDMMC_DESC_DIC;
       priv->desc[index].des1   = chunk;
       priv->desc[index].buffer = (uint32_t)addr;

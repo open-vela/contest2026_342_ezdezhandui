@@ -716,7 +716,15 @@ int esp_hosted_sdio_initialize(void)
             uint32_t blk = (len + 511u) & ~511u;
             uint32_t addr = 0x1f800u - len;
 
-            memset(payload, 0, sizeof(payload));
+            /* Pre-fill with a pattern so the read's effect is visible.
+             *
+             * Zeros in the buffer are ambiguous: they mean either "the DMA
+             * wrote zeros" or "the DMA never touched this memory". A buffer
+             * that still holds the pattern afterwards proves the transfer went
+             * somewhere else entirely.
+             */
+
+            memset(payload, 0xaa, sizeof(payload));
 
             /* Block-only transfer, matching the reference: the payload lives at
              * a fixed offset from the end of the window, so the read length is
@@ -747,13 +755,17 @@ int esp_hosted_sdio_initialize(void)
                * block transfer it accepts the unaligned address directly.
                */
 
+              /* Byte mode, exactly the advertised length. The companion knows
+               * how much it queued, so asking for exactly that (rather than a
+               * padded whole block) is the closest match to what it expects.
+               */
+
               r = sdio_io_rw_extended(sdio, false, 1, addr, true, payload,
-                                      512u, 0);
+                                      len, 0);
 
               syslog(LOG_INFO,
-                     "%s: RX ret %d, want addr %05" PRIx32 " -> aligned %05" PRIx32
-                     " skip %" PRIu32 " nblk %" PRIu32 "\n",
-                     HOSTED_TAG, r, addr, aligned, skip, nblk);
+                     "%s: RX ret %d, addr %05" PRIx32 " (512-byte block read)\n",
+                     HOSTED_TAG, r, addr);
 
               if (r == 0)
                 {

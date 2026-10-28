@@ -874,6 +874,30 @@ int esp_hosted_sdio_initialize(void)
                        (tk >> 16) & 0xffffu);
               }
 
+              /* Clear the companion's "new packet" interrupt.
+               *
+               * The slave announces a queued packet by holding DAT1 low
+               * (SDIO_SLAVE_HOSTINT_SEND_NEW_PACKET) and keeps it asserted until
+               * the host acknowledges. This driver never did: it read the packet
+               * and left the interrupt standing, so DAT1 stayed low for the rest
+               * of the session and the companion was, from its own point of
+               * view, still waiting for the read to be acknowledged.
+               */
+
+              {
+                uint32_t clr = 0xffffffffu;
+                int k;
+
+                for (k = 0; k < 4; k++)
+                  {
+                    sdio_io_rw_direct(sdio, true, 1, 0x000d4 + k,
+                                      (uint8_t)((clr >> (8 * k)) & 0xff), NULL);
+                  }
+
+                syslog(LOG_INFO, "%s: companion interrupt cleared after read\n",
+                       HOSTED_TAG);
+              }
+
               if (r == 0)
                 {
                   uint8_t *pl = &payload[skip];

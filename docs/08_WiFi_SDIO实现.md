@@ -3618,3 +3618,91 @@ CIU liveness check: update command did not complete
 **结论：CIU 的命令通路从未运行，且原因不在以上任何一项。**
 下一轮应当从"这颗芯片上 SDMMC 的 cclk_in 究竟由什么产生"入手 ——
 可能性集中在某个尚未发现的时钟门控，或该外设所在的电源域。
+
+---
+
+# 附录 S：**根因找到了 —— SDIO PLL 从未被上电**
+
+## S.1 突破点
+
+在时钟树里追 `sdmmc_ll_select_clk_source()` 的两个可选源时，发现了 IDF 里
+一行**从未被本驱动调用过**的代码（`sd_host_set_clk_div()` 内）：
+
+```c
+#if SDMMC_LL_SDIO_PLL_SUPPORTED
+    if (src == SDMMC_CLK_SRC_SDIO_200M) {
+        sdmmc_ll_enable_sdio_pll(ctlr->hal.dev, true);
+    }
+#endif
+```
+
+它的实现**不是写时钟门控**，而是**在 PMU 里给 PLL 上电**：
+
+```c
+static inline void sdmmc_ll_enable_sdio_pll(sdmmc_hw_t *hw, bool en) {
+    if (en) {
+        REG_SET_BIT(PMU_RF_PWC_REG,           PMU_SDIO_PLL_XPD);          /* 取消掉电 */
+        REG_SET_BIT(PMU_IMM_HP_CK_POWER_REG,  PMU_TIE_HIGH_XPD_SDIOPLL_I2C);
+        REG_SET_BIT(PMU_IMM_HP_CK_POWER_REG,  PMU_TIE_HIGH_XPD_SDIOPLL);
+        REG_SET_BIT(PMU_IMM_HP_CK_POWER_REG,  PMU_TIE_HIGH_GLOBAL_SDIOPLL_ICG);
+        LP_AON_CLKRST.hp_clk_ctrl.hp_sdio_pll0_clk_en = 1;
+        LP_AON_CLKRST.hp_clk_ctrl.hp_sdio_pll1_clk_en = 1;
+        LP_AON_CLKRST.hp_clk_ctrl.hp_sdio_pll2_clk_en = 1;
+    }
+    ...
+}
+```
+
+**这是电源域级别的上电，不是时钟门控。** 之前试过的 SDIO_PLL 之"失败"，
+其实只切了选择位、**从未给 PLL 上电** —— 所以那次实验什么也没证明。
+
+## S.2 补上之后，CIU 立刻开始执行命令
+
+```
+CIU liveness check: update command COMPLETED          <-- 从未出现过
+clock update (clock disabled):  completed
+clock update (clock re-enabled): completed
+```
+
+`cmd=00212000`：`start_command` **自清了**。同一份代码，只多了这一行
+（外加 `esp_clk_tree_enable_src(SOC_MOD_CLK_SDIO_PLL, true)` 与把选择位
+切到 `SDMMC_CLK_SRC_SDIO_200M`）。
+
+寄存器也随之变化：
+
+| | 改前 | 改后 |
+|---|---|---|
+| `clkdiv` | `00000000`（被复位清掉）| **`00009f00`** 恢复正常 |
+| `rintsts` | `00001000`（HLE 卡住）| **`00000000`** |
+| `peri01` | `01000601` | `01c00601`（`hs_mode` / `ls_clk_src_sel` 就位）|
+
+## S.3 逻辑分析仪确认：**时钟真的出来了**
+
+```
+CH1 (CLK): transitions=294     <-- 之前一直是 2~6
+CH0 (CMD): transitions=19
+```
+
+实测时钟半周期约 **0.75 µs（≈660 kHz）**，在识别时钟的合理范围内。
+
+跳变数不是"连续时钟"级别的量级，这与 `lp_enable=1`（低功耗）一致 ——
+**时钟只在命令期间运行、空闲时被门控**，正是 IDF 配置的行为。
+
+## S.4 现在的状态与下一步
+
+命令能执行了、时钟也有了，但 C6 仍然不应答：
+
+```
+esp_sdmmc: timed out waiting for a response
+           (rintsts=00000004 status=00000106 cmd=20018000 cmdarg=00000000)
+probe 1/4..4/4 -> -110
+```
+
+C6 的 console 里也没有任何新的 SDIO 事件。
+
+**所以问题已经从"主机侧完全不动"推进到"主机在正常发命令、从机不应答"。**
+下一轮的方向随之改变：查 C6 侧为什么不应答（例如它是否需要主机先发
+`CMD0`、是否要求先建立某个 GPIO 握手、或 C6 固件的 slave 侧还有未满足的条件）。
+
+> 这一轮的所有读数都指向同一件事：**"CIU 不执行命令"这个持续多轮的核心症状，
+> 根因是它的时钟源 PLL 一直处在掉电状态**，而不是任何一项 SDMMC 寄存器配置。

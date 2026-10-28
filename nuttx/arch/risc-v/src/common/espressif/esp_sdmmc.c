@@ -1832,7 +1832,19 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
 
   /* Let the source propagate before it is routed to the card clock domain. */
 
-  sdmmc_ll_select_clk_source(hw, SDMMC_CLK_SRC_DEFAULT);
+  /* Use the SDIO PLL, and power it up.
+   *
+   * sdmmc_ll_enable_sdio_pll() is not a clock-gate write: it lifts the PLL out
+   * of power-down in the PMU (PMU_RF_PWC_REG.PMU_SDIO_PLL_XPD), ties its
+   * power/clock enables high, and enables its three clock branches in
+   * LP_AON_CLKRST. Espressif only calls it for this source, which is why the
+   * PLL_F160M path was tried before without it -- and why that attempt proved
+   * nothing about the other source.
+   */
+
+  esp_clk_tree_enable_src((soc_module_clk_t)SOC_MOD_CLK_SDIO_PLL, true);
+  sdmmc_ll_enable_sdio_pll(hw, true);
+  sdmmc_ll_select_clk_source(hw, SDMMC_CLK_SRC_SDIO_200M);
   /* div must be > 1, and 2 is what Espressif uses.
    *
    * sdmmc_ll_set_clock_div() has two entirely different branches: for div > 1

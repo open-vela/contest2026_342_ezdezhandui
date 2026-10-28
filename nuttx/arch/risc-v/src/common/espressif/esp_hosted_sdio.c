@@ -454,7 +454,13 @@ int esp_hosted_sdio_initialize(void)
       nxsig_usleep(ESP_HOSTED_SDIO_PROBE_INTERVAL_MS * 1000);
     }
 
-  if (ret < 0)
+  /* NuttX returns OK (zero) on success. Testing for a negative value instead
+   * silently accepted a non-zero success-path return -- sdio_probe() came back
+   * as 53 and was treated as "enumerated" even though it had bailed out before
+   * CMD3/CMD7, leaving the card unselected and every later CMD52 unanswered.
+   */
+
+  if (ret != OK)
     {
       g_hosted_state   = ESP_HOSTED_SDIO_FAILED;
       g_hosted_errcode = ret;
@@ -464,7 +470,8 @@ int esp_hosted_sdio_initialize(void)
     }
 
   g_hosted_state = ESP_HOSTED_SDIO_ENUMERATED;
-  syslog(LOG_INFO, "%s: companion enumerated\n", HOSTED_TAG);
+  syslog(LOG_INFO, "%s: companion enumerated (sdio_probe returned %d)\n",
+         HOSTED_TAG, ret);
 
   /* Card-function bring-up, following the sequence esp-hosted's own host port
    * performs (port/os/idf/src/eh_host_port_sdio.c, card_fn_init):

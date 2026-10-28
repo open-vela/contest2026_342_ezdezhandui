@@ -5369,3 +5369,77 @@ issue CMD52 arg=0x80002000
 
 **下一轮需要把 `waitresponse` 末尾的返回日志补全（这次没匹配上），
 并确认 `sdio_probe` 在 CMD3 之前到底走了哪个分支。**
+
+---
+
+# 附录 W：**又一个真 bug —— 我的成功判据写错了，把失败当成了成功**
+
+## W.1 证据
+
+在"枚举成功"那行加上实际返回值：
+
+```
+esp_hosted_sdio: companion enumerated (sdio_probe returned 53)
+```
+
+**`sdio_probe()` 返回的是 `53`，不是 `0`。**
+
+而上层的判据是：
+
+```c
+if (ret < 0)     /* 失败 */
+  { ... }
+g_hosted_state = ESP_HOSTED_SDIO_ENUMERATED;   /* 其余一律当作成功 */
+```
+
+**`53` 不小于 0，于是被当成了成功** —— 这就是为什么日志里一直打印
+"companion enumerated"，而实际上 `sdio_probe()` 在第 2 条 CMD5 之后就
+`goto err` 退出了，`CMD3`/`CMD7` 从未发出。
+
+## W.2 NuttX 的约定是 `OK`（0），不是"非负"
+
+`sdio_probe()` 的结尾是：
+
+```c
+err:
+  sdio_givelock(dev);
+  return ret;
+```
+
+成功路径是 `return sdio_set_wide_bus(dev)`，其成功值是 **`OK`（0）**。
+**任何非 0 的返回值都表示失败** —— 判据必须是 `ret != OK`。
+
+## W.3 已修复
+
+```c
+/* NuttX returns OK (zero) on success. Testing for a negative value instead
+ * silently accepted a non-zero success-path return ...
+ */
+
+if (ret != OK)
+  { ... 失败 ... }
+```
+
+修复后，日志如实报告：
+
+```
+esp_hosted_sdio: no SDIO response from the companion module: 53
+```
+
+## W.4 这个 bug 的代价
+
+**它让"枚举成功"这个假象持续了整整几轮**，并直接导致我把失败点误判到
+CMD52（`FN0 block size failed: -5`）。
+
+真实情况是：**失败发生在更早的第 2 条 CMD5 之后，返回值 53。**
+
+**教训：判断成功要用框架约定的成功值（这里是 `OK`），不要用"不报错就算过"。**
+这句和附录 S.29 是同一类错误的两面 —— 那一次是把"命令被接受"当"收到响应"，
+这一次是把"非负返回值"当"调用成功"。
+
+## W.5 下一轮
+
+查清 **`53` 从哪来** —— 它出现在第 2 条 CMD5
+（`sdio_sendcmdpoll(dev, SDIO_CMD5, data)`）之后，而该函数的返回值只会来自
+`SDIO_SENDCMD`（本驱动的 `sendcmd`）或 `SDIO_WAITRESPONSE`（本驱动的
+`waitresponse`）。两者目前都被认为只返回 `OK` 或负值，所以 53 的来源需要打点确认。

@@ -737,6 +737,21 @@ int esp_hosted_sdio_initialize(void)
              * somewhere else entirely.
              */
 
+            {
+              uint8_t t[4];
+              uint32_t tk;
+
+              sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &t[0]);
+              sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &t[1]);
+              sdio_io_rw_direct(sdio, false, 1, 0x00046, 0, &t[2]);
+              sdio_io_rw_direct(sdio, false, 1, 0x00047, 0, &t[3]);
+              tk = (uint32_t)t[0] | ((uint32_t)t[1] << 8) |
+                   ((uint32_t)t[2] << 16) | ((uint32_t)t[3] << 24);
+              syslog(LOG_INFO, "%s: TOKEN before read = %08" PRIx32
+                     " (buffers %" PRIu32 ")\n", HOSTED_TAG, tk,
+                     (tk >> 16) & 0xffffu);
+            }
+
             memset(payload, 0xaa, sizeof(payload));
 
             /* Block-only transfer, matching the reference: the payload lives at
@@ -779,6 +794,21 @@ int esp_hosted_sdio_initialize(void)
               syslog(LOG_INFO,
                      "%s: RX ret %d, addr %05" PRIx32 " (512-byte block read, the address actually sent)\n",
                      HOSTED_TAG, r, addr);
+
+              {
+                uint8_t t[4];
+                uint32_t tk;
+
+                sdio_io_rw_direct(sdio, false, 1, 0x00044, 0, &t[0]);
+                sdio_io_rw_direct(sdio, false, 1, 0x00045, 0, &t[1]);
+                sdio_io_rw_direct(sdio, false, 1, 0x00046, 0, &t[2]);
+                sdio_io_rw_direct(sdio, false, 1, 0x00047, 0, &t[3]);
+                tk = (uint32_t)t[0] | ((uint32_t)t[1] << 8) |
+                     ((uint32_t)t[2] << 16) | ((uint32_t)t[3] << 24);
+                syslog(LOG_INFO, "%s: TOKEN after read  = %08" PRIx32
+                       " (buffers %" PRIu32 ")\n", HOSTED_TAG, tk,
+                       (tk >> 16) & 0xffffu);
+              }
 
               if (r == 0)
                 {

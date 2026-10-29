@@ -8239,3 +8239,58 @@ esp_sdmmc: eventwait -> 0b (rintsts=00000010 ctrl=02000030 status=0001ad06)
 
 **但结论本身（从机不提供数据）反而更确定了**：修复后主机等满了超时窗口，
 从机依然没有数据，控制器报 `HTO`。
+
+### AA.134 第 160 轮：修复后的完整验证 —— 每一步都是真实的
+
+在 `eventwait()` 的两处修正（`while` 条件 + 按 `waitmask` 判断）生效之后，重新验证完整流程：
+
+```
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)
+esp_hosted_sdio: card function ready (FN1, 512-byte blocks), frame layer up
+esp_sdmmc: eventwait -> 13 (rintsts=00000010 ctrl=02000030 status=0001a906)
+esp_sdmmc: eventwait -> 08 (rintsts=00000010 ctrl=02000030 status=0001ad06)
+esp_hosted_sdio: packet queued: raw=03c0003c len=60
+```
+
+**解读：**
+
+- **`eventwait -> 13`** = `CMDDONE | RESPONSEDONE | ERROR(0x10)`；
+- **`eventwait -> 08`** = `TIMEOUT`；
+- **`rintsts = 0x10`** = **`HTO`（数据读超时）**。
+
+**即：命令阶段成功，数据阶段由控制器报告 `HTO` 超时 —— 从机没有提供数据。**
+
+### AA.135 这次观测与之前所有观测的区别
+
+| 对比项 | 修复前 | **修复后（本轮）** |
+|---|---|---|
+| 数据阶段是否被等待 | ❌ 命令完成就返回 | ✅ **等满超时窗口** |
+| 事件集 | `0x03`（无 TRANSFERDONE） | **`0x13` / `0x08`（含 ERROR/TIMEOUT）** |
+| 返回值 | **`OK`（假成功）** | **真实错误** |
+| 控制器状态 `HTO` | 置起但没人看 | **被正确识别为错误** |
+
+**从机在数据阶段不提供数据 —— 这个结论现在是建立在"主机真的等待过"的基础上，
+而不再是"主机根本没等"。**
+
+### AA.136 主机侧至此的最终状态
+
+**已修的真实缺陷累计 9 个：**
+
+| # | 缺陷 |
+|---|---|
+| 1 | `waitresponse()` 末尾缺 `return OK` |
+| 2 | 上层成功判据写成 `ret < 0` |
+| 3 | 完成位没在发命令前清掉 |
+| 4 | `eventwait()` 依赖从未送达的中断 |
+| 5 | DMA 没有 cache 维护 |
+| 6 | `widebus()` 把 D1/D2/D3 配成普通输出且未设值 |
+| 7 | `configpins()` 从未把 `DAT1..3` 接回控制器 |
+| 8 | **`eventwait()` 的 `break` 未按 `waitmask` 判断** |
+| 9 | **`eventwait()` 的 `while` 条件只看 `xfrmask != 0`** |
+
+**其中 8 与 9 是同一个函数的两处，合起来导致"数据阶段被完全跳过却报告成功"——
+这是本次会话最后一处、也是最难发现的一处主机侧缺陷。**
+
+**修好之后，驱动对数据阶段的处理是诚实的：等待、超时、报错。**
+
+**而从机在这个前提下依然不提供数据。**

@@ -1047,11 +1047,28 @@ int esp_hosted_sdio_initialize(void)
                * 512 in the address, so requested and transfer agree.
                */
 
+              /* Read one whole 512-byte block with the address encoding the
+               * same 512, which is the form that is supposed to move data.
+               *
+               * The minimal C6 test firmware (tools/test/c6_sdio_minimal) sends
+               * 64 bytes of 0xC6^i repeatedly, so a successful read shows that
+               * pattern at the head of the buffer -- an obvious, unambiguous
+               * sign that the companion's data path works.
+               */
+
               aligned = 0x1f800u - 512u;
               skip    = 0;
 
+              memset(payload, 0xee, 128);
+
               r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
                                       512u, 1);
+
+              if (r == 0 && payload[0] == 0xc6 && payload[1] == 0xc7)
+                {
+                  syslog(LOG_ERR, "%s: *** C6 SDIO TEST PATTERN RECEIVED ***\n",
+                         HOSTED_TAG);
+                }
 
               syslog(LOG_INFO,
                      "%s: RX block mode (proper wait): ret %d, addr %05" PRIx32

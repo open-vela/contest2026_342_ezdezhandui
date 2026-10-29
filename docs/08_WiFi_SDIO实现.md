@@ -9187,3 +9187,55 @@ dma state: des0=8000002e des1=00000200 buf=0x4ff5e700 ctrl=02000030 status=0001a
 
 （`esp_sdmmc_dma_state()` 保留在驱动里 —— 它是一个有用的诊断函数，
 下次接入正常从机时可以直接用它确认 DMA 是否真的跑过。）
+
+### AA.180 第 180–181 轮：**准备了一个能明确定性的实验**
+
+#### 为什么要做它
+
+**179 轮下来，我一直在证明"主机侧没问题"——但那只是排除法，始终缺一个正向对照。**
+
+**需要一个「已知会发数据的从机」。**
+
+#### 最小 SDIO 从机测试固件（C6）
+
+`tools/test/c6_sdio_minimal/`：不含 esp-hosted、不含 WiFi、不含任何协议，只做
+
+```c
+sdio_slave_initialize(&cfg);        /* 同样的引脚 CLK=19 CMD=18 D0..D3=20..23 */
+sdio_slave_start();
+for (;;)
+  sdio_slave_transmit(pattern, 64); /* 反复发 64 字节已知数据 0xC6^i */
+```
+
+**时序用 `SDIO_SLAVE_TIMING_PSEND_PSAMPLE`（与 esp-hosted 的 CP 相同）。**
+已编译好（`prebuilt/c6sdiotest.bin` 174,544 字节）并附 `flash.sh`。
+
+#### P4 侧的准备
+
+读取改成"一个整块 512 字节、地址编码 `0x1F800-512`"，并且在读到数据后检查图案：
+
+```c
+if (r == 0 && payload[0] == 0xc6 && payload[1] == 0xc7)
+  {
+    syslog(LOG_ERR, "%s: *** C6 SDIO TEST PATTERN RECEIVED ***\n", HOSTED_TAG);
+  }
+```
+
+**这样测试结果一眼可辨：要么打出 `*** C6 SDIO TEST PATTERN RECEIVED ***`，
+要么仍然是超时。**
+
+#### 结果怎么读
+
+| 现象 | 结论 |
+|---|---|
+| P4 打出 `*** C6 SDIO TEST PATTERN RECEIVED ***` | ✅ **C6 的 SDIO 从机硬件正常** —— 问题在 esp-hosted 的 CP 配置 |
+| P4 仍超时、数据线仍无活动 | 🔴 **C6 的 SDIO 从机硬件或板级连接有问题** —— 与 esp-hosted 无关 |
+
+#### 当前状态
+
+**P4 侧已准备完毕并上机验证**（读取 `-5`，即超时后 R5 也带错误标志；`dma state` 显示
+描述符仍归 DMA）。
+
+**C6 侧等待烧录 —— 需要按一次 BOOT+RESET 进入下载模式。**
+
+**这是本次排查里唯一一个能把「我的驱动 / esp-hosted」与「这颗 C6 的硬件」明确分开的实验。**

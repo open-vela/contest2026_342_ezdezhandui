@@ -949,17 +949,28 @@ int esp_hosted_sdio_initialize(void)
                * happened.
                */
 
+              /* Byte mode, exactly the documented form for a short packet.
+               *
+               * Every read combination tried so far was measured through an
+               * eventwait() that returned before the data phase, so none of
+               * those results mean anything. Now that the wait is real, start
+               * from what the protocol document prescribes: a byte-mode CMD53
+               * with the address encoding the requested length
+               * (0x1F800 - 60) and a count of 60.
+               */
+
               (void)nblk;
 
-              aligned = 0x1f800u - 60u;
+              aligned = 0x1f800u - len;
               skip    = 0;
 
               r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
-                                      512u, 1);
+                                      (unsigned)len, 0);
 
               syslog(LOG_INFO,
-                     "%s: RX 512-byte block at %05" PRIx32 ": ret %d\n",
-                     HOSTED_TAG, aligned, r);
+                     "%s: RX byte mode (proper wait): ret %d, addr %05" PRIx32
+                     ", count %" PRIu32 "\n",
+                     HOSTED_TAG, r, aligned, len);
 
               /* The previous edits left a second read here that overwrote the
                * byte-mode result: it memset the buffer and then re-read it with

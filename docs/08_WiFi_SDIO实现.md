@@ -8628,3 +8628,80 @@ esp_err_t sdio_slave_transmit(uint8_t *addr, size_t len)
 
 **下一轮先从第 1 条入手：把 `PACKET_LEN` 按"累计计数器"来解释，
 维护一个已读偏移，用它来算本次可读长度。**
+
+### AA.151 第 167 轮：**C6 的 CP 卡在发送上 —— 证明帧确实在从机 FIFO 里**
+
+#### 决定性观测：C6 的日志在 `Send slave up event` 之后完全停住
+
+```
+I (7644) wifi_mcu_example: ESP-Hosted MCU WiFi Example Starting...
+I (659)  main_task: Returned from app_main()
+I (7666) ehcp_core: event_handler: ESP_OPEN_DATA_PATH
+I (7666) ehcp_core: Open Data Path
+I (7666) ehcp_core: Open Data Path: giving host_reset_sem
+I (7668) ehcp_core: host_reset_task: host_reset_sem taken, preparing slave-up TLV
+I (7675) ehcp_core: Send slave up event
+I (7678) SDIO_SLAVE: advertising transfer size 1536
+（之后没有任何日志）
+```
+
+**`sdio_slave_transmit()` 的实现是：**
+
+```c
+esp_err_t sdio_slave_transmit(uint8_t *addr, size_t len)
+{
+        esp_err_t err = sdio_slave_send_queue(addr, len, (void *)timestamp, portMAX_DELAY);
+        ...
+        /* 然后等待该缓冲区被主机消费 */
+}
+```
+
+**它是阻塞的 —— 会一直等到主机把数据读走。**
+
+**而 C6 的日志在 `Send slave up event` 之后就完全停止了（连 WiFi 断连重试那类周期性日志
+都没有再出现，此前每次启动都有几十条）。**
+
+**即：`send_task` 卡在 `sdio_slave_transmit()` 上。**
+
+### AA.152 这条观测证明了三件事
+
+1. **帧确实被交给了 SDIO 从机外设**（否则 `sdio_slave_transmit` 会立即返回）；
+2. **帧确实还留在发送 FIFO 里**（否则 `transmit` 会完成、`send_task` 会继续跑）；
+3. **主机从来没有成功读走它**（否则同上）。
+
+**=> 从机有数据，主机读不到。**
+
+### AA.153 两种读取方式在正确等待下都超时
+
+本轮在 `eventwait()` 修好之后重测了两种读法：
+
+| 读法 | 地址 | requested | transfer | 结果 |
+|---|---|---|---|---|
+| **字节模式** | `0x1F7C4` | 60 | 60 | **`-110`（超时）** |
+| **块模式** | `0x1F600` | 512 | 512 | **`-110`（超时）** |
+
+**两者的 `rintsts` 都是 `0x10`（`HTO`，数据读超时）。**
+
+### AA.154 现在的矛盾已经收窄到一点
+
+**从机侧**：帧在 FIFO 里、`sdio_slave_transmit` 阻塞等待主机读；
+**主机侧**：CMD53 命令被接受（收到 R5）、地址与长度按协议文档、超时正确，
+**但数据线在整个数据阶段保持空闲**（附录 AA.143 的波形：67,730 个时钟周期内
+D0 99.8% 高、D3 100% 高）。
+
+**即：从机有数据要发，却不在数据线上驱动它。**
+
+**这只能是"从机的 SDIO 硬件没有把 FIFO 里的数据搬上数据线"。**
+
+### AA.155 下一次可以做的验证
+
+**如果从机 FIFO 里真的有 60 字节且硬件准备发送，那么在主机发起 CMD53 时，
+从机应当在 DAT0 上驱动数据。**
+
+**波形说它没有。**
+
+**要区分"从机硬件没搬"与"从机搬了但主机采不到"，只剩一个手段：**
+**用示波器直接探 C6 一侧的 DAT0 —— 而不是探同一网络上的 P4 侧。**
+
+**这个区别很关键**：分析仪现在接在 P4 侧，看到的是"网络上有没有电平变化"，
+**无法区分"从机没驱动"与"从机驱动了但这个网络的某处把它衰减/隔离了"**。

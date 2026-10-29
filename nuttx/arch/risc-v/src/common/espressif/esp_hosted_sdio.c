@@ -1014,18 +1014,23 @@ int esp_hosted_sdio_initialize(void)
                * (0x1F800 - 60) and a count of 60.
                */
 
-              (void)nblk;
+              /* Block mode with requested == transfer, now that the wait is real.
+               *
+               * Every earlier variant was measured through an eventwait() that
+               * returned before the data phase, so none of those readings mean
+               * anything. This one asks for a whole 512-byte block and encodes
+               * 512 in the address, so requested and transfer agree.
+               */
 
-              aligned = 0x1f800u - len;
+              aligned = 0x1f800u - 512u;
               skip    = 0;
 
               r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
-                                      (unsigned)len, 0);
+                                      512u, 1);
 
               syslog(LOG_INFO,
-                     "%s: RX byte mode (proper wait): ret %d, addr %05" PRIx32
-                     ", count %" PRIu32 "\n",
-                     HOSTED_TAG, r, aligned, len);
+                     "%s: RX block mode (proper wait): ret %d, addr %05" PRIx32
+                     "\n", HOSTED_TAG, r, aligned);
 
               /* The previous edits left a second read here that overwrote the
                * byte-mode result: it memset the buffer and then re-read it with

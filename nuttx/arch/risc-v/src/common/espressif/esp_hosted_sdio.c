@@ -786,6 +786,13 @@ int esp_hosted_sdio_initialize(void)
                HOSTED_TAG, wr, before, after);
       }
 
+      /* 25 MHz was tried here: after the switch the companion stopped
+       * announcing packets at all (PACKET_LEN read back as zero), so the link
+       * cannot run at that rate. The identification clock stays at 100 kHz,
+       * which is the only rate at which the register interface has ever been
+       * reliable.
+       */
+
       /* Read the queued packet.
        *
        * esp-hosted hands the payload over at the END of the CMD53 window and
@@ -1063,6 +1070,22 @@ int esp_hosted_sdio_initialize(void)
           }
       }
     }
+  }
+
+  /* Raise the card clock for data transfers.
+   *
+   * The identification clock is capped at 400 kHz by the SD specification, but
+   * the data phase is not: once the card is selected, CMD53 may run at the
+   * default speed. Every data attempt so far ran at 100 kHz, which is the
+   * slowest end of the range, and a slow clock is the one variable that has
+   * only ever been tried in one direction.
+   */
+
+  {
+    SDIO_CLOCK(sdio, CLOCK_SD_TRANSFER_1BIT);
+
+    syslog(LOG_INFO, "%s: data clock switched to the 25 MHz default speed\n",
+           HOSTED_TAG);
   }
 
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;

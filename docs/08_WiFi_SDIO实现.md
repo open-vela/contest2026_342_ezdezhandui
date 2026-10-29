@@ -8343,3 +8343,66 @@ RX byte mode (proper wait): ret -110, addr 1f7c4, count 60
 （控制器报 `HTO`）。**
 
 **这是一个干净的、可复现的、前提完整的结论。**
+
+### AA.141 第 162–164 轮：频率两个方向都试过；CMD53 参数编码与 IDF 逐位一致
+
+#### 频率：这次试了"更快"（此前只试过更慢）
+
+此前只试过 100 / 400 / 403 kHz —— **全是更慢的方向**。本轮首次试更高的速率。
+
+把 `CLOCK_SD_TRANSFER_1BIT` 的卡分频设为 1（`200 MHz / 8 / 1 = 25 MHz`，SD 默认速度），
+并在第一次 CMD53 之前切换：
+
+```
+esp_hosted_sdio: data clock -> 25 MHz before the first CMD53
+esp_hosted_sdio: packet queued: raw=00000000 len=0
+```
+
+**`PACKET_LEN` 读回 `0` —— 从机不再通告任何数据包。**
+
+**即：25 MHz 下连寄存器通信都失效了，这条链路根本跑不了那个速率。**
+
+**频率问题的完整答案：**
+
+| 时钟 | 结果 |
+|---|---|
+| **25 MHz**（SD 默认速度）| 🔴 **`PACKET_LEN` 变 0，链路失效** |
+| 403 kHz（实测）| 命令正常，数据超时 |
+| 400 kHz | 命令正常，数据超时 |
+| **100 kHz** | ✅ **唯一稳定的速率**（命令正常，数据仍超时）|
+
+**不是"某个频率能通"，而是"只有慢速能用，而慢速下数据仍不通"。**
+该改动已撤回（会破坏链路），时钟分频恢复原值。
+
+#### CMD53 参数编码：与 IDF 逐位一致
+
+对照 `sd_protocol_defs.h`（IDF）与 NuttX 的 `struct sdio_cmd53`：
+
+| 位 | IDF | NuttX |
+|---|---|---|
+| [31] | `SD_ARG_CMD53_READ/WRITE` | `rw_flag` |
+| [30:28] | `FUNC_SHIFT 28`、`FUNC_MASK 0x7` | `function_number` |
+| [27] | `BLOCK_MODE (1<<27)` | `block_mode` |
+| [26] | `INCREMENT (1<<26)` | `op_code` |
+| [25:9] | `REG_SHIFT 9`、`REG_MASK 0x1ffff` | `register_address` |
+| [8:0] | `LENGTH_SHIFT 0`、`LENGTH_MASK 0x1ff` | `byte_block_count` |
+
+**逐位一致 —— 参数编码不是问题。**
+
+**这同时被波形解码侧面印证**：此前解出的 `arg=0x1fef8801` 按这套位域分解得到
+`addr=0x1F7C4 / blk=1 / rw=0`，与驱动意图完全相符。
+
+### AA.142 目标第 3 条至此的对照清单
+
+| 对照项 | 结论 |
+|---|---|
+| slot-1 信号映射 | ✅ 一致 |
+| `DAT3` 必须为高（选 SD 模式）| ⚠️ 曾偏离，**已改回** |
+| `DAT1` 保留用于 SDIO 中断 | ✅ 一致 |
+| 块大小（512）| ✅ 一致 |
+| 字节模式的 `blklen`/`count` 处理 | ✅ 一致 |
+| DMA 缓冲区 4 字节对齐 | ✅ 一致 |
+| **CMD53 参数编码** | ✅ **逐位一致** |
+| R5 的 CRC 检查 | ⚠️ 曾关闭，**已恢复** |
+
+**可对照的部分已经对照完了。**

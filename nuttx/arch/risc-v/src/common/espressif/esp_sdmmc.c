@@ -972,7 +972,7 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
       case CLOCK_MMC_TRANSFER:
       case CLOCK_SD_TRANSFER_1BIT:
       case CLOCK_SD_TRANSFER_4BIT:
-        div = 0;                /* 160 MHz / 2 = 80 MHz    */
+        div = 0;
         break;
     }
 

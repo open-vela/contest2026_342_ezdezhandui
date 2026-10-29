@@ -9344,3 +9344,64 @@ Guru Meditation Error: Core 0 panic'ed (Store/AMO access fault)
 
 **第三层的结果最有说服力：官方栈在这条链路上连 CMD52 寄存器都读不到，
 而本驱动读到了合法值并完成了 `OPEN_DATA_PATH` 握手。**
+
+### AA.184 第 189–190 轮：**P4 恢复；零协议从机对照跑通"通告"阶段**
+
+#### P4 恢复
+
+卡在 ROM 下载模式（`boot:0x7 (DOWNLOAD)`），用 `esptool --after hard_reset` 复位后回到
+NuttShell。**关键教训：`esptool` 的 USB 复位序列会把 P4 留在下载模式，需要单独一次
+`--before no_reset --after hard_reset` 才能真正启动。**
+
+顺带解决了一个一直干扰排查的问题：**Tabby 的串口标签页会独占 `/dev/ttyUSB*`**，
+导致 esptool 报 `Could not exclusively lock port`。关掉标签页后一切正常。
+
+#### C6 现在跑的是最小测试固件（零协议）
+
+```
+I (241) c6sdio: sdio_slave_initialize ...
+I (241) c6sdio: sdio_slave_start done, pins CLK=19 CMD=18 D0..D3=20,21,22,23
+（之后无输出 —— sdio_slave_transmit 阻塞）
+```
+
+**即：没有 esp-hosted、没有 WiFi、没有协议，只有「初始化从机 + 循环发 64 字节图案」。**
+
+#### P4 侧读到的完整记录
+
+```
+esp_hosted_sdio: slave LEN=40 00 00 TOKEN=00001000      (连续多次，值稳定)
+esp_hosted_sdio: packet queued: raw=04000040 len=64
+esp_hosted_sdio: TOKEN before read = 00001000 (buffers 0)
+esp_hosted_sdio: RX block mode (proper wait): ret -5, addr 1f7c0
+esp_sdmmc: dma state: des0=8000002e des1=00000040 buf=04ff5e700 ctrl=02000030
+esp_hosted_sdio: TOKEN after read  = 00000000 (buffers 0)
+```
+
+**逐项解读：**
+
+| 项 | 值 | 含义 |
+|---|---|---|
+| **`LEN`** | `40 00 00` = **64** | **正好是测试固件的载荷大小** —— 从机通告正确 |
+| **`packet queued`** | `raw=04000040 len=64` | 驱动解析出 64 字节 |
+| **读取地址** | `0x1F7C0` = `0x1F800 - 64` | 按通告长度编码 ✅ |
+| **DMA 描述符** | `des1 = 0x40 = 64` | 缓冲区大小正确 ✅ |
+| **`TOKEN`（读前）** | `0x00001000` → bits27:16 = **0** | **从机提供的发送缓冲区数 = 0** |
+| **`TOKEN`（读后）** | `0x00000000` | 仍为 0 |
+| **数据读取** | `ret -5` | **失败** |
+
+**对照：esp-hosted 作从机时 `TOKEN = 0x00021000` → bits27:16 = 2（两个缓冲区）。**
+
+#### 这一轮确立的事实
+
+1. **C6 的 `sdio_slave` 初始化、引脚映射、命令响应全部正常** —— 用一个零协议固件
+   独立复现了「枚举成功 + 通告数据包」；
+2. **主机侧的读取设置完全正确**（地址按通告长度编码、DMA 描述符大小匹配）；
+3. **而数据读取仍然失败** —— 且**这是在从机侧零协议、零状态的前提下**；
+4. **测试固件用 `SDIO_SLAVE_SEND_PACKET` 模式**，`TOKEN` 报 0 个缓冲区 ——
+   与 esp-hosted（STREAM 模式、2 个缓冲区）不同，**这个差异值得单独查**。
+
+#### 下一步
+
+**`TOKEN` 的缓冲区计数从机报 0 —— 需要核实这个字段在 PACKET 模式下的语义**
+（`sdio_slave_send_queue` 之后硬件应开放缓冲区）。**如果 PACKET 模式下这个字段本就不更新，
+那它就是无关的；如果它应当更新却没更新，那就是从机侧的关键线索。**

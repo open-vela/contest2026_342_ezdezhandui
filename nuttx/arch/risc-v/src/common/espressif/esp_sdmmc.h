@@ -119,8 +119,6 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno);
 
 void esp_sdmmc_route_pins(void);
 
-int esp_sdmmc_enter_4bit(void);
-
 void esp_sdmmc_dma_state(void);
 
 /****************************************************************************

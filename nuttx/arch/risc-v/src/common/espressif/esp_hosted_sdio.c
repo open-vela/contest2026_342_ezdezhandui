@@ -612,12 +612,6 @@ int esp_hosted_sdio_initialize(void)
       }
   }
 
-  /* 4-bit was tried here with every other defect fixed: switching DAT1..DAT3
-   * to the controller and setting the card width panics the P4 with a store
-   * access fault, before any data transfer happens. 1-bit remains the only
-   * width this link survives.
-   */
-
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;
 
@@ -1062,13 +1056,21 @@ int esp_hosted_sdio_initialize(void)
                * sign that the companion's data path works.
                */
 
-              aligned = 0x1f800u - 512u;
+              /* Read exactly what the companion announced, in byte mode.
+               *
+               * The minimal test firmware uses SDIO_SLAVE_SEND_PACKET, and in
+               * packet mode the host reads the announced length as a single
+               * byte-mode transfer at 0x1F800 - len. The old 512-byte block read
+               * asked for more than was queued, which the protocol zero fills.
+               */
+
+              aligned = 0x1f800u - len;
               skip    = 0;
 
               memset(payload, 0xee, 128);
 
               r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
-                                      512u, 1);
+                                      (unsigned)len, 0);
 
               if (r == 0 && payload[0] == 0xc6 && payload[1] == 0xc7)
                 {

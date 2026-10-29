@@ -8923,3 +8923,69 @@ esp_err_t sdio_slave_transmit(uint8_t *addr, size_t len)
 
 **这不是驱动能修复的问题。** 剩下的手段都在主机侧之外：
 示波器探 C6 侧的 DAT0、已知良好的 SDIO 从机对照、或厂商工具。
+
+### AA.167 第 173 轮：**修正一处推断 —— "日志停住"不足以证明 `send_task` 卡住**
+
+附录 AA.151/AA.163 里我根据"C6 的日志在 `Send slave up event` 之后完全停住"推断
+`send_task` 卡在 `sdio_slave_transmit()` 上。
+
+**本轮检查发现这个推断的证据不够：**
+
+本次启动的完整日志（`Send` 前后 30 行）：
+
+```
+I (619) ehcp_wifi_itwt: iTWT feature extension init ok
+I (623) ehcp_wifi: WiFi feature init ok
+I (627) ehcp_core: auto_feat_init_task: all extensions initialised
+I (633) ehcp_core: ESP-Hosted core initialized
+I (637) main_task: Started on CPU0
+I (640) main_task: Calling app_main()
+I (644) wifi_mcu_example: ESP-Hosted MCU WiFi Example Starting...
+I (659) main_task: Returned from app_main()
+I (7666) ehcp_core: event_handler: ESP_OPEN_DATA_PATH
+I (7666) ehcp_core: Open Data Path
+I (7666) ehcp_core: Open Data Path: giving host_reset_sem
+I (7668) ehcp_core: host_reset_task: host_reset_sem taken, preparing slave-up TLV
+I (7675) ehcp_core: Send slave up event
+I (7678) SDIO_SLAVE: advertising transfer size 1536
+```
+
+**注意：`(659) main_task: Returned from app_main()` 之后到 `(7666)` 之间是 7 秒的静默，
+而 `Send slave up event` 之后也是静默 —— **两者形态相同**。
+
+**即：这个固件版本本来就在空闲时不打日志。** 我此前拿"之前每次启动有几十条 WiFi 断连重试"
+来对比，**但那几十条来自更早的固件/配置**（当时还没发 `OPEN_DATA_PATH`，CP 一直停在
+`wait for data path to be opened` 的循环里，所以反复重试并打日志）。
+
+**现在 CP 收到了 `OPEN_DATA_PATH`、进入了正常状态，自然就不再打那些重试日志了。**
+
+### AA.168 因此需要退一步
+
+**"日志停住"不能作为"`send_task` 卡住"的证据。** 它同样可以解释为：
+
+- CP 一切正常、只是没有更多要打印的东西；
+- 或者 `send_task` 确实在等主机读（这是 `sdio_slave_transmit` 的正常行为）。
+
+**而 `sdio_slave_transmit()` 阻塞等待主机读，本来就是**设计行为** ——
+主机没读走，它当然会等。**
+
+**所以"从机 FIFO 里有数据"这个结论仍然成立（`transmit` 会被调用、会因为没读走而等待），
+但"CP 卡住/异常"这个推断不成立 —— 那是它的预期行为。**
+
+### AA.169 结论回到更朴素的形式
+
+**证据能支持的只有这些：**
+
+| 事实 | 证据强度 |
+|---|---|
+| 主机：CMD53 被干净接受、无任何错误标志 | ✅ 强（R5 原始值解码）|
+| 主机：数据阶段等满超时、控制器报 `HTO` | ✅ 强（`eventwait -> 0b` + `rintsts=0x10`）|
+| 波形：数据阶段四条数据线全程空闲 | ✅ 强（67,730 个时钟周期）|
+| 从机：`sdio_slave_transmit` 被调用 | ✅ 中（读源码 + 固件行为）|
+| 从机 FIFO 有数据 | ⚠️ **中**（依赖对 `transmit` 阻塞的解读）|
+| 从机硬件没发送 | ⚠️ **中**（同样依赖那个解读）|
+
+**最硬的三条都在主机侧和波形侧，而它们说的是同一件事：
+主机按协议发起了合法的读取，数据线上什么都没有。**
+
+**从机侧的推断（FIFO 有数据 / 硬件没发）是合理的，但不是硬证据。**

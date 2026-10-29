@@ -612,6 +612,12 @@ int esp_hosted_sdio_initialize(void)
       }
   }
 
+  /* 4-bit was tried here with every other defect fixed: switching DAT1..DAT3
+   * to the controller and setting the card width panics the P4 with a store
+   * access fault, before any data transfer happens. 1-bit remains the only
+   * width this link survives.
+   */
+
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;
 

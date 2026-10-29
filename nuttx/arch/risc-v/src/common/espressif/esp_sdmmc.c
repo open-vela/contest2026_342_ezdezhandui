@@ -740,6 +740,42 @@ void esp_sdmmc_dma_state(void)
          *(volatile uint32_t *)&hw->status);
 }
 
+/****************************************************************************
+ * Name: esp_sdmmc_enter_4bit
+ *
+ * Description:
+ *   Hand DAT1..DAT3 back to the controller and put the card in 4-bit mode.
+ *
+ *   DAT3 was being held high as a plain GPIO (the mode-select line). In 4-bit
+ *   mode it is a data line, so it has to be routed to the controller first --
+ *   otherwise the controller drives/receives a line that is still a GPIO.
+ *
+ ****************************************************************************/
+
+int esp_sdmmc_enter_4bit(void)
+{
+  struct esp_sdmmc_dev_s *priv = &g_sdmmc;
+  int d3 = CONFIG_ESPRESSIF_SDMMC_D3;
+
+  if (d3 >= 0)
+    {
+      esp_rom_gpio_connect_out_signal(d3, SD_CARD_CDATA3_2_PAD_OUT_IDX,
+                                      false, false);
+      esp_rom_gpio_connect_in_signal(d3, SD_CARD_CDATA3_2_PAD_IN_IDX, false);
+    }
+
+  esp_configgpio(CONFIG_ESPRESSIF_SDMMC_D1, INPUT | OUTPUT | PULLUP | DRIVE_3);
+  esp_configgpio(CONFIG_ESPRESSIF_SDMMC_D2, INPUT | OUTPUT | PULLUP | DRIVE_3);
+  if (d3 >= 0)
+    {
+      esp_configgpio(d3, INPUT | OUTPUT | PULLUP | DRIVE_3);
+    }
+
+  esp_sdmmc_widebus((struct sdio_dev_s *)priv, true);
+
+  return OK;
+}
+
 void esp_sdmmc_route_pins(void)
 {
   esp_sdmmc_configpins(CONFIG_ESPRESSIF_SDMMC_SLOT,

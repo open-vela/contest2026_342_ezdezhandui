@@ -1975,6 +1975,25 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
 
         if (st & SDMMC_ALL_ERRORS)
           {
+            /* Name every error bit the controller raised, not just "an error".
+             *
+             * RINTSTS bits: 1 RE, 3 DTO, 4 HTO, 5 FRUN, 6 HLE, 7 SBE, 8 BDS,
+             * 9 BSF, 10 EB, 11 DCE, 12 RTO, 13 DRTO, 15 EBE, 16 SBCI.
+             */
+
+            syslog(LOG_ERR,
+                   "esp_sdmmc: data-phase error bits raw=%08" PRIx32
+                   " [re=%u dto=%u hto=%u frun=%u hle=%u sbe=%u bds=%u bsf=%u"
+                   " eb=%u dce=%u rto=%u drto=%u ebe=%u sbci=%u]\n",
+                   st,
+                   (unsigned)((st >> 1) & 1),  (unsigned)((st >> 3) & 1),
+                   (unsigned)((st >> 4) & 1),  (unsigned)((st >> 5) & 1),
+                   (unsigned)((st >> 6) & 1),  (unsigned)((st >> 7) & 1),
+                   (unsigned)((st >> 8) & 1),  (unsigned)((st >> 9) & 1),
+                   (unsigned)((st >> 10) & 1), (unsigned)((st >> 11) & 1),
+                   (unsigned)((st >> 12) & 1), (unsigned)((st >> 13) & 1),
+                   (unsigned)((st >> 15) & 1), (unsigned)((st >> 16) & 1));
+
             sdmmc_ll_clear_interrupt(hw, st & SDMMC_ALL_ERRORS);
             priv->xfrmask |= SDIOWAIT_ERROR;
           }

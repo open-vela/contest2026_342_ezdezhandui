@@ -9468,3 +9468,84 @@ I (241) c6sdio: sdio_slave_start done, pins ...
 都已确认无误，而数据阶段由控制器报错。**
 
 **这是本次排查中对照条件最干净的一次失败** —— 两边都没有任何协议或状态可以解释它。
+
+### AA.186 第 191 轮（续）：**找到确切的错误位 —— 这是整个排查的答案**
+
+#### 先修掉一处我自己造成的状态污染
+
+日志里在这次读之前有一次**写入测试**（我早先加的诊断，一直没删干净）：
+
+```
+esp_hosted_sdio: TX block write (proper wait): ret -5
+```
+
+**那次失败的写把控制器留在了发送模式** —— 证据是当时 `rintsts = 0x10`，
+而：
+
+```c
+#define SDMMC_TXDR   (1u << 4)   /* TX FIFO data request */
+```
+
+**`0x10` 正是 `TXDR`（"TX FIFO 请求数据"）。** 于是随后的读是在一个"已经准备发送"的
+控制器上测的。**已删除该写入测试。**
+
+#### 修掉之后，错误位终于被打出来
+
+```
+esp_sdmmc: data-phase error bits raw=00000080
+  [re=0 dto=0 hto=0 frun=0 hle=0 sbe=1 bds=0 bsf=0 eb=0 dce=0 rto=0 drto=0 ebe=0 sbci=0]
+
+esp_sdmmc: data-phase error bits raw=00008008
+  [re=0 dto=1 hto=0 frun=0 hle=0 sbe=0 bds=0 bsf=0 eb=0 dce=0 rto=0 drto=0 ebe=1 sbci=0]
+```
+
+**三个错误位，全是指向同一件事：**
+
+| 位 | 名称 | 含义 |
+|---|---|---|
+| **`SBE`**（bit 7）| **Start Bit Error** | **从机没有发出数据包的起始位** |
+| **`DTO`**（bit 3）| **Data Timeout** | **数据没有在超时窗口内到达** |
+| **`EBE`**（bit 15）| **End Bit Error** | **结束位不正确** |
+
+**这是 SDIO/DW-MSHC 里"卡没有驱动数据线"的标准错误组合。**
+
+#### 这一刻的全部条件（都是干净的）
+
+| 项 | 状态 |
+|---|---|
+| 从机固件 | **零协议**（无 esp-hosted、无 WiFi、无状态机）|
+| 从机初始化 | ✅ `sdio_slave_initialize` + `sdio_slave_start` 成功 |
+| RX 缓冲区 | ✅ 已挂载 2 个（`registered 2 receive buffers`）|
+| 从机通告 | ✅ `LEN=40 00 00` = **64 字节**，值稳定 |
+| 发送缓冲区 | ✅ `TOKEN=00021000` → **2 个** |
+| 主机 CMD53 | ✅ 参数逐位正确（`arg=0x17ef8040`）|
+| 从机 R5 | ✅ `0x2000`，**无错误标志** |
+| 控制器状态 | ✅ 无污染（本轮已清除）|
+| 时钟 | ✅ 数据阶段 67,730 个周期在跑（此前波形实测）|
+| **数据线** | 🔴 **从机不驱动** —— `SBE` + `DTO` + `EBE` |
+
+#### 结论
+
+**C6 的 SDIO 从机外设：命令层完全正常（枚举、CMD52 读写、通告数据包、开放发送缓冲区），
+但数据阶段不驱动数据线。**
+
+**这不是驱动能修复的问题，也不是 esp-hosted 配置的问题** ——
+**一个只做 `sdio_slave_initialize` + `sdio_slave_start` + `sdio_slave_transmit` 的
+最小固件复现了完全相同的现象。**
+
+**ESP-IDF 自己的官方主机栈在同一块 P4 上跑同一颗 C6，连 CMD52 寄存器都读不到 ——
+比本驱动更早失败。**
+
+#### 本次会话对目标三个问题的最终答复
+
+**问题 1（频率）**：不是。两个方向都试过 —— 25 MHz 断链（根因是 CCCR 高速模式未协商，
+已补上）、100 kHz 稳定但数据仍不通、400/403 kHz 命令正常数据超时。
+
+**问题 2（结合 Tabby 日志）**：是整件事的转折点。产出：`RESP0` 一直不变、
+`cmdarg=0x300`、C6 侧的 `wait for data path to be opened`、`Open/Close Data Path` 时序、
+以及最后通过 Tabby 缓冲区才看到的完整错误位。
+
+**问题 3（逐行对照 IDF）**：产出 10 个真实缺陷 + 4 处对齐修正，
+并在最后用"把 IDF 官方主机栈烧到同一块板"做了实现层对照。
+
+**核心结论**：**C6 的 SDIO 从机数据通路不工作。**

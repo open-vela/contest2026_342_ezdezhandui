@@ -8464,3 +8464,82 @@ D3 采样: 0 的个数 0,    1 的个数 67730     <- 全高
 3. 用厂商工具检查 C6 的 `sdio_slave` 数据通路。
 
 **本次会话在 WiFi 这一项上已经把主机侧做到尽头。**
+
+### AA.146 第 166 轮：**读 C6 固件发现——从机配置为高速模式，而主机从未协商**
+
+#### C6 的构建配置
+
+```
+CONFIG_EH_TRANSPORT_CP_SDIO_HIGH_SPEED=y
+CONFIG_EH_TRANSPORT_CP_SDIO_MODE_SW_AGGR=y
+CONFIG_EH_TRANSPORT_CP_SDIO_TX_Q_SIZE=20
+```
+
+而 `eh_cp_master_config.h`：
+
+```c
+#ifdef CONFIG_EH_TRANSPORT_CP_SDIO_HIGH_SPEED
+#  define EH_CP_SDIO_HIGH_SPEED       1
+#  define EH_CP_SDIO_CLOCK_FREQ_KHZ   40000     /* 40 MHz */
+#else
+#  define EH_CP_SDIO_HIGH_SPEED       0
+#  define EH_CP_SDIO_CLOCK_FREQ_KHZ   20000     /* 20 MHz */
+#endif
+```
+
+且 `sdio_slave_initialize()` 的配置里：
+
+```c
+.flags = SDIO_SLAVE_FLAG_HIGH_SPEED,
+```
+
+**即：从机被配置为高速模式，期望 40 MHz，并要求主机通过 CCCR 协商高速能力。**
+
+**而本驱动从未碰过 CCCR 的高速控制位。**
+
+#### 补上协商
+
+CCCR `0x13`：bit 0 = `SHS`（支持高速）、bit 1 = `EHS`（启用）。
+
+真机结果：
+
+```
+esp_hosted_sdio: high speed: card reports 01, enable ret 0, now 03
+```
+
+**卡报告 `0x01`（支持高速），写入后变成 `0x03`（已启用）。**
+
+**这是一处真实缺失的步骤 —— 卡一直工作在"它以为是高速模式"而主机没同意的状态下。**
+
+#### 副带效果：25 MHz 不再断链
+
+此前（第 163 轮）曾把时钟设到 25 MHz，结果 `PACKET_LEN` 读回 `0`、链路失效。
+**在补上高速协商之后重试同样的 25 MHz：**
+
+```
+high speed: clock raised
+packet queued: raw=03c0003c len=60          <- 寄存器通信正常！
+RX byte mode (proper wait): ret -110         <- 但数据阶段仍超时
+```
+
+**即：高速协商确实修复了"25 MHz 下链路失效"这个问题** —— 说明它是真实缺失的一步。
+
+#### 但数据阶段仍然超时
+
+**`ret -110`，`rintsts = 0x10`（`HTO`），与 100 kHz 时完全一样。**
+
+**所以：高速协商是真实缺陷（已修），但不是数据阶段不通的原因。**
+
+### AA.147 这一轮的性质
+
+**它补上了一处真实的协议缺失（高速协商），并解释了一个此前无法解释的现象
+（25 MHz 下为什么链路会失效）。**
+
+**但它没有改变最终结论：数据阶段仍然超时。**
+
+**至此从 C6 固件里读到的、与主机侧有关的配置项都已核对并补齐：**
+- `GPIO_RESET = -1`（不使用复位 GPIO）✓
+- `PIN_CMD/CLK/D0..D3`（18/19/20/21/22/23）✓
+- `HIGH_SPEED = y` → **已补上主机侧协商** ✓
+- `TIMING = PSEND_PSAMPLE` → 主机侧边沿组合都试过
+- `MODE = SW_AGGR`、`TX_Q_SIZE = 20` —— 从机侧内部，不影响主机

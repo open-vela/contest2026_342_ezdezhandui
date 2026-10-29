@@ -564,6 +564,54 @@ int esp_hosted_sdio_initialize(void)
       }
   }
 
+  /* Enable high speed on the card.
+   *
+   * The companion is built with CONFIG_EH_TRANSPORT_CP_SDIO_HIGH_SPEED=y, which
+   * passes SDIO_SLAVE_FLAG_HIGH_SPEED to sdio_slave_initialize() and sets
+   *   EH_CP_SDIO_CLOCK_FREQ_KHZ = 40000
+   * -- it is configured for the 40 MHz high-speed mode and expects the host to
+   * negotiate it through the CCCR. This driver never touched that register, so
+   * the card has been running its slave in high-speed mode without the host ever
+   * having agreed to it.
+   *
+   * CCCR 0x13: bit 0 = SHS (supports high speed), bit 1 = EHS (enable it).
+   */
+
+  {
+    uint8_t hs = 0;
+    int rr = sdio_io_rw_direct(sdio, false, 0, 0x13, 0, &hs);
+
+    if (rr == OK && (hs & 0x01) != 0)
+      {
+        int wr = sdio_io_rw_direct(sdio, true, 0, 0x13, hs | 0x02, NULL);
+        uint8_t back = 0;
+
+        sdio_io_rw_direct(sdio, false, 0, 0x13, 0, &back);
+
+        syslog(LOG_INFO,
+               "%s: high speed: card reports %02x, enable ret %d, now %02x\n",
+               HOSTED_TAG, hs, wr, back);
+
+        /* High speed needs the clock raised as well as the CCCR bit.
+         *
+         * The earlier 25 MHz attempt was made without this negotiation and the
+         * link stopped answering; now that both sides have agreed to high speed
+         * the rate can be raised with the protocol settled.
+         */
+
+        if (back & 0x02)
+          {
+            SDIO_CLOCK(sdio, CLOCK_SD_TRANSFER_1BIT);
+            syslog(LOG_INFO, "%s: high speed: clock raised\n", HOSTED_TAG);
+          }
+      }
+    else
+      {
+        syslog(LOG_INFO, "%s: high speed: card reports %02x (ret %d)\n",
+               HOSTED_TAG, hs, rr);
+      }
+  }
+
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;
 

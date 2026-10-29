@@ -8543,3 +8543,88 @@ RX byte mode (proper wait): ret -110         <- 但数据阶段仍超时
 - `HIGH_SPEED = y` → **已补上主机侧协商** ✓
 - `TIMING = PSEND_PSAMPLE` → 主机侧边沿组合都试过
 - `MODE = SW_AGGR`、`TX_Q_SIZE = 20` —— 从机侧内部，不影响主机
+
+### AA.148 第 166 轮：**结论再次修订 —— 从机 FIFO 里应该有数据，问题在"主机怎么读"**
+
+继续读 C6 固件的发送路径，逐项排除了几个可能：
+
+#### 1. TX 缓冲区是 DMA 能力的
+
+```c
+tx_aggr_buf = heap_caps_malloc(sdio_rx_buf_size, MALLOC_CAP_DMA);
+assert(tx_aggr_buf);
+```
+
+**用 `MALLOC_CAP_DMA` 分配** —— 满足 `sdio_slave_send_queue()` 的
+`esp_ptr_dma_capable()` 前置检查。**不是这个问题。**
+
+#### 2. SW_AGGR 路径**没有** `datapath` 守卫
+
+STREAM 路径里有：
+
+```c
+if (!datapath || !buf.payload || ...) { free_tx_buf(&buf); continue; }
+```
+
+**而 SW_AGGR 路径（本例所用的模式）的守卫是：**
+
+```c
+if (!buf.payload || !buf.payload_len ||
+    buf.payload_len + offset > sdio_rx_buf_size) {
+        /* drop invalid frame */
+}
+```
+
+**没有 `datapath` 判断** —— 即帧不会因为 `datapath == 0` 被丢弃。
+
+#### 3. `sdio_slave_transmit()` 会阻塞直到主机读走
+
+```c
+esp_err_t sdio_slave_transmit(uint8_t *addr, size_t len)
+{
+        ...
+        esp_err_t err = sdio_slave_send_queue(addr, len, (void *)timestamp, portMAX_DELAY);
+        ...
+        // 然后等待该缓冲区被主机消费
+}
+```
+
+**如果主机从不读走，这个调用会一直阻塞，`send_task` 也就停住。**
+
+#### 综合起来
+
+**帧被交给了 `sdio_slave_transmit()`，缓冲区是 DMA 能力的，发送路径没有 `datapath` 守卫。**
+
+**=> 从机的发送 FIFO 里应该有那 60 字节。**
+
+**而主机读出来是"超时 / 什么都没有"。**
+
+**即：问题在"主机如何读"，而不是"从机有没有数据"。**
+
+### AA.149 这个判断与之前的证据如何共存
+
+| 证据 | 按"从机有数据"解释 | 按"从机没数据"解释 |
+|---|---|---|
+| `PACKET_LEN` = 60 | ✅ 真有 60 字节待读 | 需要解释成残值 |
+| `TOKEN` 从 0 变 2 | ✅ 从机开放了缓冲区 | 勉强 |
+| `INT_RAW = 0` | ⚠️ 需要解释（STREAM 模式下中断可能只表示"可以写了"）| ✅ 没有数据 |
+| 数据阶段 D0 全空闲 | ⚠️ 需要解释 | ✅ 从机不发 |
+| `sdio_slave_transmit` 阻塞 | ✅ 说明在等主机读 | ✅ 也可能是别的原因 |
+
+**两种解释都能自洽，但"从机有数据"这一侧有多条直接证据（`PACKET_LEN`、`TOKEN`、
+发送路径分析）。**
+
+### AA.150 下一轮的方向
+
+**如果从机 FIFO 里真有 60 字节，那问题就是主机的读取方式。** 值得逐个排除：
+
+1. **`sending_mode = SDIO_SLAVE_SEND_STREAM`** —— 从机用的是**流模式**，
+   而 `PACKET_LEN` 在流模式下可能是**累计写入量**而不是"待读量"。
+   **即：主机应当读的是"累计量减去已读量"。**
+   目前主机每次都从头读，可能读的位置不对；
+2. **读取之后要"确认"** —— 协议文档第 5 步是"Update the read length"，
+   主机需要维护已读计数并在后续读取时使用；
+3. **STREAM 模式下可能要连续读**，而不是读一次就超时。
+
+**下一轮先从第 1 条入手：把 `PACKET_LEN` 按"累计计数器"来解释，
+维护一个已读偏移，用它来算本次可读长度。**

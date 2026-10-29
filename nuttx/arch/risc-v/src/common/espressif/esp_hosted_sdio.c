@@ -1057,6 +1057,16 @@ int esp_hosted_sdio_initialize(void)
                      "%s: RX block mode (proper wait): ret %d, addr %05" PRIx32
                      "\n", HOSTED_TAG, r, aligned);
 
+              /* Did the DMA even touch the descriptor?
+               *
+               * The OWN bit is set by the CPU when it hands the descriptor to
+               * the DMA and cleared by the hardware on completion. If it is
+               * still set afterwards, the DMA never ran -- and that would make
+               * the fault ours, not the companion's.
+               */
+
+              esp_sdmmc_dma_state();
+
               /* The previous edits left a second read here that overwrote the
                * byte-mode result: it memset the buffer and then re-read it with
                * a 512-byte block transfer at an address that only asked for 60

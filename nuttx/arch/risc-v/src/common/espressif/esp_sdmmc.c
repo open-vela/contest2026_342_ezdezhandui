@@ -714,6 +714,32 @@ bool esp_sdmmc_try_cmd5_ocr(uint32_t ocr)
   return got;
 }
 
+/****************************************************************************
+ * Name: esp_sdmmc_dma_state
+ *
+ * Description:
+ *   Report whether the IDMAC actually ran for the last transfer.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_dma_state(void)
+{
+  sdmmc_dev_t *hw = g_sdmmc.hw;
+
+  if (hw == NULL)
+    {
+      return;
+    }
+
+  syslog(LOG_INFO,
+         "esp_sdmmc: dma state: des0=%08" PRIx32 " des1=%08" PRIx32
+         " buf=0%08" PRIx32 " ctrl=%08" PRIx32 " status=%08" PRIx32 "\n",
+         g_sdmmc.desc[0].des0, g_sdmmc.desc[0].des1,
+         g_sdmmc.desc[0].buffer,
+         *(volatile uint32_t *)&hw->ctrl,
+         *(volatile uint32_t *)&hw->status);
+}
+
 void esp_sdmmc_route_pins(void)
 {
   esp_sdmmc_configpins(CONFIG_ESPRESSIF_SDMMC_SLOT,

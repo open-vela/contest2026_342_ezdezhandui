@@ -119,6 +119,8 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno);
 
 void esp_sdmmc_route_pins(void);
 
+void esp_sdmmc_dma_state(void);
+
 /****************************************************************************
  * Name: esp_sdmmc_try_cmd5_ocr
  *

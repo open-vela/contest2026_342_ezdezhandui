@@ -820,14 +820,24 @@ static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
       esp_rom_gpio_connect_in_signal(d2_pin,
                                      SD_CARD_CDATA2_2_PAD_IN_IDX, false);
 
-      esp_rom_gpio_connect_out_signal(d3_pin,
-                                      SD_CARD_CDATA3_2_PAD_OUT_IDX, false, false);
-      esp_rom_gpio_connect_in_signal(d3_pin,
-                                     SD_CARD_CDATA3_2_PAD_IN_IDX, false);
+      /* DAT3 is not a data line here -- it selects the companion's mode.
+       *
+       * ESP-IDF's sdmmc_host.c does exactly this for a non-UHS1 slot:
+       *
+       *   // Force D3 high to make slave enter SD mode.
+       *   gpio_config(&gpio_conf);            // GPIO_MODE_OUTPUT
+       *   gpio_set_level(slot_gpio->d3, 1);
+       *
+       * Routing D3 to the controller instead (as an earlier change here did)
+       * leaves it undriven, and the companion samples DAT3 at power-up to
+       * decide between SD and SPI mode. It has to be a plain GPIO held high.
+       */
+
+      esp_configgpio(d3_pin, OUTPUT | PULLUP);
+      esp_gpiowrite(d3_pin, true);
 
       esp_configgpio(d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
       esp_configgpio(d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
-      esp_configgpio(d3_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
 
       syslog(LOG_INFO,
              "esp_sdmmc: slot %d pads routed via the GPIO matrix "

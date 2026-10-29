@@ -7922,3 +7922,84 @@ packet queued: raw=03c0003c len=60
 1. 示波器探到 C6 一侧确认数据线状态；
 2. 或用一个已知良好的 SDIO 从机做对照；
 3. 或用厂商工具检查 C6 的 `sdio_slave` 是否真正初始化了数据通路。
+
+### AA.120 第 154 轮：**逐函数对照 ESP-IDF 的 P4 SDIO 主机驱动**（目标第 3 条）
+
+此前对照的是协议文档（`esp_sdio_slave_protocol.rst`）与 esp-hosted 的主机侧，
+**没有系统对照过 ESP-IDF 自己的 P4 SDIO 主机驱动**。本轮补上。
+
+#### 对照一：slot-1 的信号映射 —— 一致
+
+`components/soc/esp32p4/sdmmc_periph.c`：
+
+```c
+{
+        .clk = SD_CARD_CCLK_2_PAD_OUT_IDX,
+        .cmd = SD_CARD_CCMD_2_PAD_OUT_IDX,
+        .d0  = SD_CARD_CDATA0_2_PAD_OUT_IDX,
+        .d1  = SD_CARD_CDATA1_2_PAD_OUT_IDX,
+        ...
+}
+```
+
+**与本驱动使用的信号一致。**
+
+#### 对照二：**DAT3 的处理 —— 发现偏离**
+
+`components/esp_driver_sdmmc/src/sdmmc_host.c`：
+
+```c
+if (slot_width >= 4) {
+        configure_pin(d1, ...);
+        configure_pin(d2, ...);
+        if (is_uhs1) {
+                configure_pin(d3, ...);
+        } else {
+                // Force D3 high to make slave enter SD mode.
+                // Connect to peripheral after width configuration.
+                gpio_config_t gpio_conf = { .mode = GPIO_MODE_OUTPUT, ... };
+                gpio_config(&gpio_conf);
+                gpio_set_level(slot_gpio->d3, 1);
+        }
+}
+```
+
+**注释写得很直接：`Force D3 high to make slave enter SD mode`。**
+
+**即：从机在上电时用 `DAT3` 的电平区分 SD 模式与 SPI 模式，主机必须把它保持为高。**
+
+**而我在第 138 轮把 `DAT3` 也接回了控制器（不再是普通 GPIO 驱高）—— 偏离了 IDF 的做法。**
+那次改动的目的是"让 4-bit 成为可能"，但 4-bit 后来实测更差（附录 AA.90）。
+
+#### 已改回
+
+```c
+esp_configgpio(d3_pin, OUTPUT | PULLUP);
+esp_gpiowrite(d3_pin, true);
+
+esp_configgpio(d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+esp_configgpio(d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+```
+
+**`DAT3` 恢复为普通 GPIO 驱高（与 IDF 一致），`DAT1/DAT2` 仍接控制器（IDF 也保留 `d1`，
+注释是 "Save d1 even in 1-line mode, it might be needed for SDIO INT line"）。**
+
+#### 对照三：还有一处值得注意
+
+```c
+/* Save d1 even in 1-line mode, it might be needed for SDIO INT line */
+```
+
+**IDF 明确保留 `DAT1` 用于 SDIO 中断线 —— 与本轮把 `DAT1` 接回控制器的做法方向一致。**
+
+### AA.121 本轮的净结果
+
+| 对照项 | 结论 |
+|---|---|
+| slot-1 信号映射 | ✅ 一致 |
+| **`DAT3` 必须为高（选 SD 模式）** | ⚠️ **发现偏离，已改回 IDF 的做法** |
+| `DAT1` 保留用于 SDIO 中断 | ✅ 与 IDF 一致 |
+
+**这是目标第 3 条（逐行对照）在本轮的直接产出：一处偏离被发现并修正。**
+
+**加载新固件后重新验证的结果尚未取得**（读取到的是旧启动日志），下一轮继续。

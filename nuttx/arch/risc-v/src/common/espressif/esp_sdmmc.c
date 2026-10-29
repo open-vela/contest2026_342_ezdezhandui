@@ -1935,7 +1935,16 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
             priv->xfrmask |= SDIOWAIT_ERROR;
           }
 
-        if (priv->xfrmask != 0)
+        /* Only stop once the events the caller is waiting for have arrived.
+         *
+         * CMD_DONE is raised by the command phase, which for a CMD53 completes
+         * long before the data moves. Breaking on any non-empty event set made
+         * eventwait return immediately after the command, so the caller never
+         * waited for the data phase and reported success with nothing
+         * transferred. The wait mask says what actually has to be satisfied.
+         */
+
+        if ((priv->xfrmask & priv->waitmask) != 0)
           {
             break;
           }
@@ -1960,6 +1969,18 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
   priv->xfrmask    = 0;
   priv->waitmask   = 0;
   priv->enablewait = false;
+
+  /* Log what the data phase actually reported: whether the controller ever
+   * raised DATA_OVER, and what the event set looks like on the way out.
+   */
+
+  syslog(LOG_INFO,
+         "esp_sdmmc: eventwait -> %02x (rintsts=%08" PRIx32
+         " ctrl=%08" PRIx32 " status=%08" PRIx32 ")\n",
+         (unsigned)wkupevent,
+         *(volatile uint32_t *)&priv->hw->rintsts,
+         *(volatile uint32_t *)&priv->hw->ctrl,
+         *(volatile uint32_t *)&priv->hw->status);
 
   return wkupevent;
 }

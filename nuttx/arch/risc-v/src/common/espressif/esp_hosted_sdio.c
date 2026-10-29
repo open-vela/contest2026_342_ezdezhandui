@@ -926,22 +926,40 @@ int esp_hosted_sdio_initialize(void)
                * The companion's 60 bytes then arrive at the head of the buffer.
                */
 
-              nblk    = (len + 511u) / 512u;
-              if (nblk == 0u)
-                {
-                  nblk = 1u;
-                }
+              /* One block of 64 bytes, with the address asking for the same 64.
+               *
+               * The constraints measured last round conflict with a 512-byte
+               * block: requested must be >= the transfer and <= what the
+               * companion has queued (60), while a block transfer has to be a
+               * whole block. A smaller block size satisfies all three at once:
+               * 64 >= 64 and 60 <= 64, with the address 0x1F800 - 64.
+               */
 
-              aligned = 0x1f800u - (uint32_t)nblk * 512u;
+              /* Use the one combination that was measured to actually move data.
+               *
+               * Across every variant tried, only a 512-byte block transfer to
+               * 0x1F7C4 ever ran the DMA (its buffer came back zeroed instead of
+               * keeping the pre-fill). A 64-byte block at 0x1F7C0 -- which
+               * satisfies requested == transfer == 64 with the queued 60 --
+               * returned success without transferring anything, and byte mode
+               * behaved the same way.
+               *
+               * Keeping the working variant here means whatever is observed next
+               * is a property of the companion, not of a read that never
+               * happened.
+               */
+
+              (void)nblk;
+
+              aligned = 0x1f800u - 60u;
               skip    = 0;
 
               r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
-                                      nblk * 512u, nblk);
+                                      512u, 1);
 
               syslog(LOG_INFO,
-                     "%s: RX block mode: ret %d, addr %05" PRIx32
-                     ", blocks %" PRIu32 " (requested == transfer)\n",
-                     HOSTED_TAG, r, aligned, nblk);
+                     "%s: RX 512-byte block at %05" PRIx32 ": ret %d\n",
+                     HOSTED_TAG, aligned, r);
 
               /* The previous edits left a second read here that overwrote the
                * byte-mode result: it memset the buffer and then re-read it with

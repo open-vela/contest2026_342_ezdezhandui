@@ -8112,3 +8112,61 @@ payload[60] = aa aa aa aa aa aa ...        <- 还是预填值
 而 `available = 60 ≤ 64` 也满足 —— **地址 `0x1F800 - 64 = 0x1F7C0`。**
 
 **这是下一轮可以直接做的实验。**
+
+### AA.129 第 158 轮：**找到并修掉主机侧的根因 —— `eventwait()` 在数据阶段开始之前就返回了**
+
+#### 之前的错误结论被推翻
+
+附录 AA.126 记录过"块模式读时 DMA 确实运行（缓冲区被覆盖）" —— **那是错的**。
+那个"覆盖"其实是代码里紧邻的 `memset(payload, 0, ...)`，不是 DMA。
+把多余的 `memset` 去掉之后，**连 512 字节块读的缓冲区也保持预填值 `0xAA`**：
+
+```
+RX 512-byte block at 1f7c4: ret 0
+payload[60] = aa aa aa aa aa aa ...        <- 预填值完好，DMA 从未运行
+```
+
+**即：主机的 CMD53 数据阶段从来没有真正执行过。**
+
+#### 在 `eventwait()` 里打日志，一眼看出问题
+
+```
+esp_sdmmc: eventwait -> 03 (rintsts=00000010 ctrl=02000030 status=0001ade6)
+esp_sdmmc: eventwait -> 08 (rintsts=00000010 ctrl=02000030 status=0001ad06)
+```
+
+- **`wkupevent = 0x03`** = `SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE` —— **没有 `TRANSFERDONE`**；
+- **`rintsts = 0x10`** = bit 4 = **`HTO`（Data Read Timeout）** —— 控制器报告数据读超时。
+
+**根因：`eventwait()` 的轮询循环只要 `priv->xfrmask` 非零就 break。**
+**而 `CMD_DONE` 在命令阶段就置起了 —— 于是它在数据阶段开始之前就返回，
+调用方（`sdio_io_rw_extended`）拿到一个不含 `TRANSFERDONE` 的事件集，
+却因为也没有 `TIMEOUT`/`ERROR` 而返回 `OK`。**
+
+**即：数据阶段被完全跳过，而且报告成功。**
+
+#### 修法：按调用方要求的掩码判断
+
+```c
+/* Only stop once the events the caller is waiting for have arrived. */
+
+if ((priv->xfrmask & priv->waitmask) != 0)
+  {
+    break;
+  }
+```
+
+`waitenable()` 已经把调用方要的事件写进 `priv->waitmask`，所以这里应当拿它来判。
+
+#### 修复后的变化
+
+日志里出现了 **`eventwait -> 08`（`SDIOWAIT_TIMEOUT`）** —— 这是**新出现的**：
+
+**数据阶段现在被真正等待了。** 之前立刻返回、报告成功；现在会等满超时窗口，
+然后如实报告超时。
+
+**这是本次会话在主机侧找到的、最像根因的一个缺陷** —— 它解释了为什么
+"命令都对、数据永远是零、而且从不报错"。
+
+**下一轮：在这个修复之上重测，看数据阶段是真超时（从机不响应）
+还是能拿到数据。**

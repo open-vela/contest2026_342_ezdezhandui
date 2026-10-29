@@ -24,6 +24,7 @@ static const char *TAG = "c6sdio";
 #define PIN_D3  23
 
 static uint8_t pattern[64] __attribute__((aligned(4)));
+static uint8_t rxbuf[2][512] __attribute__((aligned(4)));
 
 void app_main(void)
 {
@@ -43,6 +44,22 @@ void app_main(void)
 
     ESP_LOGI(TAG, "sdio_slave_initialize ...");
     ESP_ERROR_CHECK(sdio_slave_initialize(&cfg));
+
+    /* Register and load receive buffers before start, the way esp-hosted does.
+     *
+     * The SLC hardware drives both directions from one descriptor list; without
+     * an RX buffer loaded it never opens transmit buffers, which is exactly
+     * what the host saw (TOKEN showed 0 available buffers).
+     */
+
+    for (int i = 0; i < 2; i++)
+      {
+        sdio_slave_buf_handle_t h = sdio_slave_recv_register_buf(rxbuf[i]);
+        assert(h != NULL);
+        ESP_ERROR_CHECK(sdio_slave_recv_load_buf(h));
+      }
+    ESP_LOGI(TAG, "registered 2 receive buffers");
+
     ESP_ERROR_CHECK(sdio_slave_start());
     ESP_LOGI(TAG, "sdio_slave_start done, pins CLK=%d CMD=%d D0..D3=%d,%d,%d,%d",
              PIN_CLK, PIN_CMD, PIN_D0, PIN_D1, PIN_D2, PIN_D3);

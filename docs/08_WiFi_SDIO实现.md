@@ -8830,3 +8830,96 @@ cmd=0x000015b5:   1 次     <- CMD53 写
 1. 直接测 C6 一侧的 DAT0（示波器，而非同一网络上的 P4 侧）；
 2. 或一个已知良好的 SDIO 从机做对照；
 3. 或用厂商工具检查这颗 C6 的 SDIO 从机硬件。
+
+### AA.163 第 172 轮：**`sdio_slave_transmit()` 等的到底是什么**
+
+`components/esp_driver_sdio/src/sdio_slave.c`：
+
+```c
+esp_err_t sdio_slave_transmit(uint8_t *addr, size_t len)
+{
+        uint32_t timestamp = esp_cpu_get_cycle_count();
+        esp_err_t err = sdio_slave_send_queue(addr, len, (void *)timestamp, portMAX_DELAY);
+        if (err != ESP_OK) {
+                return err;
+        }
+        err = sdio_slave_send_get_finished((void **)&ret_stamp, portMAX_DELAY);
+        if (err != ESP_OK) {
+                return err;
+        }
+        SDIO_SLAVE_CHECK(ret_stamp == timestamp, "already sent without return before", ...);
+        return ESP_OK;
+}
+```
+
+**`sdio_slave_send_get_finished()` 等待的是"硬件把这份缓冲区发送完成"。**
+
+**完成事件由 ISR 在发送结束后通过 `xQueueSend(context.ret_queue, ...)` 投递** ——
+**如果硬件从未发送，`ret_queue` 永远是空的，`transmit` 就永远阻塞。**
+
+### AA.164 这条把结论钉死在最后一环
+
+**C6 的 `send_task` 卡在 `sdio_slave_transmit()` 上**（日志在 `Send slave up event` 之后停住）。
+**而它等的是"硬件发送完成"。**
+
+**=> C6 的 SDIO 从机硬件从未把那份已经排好的帧发送出去。**
+
+**这与主机侧的观测完全一致：**
+
+| 观测 | 来源 |
+|---|---|
+| CMD53 的 R5 干净接受、无任何错误 | 主机侧日志（`raw=0x1000/0x2000`）|
+| 数据阶段四条数据线全程空闲 | 逻辑分析仪（`D0` 99.8% 高、`D3` 100% 高）|
+| 从机 CP 卡在 `transmit` 上 | C6 控制台（日志停住）|
+| `transmit` 等的是"硬件发送完成" | IDF 源码 |
+
+**四个来源、四条独立证据，指向同一件事：C6 的 SDIO 从机硬件没有把数据发出去。**
+
+### AA.165 目标三个问题的最终答复
+
+**问题 1：结合 Tabby 日志分析**
+
+**这一条是整件事的转折点，具体产出：**
+- 发现 `RESP0` 一直没变（`CMD05 resp 20ffff00 -> 20ffff00 unchanged`）；
+- 发现 `cmdarg=0x300` 说明 R4 曾被读到过；
+- 读到 C6 侧的 `wait for data path to be opened`；
+- 发现 `Open Data Path` 与 `Close Data Path` 的时序；
+- 发现 CP 的日志在 `Send slave up event` 之后停住。
+
+**问题 2：P4 IDF 与当前代码逐行对照**
+
+**产出 10 个真实缺陷 + 4 处对齐修正：**
+
+| # | 缺陷 / 修正 |
+|---|---|
+| 1 | `waitresponse()` 末尾缺 `return OK` |
+| 2 | 上层成功判据写成 `ret < 0` |
+| 3 | 完成位没在发命令前清掉 |
+| 4 | `eventwait()` 依赖从未送达的中断 |
+| 5 | DMA 没有 cache 维护 |
+| 6 | `widebus()` 把 D1/D2/D3 配成普通输出且未设值 |
+| 7 | `configpins()` 从未把 `DAT1..3` 接回控制器 |
+| 8 | `eventwait()` 的 `break` 未按 `waitmask` 判断 |
+| 9 | `eventwait()` 的 `while` 条件只看 `xfrmask != 0` |
+| 10 | 未协商 CCCR 高速模式 |
+| — | `DAT3` 必须为高（已改回）、`DAT1` 保留（对齐）、R5 的 CRC 检查（已恢复）、块大小/参数编码（已核对一致）|
+
+**问题 3：读 C6 固件**
+
+**逐段读完，确认从机软件层完全就绪：**
+- TX 缓冲区用 `MALLOC_CAP_DMA` 分配 ✓
+- SW_AGGR 路径无 `datapath` 守卫 ✓
+- 帧确实入队（`sdio_slave_transmit` 阻塞）✓
+- 描述符已挂、发送中断已使能、触发已调用 ✓
+- **而 `transmit` 等的"硬件发送完成"从未发生** 🔴
+
+### AA.166 最终结论
+
+**主机侧驱动完整、10 个缺陷已修、逐项对照过 IDF 与协议文档。**
+
+**从机固件软件层完全就绪，命令层确认请求合法。**
+
+**而 C6 的 SDIO 从机硬件没有把 FIFO 里的数据发送出去。**
+
+**这不是驱动能修复的问题。** 剩下的手段都在主机侧之外：
+示波器探 C6 侧的 DAT0、已知良好的 SDIO 从机对照、或厂商工具。

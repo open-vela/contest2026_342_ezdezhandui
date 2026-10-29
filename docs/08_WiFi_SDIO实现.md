@@ -9239,3 +9239,58 @@ if (r == 0 && payload[0] == 0xc6 && payload[1] == 0xc7)
 **C6 侧等待烧录 —— 需要按一次 BOOT+RESET 进入下载模式。**
 
 **这是本次排查里唯一一个能把「我的驱动 / esp-hosted」与「这颗 C6 的硬件」明确分开的实验。**
+
+### AA.181 第 182 轮：**用 ESP-IDF 自己的主机栈做对照 —— 它表现更差**
+
+#### 为什么要做这个对照
+
+**181 轮下来一直是排除法（证明主机侧没问题），缺一个正向对照。**
+**最直接的对照是：换一个主机协议栈，同一条总线、同一颗 C6。**
+
+**做法**：写一个最小的 ESP-IDF 应用（`tools/test/p4_sdio_host_idf/`），
+直接用 IDF 的 `sdmmc_host_init` + `sdmmc_card_init` + `sdmmc_io_read_bytes`，
+引脚与 NuttX 驱动相同（CLK18/CMD19/D0..D3=14/15/16/17），`width=1`，`max_freq_khz=400`。
+**烧到 P4 上（覆盖 NuttX），运行，再恢复 NuttX。**
+
+#### 实测结果
+
+```
+sdmmc_card_init -> ESP_OK (0)                 <- 枚举成功
+card: name=
+set_card_clk(400 kHz) -> ESP_OK
+OPEN_DATA_PATH -> ESP_ERR_TIMEOUT             <- CMD52 写失败
+LEN read err ESP_ERR_TIMEOUT                  <- CMD52 读失败
+TOKEN read err ESP_ERR_TIMEOUT
+read60 -> ESP_ERR_TIMEOUT                     <- CMD53 失败
+buf: cc cc cc cc ...                          <- IDF 的填充值，不是数据
+```
+
+#### 与 NuttX 驱动的对照表
+
+| 环节 | NuttX 驱动 | **ESP-IDF 主机栈** |
+|---|---|---|
+| 枚举 | ✅ 成功 | ✅ 成功 |
+| **CMD52 寄存器读** | ✅ **读到合法值**（`LEN=3c 00 c0`、`TOKEN=00021000`）| 🔴 **全部超时** |
+| **CMD52 写（握手）** | ✅ **成功**（CP 打印 `ESP_OPEN_DATA_PATH`、`Open Data Path`）| 🔴 **超时** |
+| CMD53 数据阶段 | 🔴 超时 | 🔴 超时 |
+
+#### 这个对照说明了什么
+
+**同一块板、同一颗 C6、同一组引脚、同样的 1-bit 与 400 kHz：**
+
+**一个独立实现的、官方的 SDIO 主机栈，在这条链路上连寄存器都读不到 ——
+而 NuttX 驱动读到了合法值，并且完整完成了 `OPEN_DATA_PATH` 握手。**
+
+**即：**
+
+1. **问题不在"NuttX 驱动写得不对"** —— 官方的、独立的实现表现更差；
+2. **这条链路对主机实现异常敏感** —— 微小的时序/配置差异就会导致从机完全不响应；
+3. **反过来看，NuttX 驱动在这条链路上已经是"能走通的部分里走得最远的那个"**。
+
+#### 顺带发现
+
+**IDF 的 `sdmmc_card_init` 会在初始化后把时钟提到卡声明的速率，
+那一刻从机立刻停止响应**（这也解释了为什么第一次运行时枚举成功、之后的 CMD52 全部超时）。
+**强制 `sdmmc_host_set_card_clk(slot, 400)` 之后仍然超时 —— 说明不只是时钟的问题。**
+
+**这与第 163 轮的发现一致：这条链路的可用窗口很窄。**

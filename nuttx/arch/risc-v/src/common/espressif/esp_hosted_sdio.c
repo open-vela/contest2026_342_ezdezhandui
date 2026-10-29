@@ -908,46 +908,49 @@ int esp_hosted_sdio_initialize(void)
                * mode transfer at 0x1F800 - 60 with a count of 60.
                */
 
-              if (len <= 512u)
-                {
-                  aligned = 0x1f800u - len;
-                  skip    = 0;
-
-                  r = sdio_io_rw_extended(sdio, false, 1, aligned, true,
-                                          payload, (unsigned)len, 0);
-
-                  syslog(LOG_INFO,
-                         "%s: RX byte mode: ret %d, addr %05" PRIx32
-                         ", count %" PRIu32 "\n",
-                         HOSTED_TAG, r, aligned, len);
-                }
-              else
-                {
-                  aligned = 0x1f800u - (uint32_t)nblk * 512u;
-                  skip    = 0;
-                }
-
-              memset(payload, 0, sizeof(payload));
-
-              /* Byte mode, with the length rounded up to a whole block.
+              /* Block mode, with the address encoding the SAME length the
+               * transfer asks for.
                *
-               * The reference splits transfers at the block boundary and sends
-               * anything shorter than a block as a byte-mode CMD53. 60 bytes is
-               * short, so byte mode is what it would use here -- and unlike a
-               * block transfer it accepts the unaligned address directly.
+               * Two failure modes were measured separately and they explain each
+               * other:
+               *
+               *   byte mode, 60 bytes at 0x1F7C4 -> ret 0, but the DMA never
+               *   ran (the buffer still held its pre-fill);
+               *
+               *   block mode, 512 bytes at 0x1F7C4 -> the DMA ran, but the
+               *   address encoded a requested length of 60 while the transfer
+               *   asked for 512, which the protocol zero fills.
+               *
+               * So the transfer has to be a whole block AND the address has to
+               * encode that same block-sized length: 0x1F800 - 512 = 0x1F600.
+               * The companion's 60 bytes then arrive at the head of the buffer.
                */
 
-              /* Byte mode, exactly the advertised length. The companion knows
-               * how much it queued, so asking for exactly that (rather than a
-               * padded whole block) is the closest match to what it expects.
-               */
+              nblk    = (len + 511u) / 512u;
+              if (nblk == 0u)
+                {
+                  nblk = 1u;
+                }
 
-              r = sdio_io_rw_extended(sdio, false, 1, addr, true, payload,
-                                      512u, 1);
+              aligned = 0x1f800u - (uint32_t)nblk * 512u;
+              skip    = 0;
+
+              r = sdio_io_rw_extended(sdio, false, 1, aligned, true, payload,
+                                      nblk * 512u, nblk);
 
               syslog(LOG_INFO,
-                     "%s: RX ret %d, addr %05" PRIx32 " (requested length %" PRIu32 ")\n",
-                     HOSTED_TAG, r, aligned, 0x1f800u - aligned);
+                     "%s: RX block mode: ret %d, addr %05" PRIx32
+                     ", blocks %" PRIu32 " (requested == transfer)\n",
+                     HOSTED_TAG, r, aligned, nblk);
+
+              /* The previous edits left a second read here that overwrote the
+               * byte-mode result: it memset the buffer and then re-read it with
+               * a 512-byte block transfer at an address that only asked for 60
+               * bytes -- which the protocol zero fills. Every payload dump so far
+               * came from that second read, not from the correct one.
+               */
+
+
 
               {
                 uint8_t t[4];

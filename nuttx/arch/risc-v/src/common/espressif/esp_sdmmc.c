@@ -1451,9 +1451,18 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
         {
           hwcmd.response_long = 1;
         }
+      /* R5 keeps the controller's CRC check, matching ESP-IDF.
+       *
+       * sd_protocol_types.h defines SCF_RSP_R5 as
+       * (SCF_RSP_PRESENT|SCF_RSP_CRC|SCF_RSP_IDX), so IDF's host does check the
+       * CRC on CMD52/CMD53 replies. This driver had dropped R5 from the checked
+       * set after an earlier attempt made every CMD52 fail -- but that attempt
+       * also left the software CRC check in recv_r5, so the two were not
+       * separated. Letting only the controller check it is what IDF does.
+       */
+
       else if ((cmd & MMCSD_RESPONSE_MASK) != MMCSD_R3_RESPONSE &&
                (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R4_RESPONSE &&
-               (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R5_RESPONSE &&
                (cmd & MMCSD_RESPONSE_MASK) != MMCSD_R6_RESPONSE)
         {
           /* R3 (OCR) and R4 carry no valid CRC. */

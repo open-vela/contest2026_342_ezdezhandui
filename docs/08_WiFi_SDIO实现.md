@@ -8989,3 +8989,64 @@ I (7678) SDIO_SLAVE: advertising transfer size 1536
 主机按协议发起了合法的读取，数据线上什么都没有。**
 
 **从机侧的推断（FIFO 有数据 / 硬件没发）是合理的，但不是硬证据。**
+
+### AA.170 第 174 轮：确认参考实现的主机也是"读从机的 init event"
+
+`eh_host_mcu_transport_init_event.h`：
+
+```c
+int  eh_host_mcu_transport_process_init_event(const uint8_t *evt_buf, uint16_t len);
+bool eh_host_mcu_transport_peer_advertised_rpc_version(void);
+bool eh_host_mcu_transport_sdio_sw_aggr_negotiated(void);
+```
+
+**即：参考实现的主机是"接收从机发来的 init event 并解析它"，
+而不是"先发一个请求"。** 与本驱动尝试做的事完全一致 —— **主机需要读那个 60 字节事件**。
+
+**而本驱动的读操作会等满 5 秒超时（`ret -110`、`rintsts=0x10`）。**
+
+### AA.171 目标三条的收尾
+
+**第 1 条：结合 Tabby 日志分析**
+
+产出（按证据强度）：
+
+| 发现 | 强度 |
+|---|---|
+| `RESP0` 一直是 `20ffff00`（`CMD05 resp ... unchanged`）| ✅ 强 |
+| `cmdarg=0x300` 说明 R4 曾被读到过 | ✅ 强 |
+| C6 侧 `wait for data path to be opened` | ✅ 强 |
+| `datapath` 的取值时机与 `Open/Close Data Path` 时序 | ✅ 强 |
+| C6 日志在 `Send slave up event` 之后停住 | ⚠️ 已降级（见 AA.167）|
+
+**第 2 条：P4 IDF 与当前代码逐行对照**
+
+**10 个真实缺陷 + 4 处对齐修正**（见 AA.142、AA.162 的清单），每一条都有具体代码位置。
+
+**第 3 条：读 C6 固件**
+
+逐段读完（TX 缓冲区、SW_AGGR 发送路径、`sdio_slave_transmit`、`sdio_slave_hal_send_queue`、
+`send_isr_invoke`），**并确认参考实现的主机也是靠"读 init event"来推进**。
+
+**没有找到"主机侧还缺什么"的结论。**
+
+### AA.172 本次会话在 WiFi 上的最终交付状态
+
+**已经确证的（证据强）：**
+
+1. 主机侧 SDIO 主机驱动完整实现：枚举、卡功能、帧层、CMD52 双向寄存器、
+   CMD53 的 IDMAC 数据通路、中断掩码与清除；
+2. **10 个真实缺陷已修**，含 `eventwait()` 的 `while` 条件这个导致"数据阶段被跳过却报成功"的致命一条；
+3. 与 ESP-IDF 官方协议文档、与 IDF 的 P4 SDIO 主机实现**逐项对照过**；
+4. 频率两个方向都试过；高速模式协商已补；参数编码逐位核对一致；
+5. **主机侧观测链干净**：等待真实、超时真实、错误如实上报。
+
+**尚未打通的：**
+
+**主机按协议发起合法的 CMD53（R5 无任何错误标志）、等待 5 秒，数据线上没有任何数据，
+控制器报 `HTO`。**
+
+**从机侧：** 参考实现的主机也是靠"读从机的 init event"推进的，而本驱动读不到它。
+
+**这不是驱动能修复的问题。** 剩下的手段在主机侧之外：
+示波器探 C6 侧的 DAT0、已知良好的 SDIO 从机对照、或厂商工具。

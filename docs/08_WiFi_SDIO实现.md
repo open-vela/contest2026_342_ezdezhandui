@@ -8705,3 +8705,67 @@ D0 99.8% 高、D3 100% 高）。
 
 **这个区别很关键**：分析仪现在接在 P4 侧，看到的是"网络上有没有电平变化"，
 **无法区分"从机没驱动"与"从机驱动了但这个网络的某处把它衰减/隔离了"**。
+
+### AA.156 第 168 轮：从机的发送机制已被正确武装
+
+读 `sdio_slave_hal_send_queue()`：
+
+```c
+hal->tail_pkt_len += len;                 /* PKT_LEN 是累计值 */
+sdio_slave_hal_send_desc_t new_desc = {
+        .dma_desc = {
+                .size   = len,
+                .length = len,
+                .buf    = addr,
+                .owner  = 1,
+                /* in stream mode, the eof is only appended (in ISR) when new
+                 * packet is ready to be sent */
+                .eof    = (hal->sending_mode == SDIO_SLAVE_SEND_PACKET),
+        },
+        .arg     = arg,
+        .pkt_len = hal->tail_pkt_len,
+};
+esp_err_t ret = sdio_ringbuf_send(&(hal->send_desc_queue), send_write_desc, &new_desc);
+send_isr_invoke(hal);                     /* 触发发送 */
+```
+
+**两条要点：**
+
+1. **`pkt_len` 是累计值**（`tail_pkt_len += len`）—— 与附录 AA.150 的推断一致：
+   主机应当读"累计量 − 已读量"。**第一次读时已读量为 0，所以读 60 是对的。**
+2. **STREAM 模式下 `eof` 由 ISR 在"新包就绪"时补上**，随后 `send_isr_invoke()` 触发发送。
+
+**即：从机把描述符挂了进去、使能了发送、并调用了触发。**
+
+### AA.157 两侧现在的状态（关键对照）
+
+| 侧 | 状态 |
+|---|---|
+| **从机软件** | 帧已入队（`sdio_slave_transmit` 阻塞证明）、描述符已挂、`send_isr_invoke` 已调用 |
+| **从机硬件** | 应当已"武装"，等待主机读取 |
+| **主机命令** | CMD53 被接受（收到 R5）|
+| **主机数据** | 等待 5 秒后超时（`HTO`），数据线全程空闲 |
+| **从机日志** | 在 `Send slave up event` 之后完全停住（`send_task` 卡在 `transmit` 上）|
+
+**即：从机软件把一切都准备好了，主机也按协议发起了读取，而数据阶段就是不动。**
+
+### AA.158 本次会话在这一项上的终点
+
+**主机侧：**
+
+- 9 个真实缺陷已修（含 `eventwait` 的 `while` 条件这个致命的一条）；
+- 数据阶段的处理（等待、超时、报错）完全符合协议文档；
+- 地址/长度/模式/参数编码逐位对照过 IDF；
+- 频率两个方向都试过（25 MHz 断链、100 kHz 稳定）；
+- 高速模式协商已补上。
+
+**从机侧：**
+
+- 固件的发送路径已逐段读过：TX 缓冲区 DMA 能力 ✓、SW_AGGR 无 `datapath` 守卫 ✓、
+  `sdio_slave_transmit` 阻塞证明帧在 FIFO ✓、`send_queue` 已武装硬件 ✓；
+- 控制台日志在发送之后停住 ✓。
+
+**两侧的自洽性都成立，而数据阶段不动。**
+
+**要区分"从机硬件没搬"与"从机搬了但主机采不到"，只剩一个手段：
+用示波器/探针直接测 C6 一侧的 DAT0 —— 而不是测同一网络上的 P4 侧。**

@@ -1913,7 +1913,16 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
     sdmmc_dev_t *hw = priv->hw;
     clock_t      start = clock_systime_ticks();
 
-    while (priv->xfrmask == 0)
+    /* Keep polling until the events the caller asked for are satisfied.
+     *
+     * The condition used to be "while (priv->xfrmask == 0)", which exits the
+     * loop as soon as *anything* arrives -- and CMD_DONE arrives with the
+     * command phase, long before any data moves. The break below was corrected
+     * to test the wait mask but never ran, because the loop condition had
+     * already ended the loop.
+     */
+
+    while ((priv->xfrmask & priv->waitmask) == 0)
       {
         uint32_t st = sdmmc_ll_get_intr_status(hw);
 

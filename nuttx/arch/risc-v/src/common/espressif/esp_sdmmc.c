@@ -1518,6 +1518,15 @@ static void esp_sdmmc_blocksetup(struct sdio_dev_s *dev,
 
   sdmmc_ll_set_block_size(priv->hw, blocklen);
   sdmmc_ll_set_data_transfer_len(priv->hw, blocklen * nblocks);
+
+  /* Re-arm the data timeout for every transfer.
+   *
+   * It is only set once, in esp_sdmmc_initialize(). If anything between then and
+   * a transfer clears the register, the controller times out immediately and the
+   * data phase can never complete no matter what the card does.
+   */
+
+  sdmmc_ll_set_data_timeout(priv->hw, 0xffffff);
 }
 #endif /* CONFIG_SDIO_BLOCKSETUP */
 

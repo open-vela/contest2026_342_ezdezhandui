@@ -1014,6 +1014,31 @@ int esp_hosted_sdio_initialize(void)
                * (0x1F800 - 60) and a count of 60.
                */
 
+              /* Write direction first, now that the wait is real.
+               *
+               * The earlier -110 on a write came from an eventwait() that
+               * returned before the data phase, so it proved nothing. With the
+               * wait fixed this is the first valid measurement of a host-to-
+               * companion transfer.
+               */
+
+              {
+                static uint8_t txbuf[512] __attribute__((aligned(64)));
+                int k;
+                int wr;
+
+                for (k = 0; k < 512; k++)
+                  {
+                    txbuf[k] = (uint8_t)(0xa5 ^ k);
+                  }
+
+                wr = sdio_io_rw_extended(sdio, true, 1, 0x1f800u - 512u, true,
+                                         txbuf, 512u, 1);
+
+                syslog(LOG_INFO, "%s: TX block write (proper wait): ret %d\n",
+                       HOSTED_TAG, wr);
+              }
+
               /* Block mode with requested == transfer, now that the wait is real.
                *
                * Every earlier variant was measured through an eventwait() that

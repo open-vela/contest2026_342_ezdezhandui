@@ -2463,6 +2463,27 @@ static void esp_sdmmc_waitenable(struct sdio_dev_s *dev,
 {
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
 
+  /* Start every wait from a clean slate.
+   *
+   * This is the point where a transfer is armed: NuttX calls it for a data
+   * command after blocksetup() and before the command goes out. Anything the
+   * previous command left pending has to go now, or the next wait is decided by
+   * the last one's leftovers.
+   *
+   * Measured, and it is what made "only the first transfer after bring-up
+   * works" look like a link problem: sdio.c issues a CMD52 "ABRT" after each
+   * CMD53 read (SD_ACMD52ABRT -- response not looked at), the controller
+   * reports a response timeout for it (RINTSTS bit 8, RTO, seen as
+   * "ISR error raw=00000100"), and the interrupt handler turns that into
+   * SDIOWAIT_ERROR in priv->xfrmask. That bit is sticky, so the *next*
+   * transfer's eventwait saw an error before it had even started and returned
+   * -EIO immediately -- for every transfer from then on, while the first
+   * ladder (run before any ABRT) worked perfectly.
+   */
+
+  sdmmc_ll_clear_interrupt(priv->hw, 0xffffffff);
+  priv->xfrmask = 0;
+
   /* The controller cannot signal a timeout, so it is never part of the
    * hardware mask; it is produced by the watchdog below.
    */
@@ -2944,8 +2965,40 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
 
   if (status & SDMMC_ALL_ERRORS)
     {
-      eventset |= SDIOWAIT_ERROR;
-      mcerr("ERROR: SDMMC status=%08" PRIx32 "\n", status);
+      /* Name the bit, and do NOT fail the transfer on it.
+       *
+       * This used to set SDIOWAIT_ERROR in priv->xfrmask, which is the error
+       * flag the *next* eventwait inspects -- and the error bit arrives
+       * asynchronously, from whatever command was in flight a moment ago. On
+       * this link RINTSTS bit 8 (RTO, response timeout) is raised for command
+       * after command, including CMD52s that then complete normally, so the
+       * injection turned every data transfer into an immediate -EIO: the first
+       * ladder after bring-up worked, and every transfer after it failed before
+       * it had even started.
+       *
+       * An error that matters is one that belongs to the transfer being waited
+       * for, and esp_sdmmc_eventwait() already polls RINTSTS for exactly that
+       * (it checks SDMMC_ALL_ERRORS on every pass and reports the bits it
+       * finds). So this is a diagnostic, not a verdict; it is logged and the
+       * sticky bits are cleared so the next poll sees only what is new.
+       */
+
+      static int err_report;
+
+      if (err_report < 12)
+        {
+          err_report++;
+          syslog(LOG_ERR,
+                 "esp_sdmmc: ISR error raw=%08" PRIx32
+                 " [re=%u rcrc=%u dcrc=%u rto=%u drto=%u hto=%u frun=%u"
+                 " hle=%u sbe=%u ebe=%u]\n",
+                 status,
+                 (unsigned)((status >> 1) & 1),  (unsigned)((status >> 6) & 1),
+                 (unsigned)((status >> 7) & 1),  (unsigned)((status >> 8) & 1),
+                 (unsigned)((status >> 9) & 1),  (unsigned)((status >> 10) & 1),
+                 (unsigned)((status >> 11) & 1), (unsigned)((status >> 12) & 1),
+                 (unsigned)((status >> 13) & 1), (unsigned)((status >> 15) & 1));
+        }
     }
 
   if (eventset == 0)

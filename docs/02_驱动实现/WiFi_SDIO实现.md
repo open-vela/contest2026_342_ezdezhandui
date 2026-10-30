@@ -10850,3 +10850,54 @@ sweep[2] probe FN1@0x60 size= 1 ret=-5 first=5a 5a 5a 5a
 
 > 证据文件：本轮所有串口原文都在会话日志里；关键行已抄进本附录（`sweep[0]` 全对、
 > `cmd53check`、`sweep[1..]` 全 `-5`）。
+
+### 附录 AM —— 「只有第一次传输能用」的机制找到一半（2026-10-31 深夜）
+
+#### AM.1 机制：RINTSTS.RTO 被中断处理转成了「下一个传输的错误」
+
+给 ISR 的错误分支加上按位命名后，第一次看到真实位：
+
+```
+esp_sdmmc: ISR error raw=00000104 [re=0 rcrc=0 dcrc=0 rto=1 ...]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 ...]
+esp_sdmmc: ISR error raw=00008000 [... ebe=1 ...]
+```
+
+- **bit8 = RTO（响应超时）几乎对每一条命令都置位**——包括随后照常拿到响应的 CMD52；
+  来源之一很明确：NuttX 在每笔 CMD53 之后都会发一条 `SD_ACMD52ABRT`（CMD52 + R1，且
+  `sdio.c` 明确"不读响应"），而 CIU 会为它等到超时并置 RTO。
+- 旧实现里 ISR 把这个位置成 `priv->xfrmask |= SDIOWAIT_ERROR`——而 `eventwait()`
+  只在**下一次**调用时消费 `xfrmask`，于是**下一笔传输还没开始就被判成错误**，直接 `-EIO`。
+  这正好解释「bring-up 后第一段阶梯全对、之后每一笔都 -5」。
+
+已改：
+
+1. `esp_sdmmc_waitenable()`（每笔数据传输装载等待的地方）先 `clear_interrupt(0xffffffff)` +
+   `priv->xfrmask = 0`，把上一笔的残留清干净；
+2. ISR 不再把错误位注入 `xfrmask`（改为**诊断打印**）；真正属于本次传输的错误由
+   `eventwait()` 自己的轮询判定（它本来就每 20 µs 检查一次 `SDMMC_ALL_ERRORS`）。
+
+#### AM.2 但仍有残留：`-EIO` 还没消干净
+
+改完之后：`sweep[0]` 依然 10 笔全对（`r1=r4=r20=r60=0`，内容 `3c 00 c0 03`），
+而 `sweep[1..]` 仍是 `-5`；`eventwait -> 10`（ERROR 位）仍会出现，
+但 `eventwait()` 里那条「data-phase error bits」日志**没有打出来**（串口里还能看到
+两条日志被截断/互串的痕迹，例如 `waitresponse exit xfrmask=0esp_sdmmc: ISR error ...`）。
+
+→ 下一轮第一件事：**换一个不会被串口截断的通道**把这个错误位打出来（或先把每笔传输的
+日志量压到最低再复现），确认 `-5` 到底是
+(a) `eventwait()` 轮询看到的真实 RINTSTS 错误位，还是
+(b) `sdio_io_rw_extended()` 里 `resp.flags.error`（即**卡**在 R5 里回了错误，见
+`short response raw=00002000` 这类响应）。
+
+顺带一条**正面进展**：`cmd53check` 里那笔**真实的 CMD53 写**（FN1 `0x8C`，4 字节块模式）
+在一段状态良好的窗口里返回了 **ret=0**——写方向第一次拿到正面证据（此前那句
+"INT_CLR ... ret 0" 是死代码）。
+
+#### AM.3 本轮结论
+
+- 数据通路（读）在**刚上电的第一次阶梯**里是**完全正确**的：1/2/4/8/16/20/32/60 字节
+  全部 `ret=0`，内容 `3c 00 c0 03`，`0x1F7C4` 的 60 字节负载读也 `ret=0`。
+- 之后每一笔失败的直接原因已定位到「RTO 被当成下一笔的错误」这一层，并已修掉一半；
+  剩下的一半需要一个干净的观测通道来定位。
+- 写方向：**ret=0 已出现过一次**，但还没有稳定复现。

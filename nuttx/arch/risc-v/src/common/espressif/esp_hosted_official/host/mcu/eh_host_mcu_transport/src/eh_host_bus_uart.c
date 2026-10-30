@@ -1,0 +1,452 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+/* MCU UART bus driver. RX = task blocked on the UART driver's event queue. */
+
+#include "eh_host_port_master_config.h"
+
+#if EH_HOST_TRANSPORT_BUS_UART
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "esp_event.h"
+#include "eh_host_event.h"
+#include "eh_host_mcu_transport_priv.h"
+#include "eh_host_mcu_transport_state.h"
+#include "eh_frame.h"
+#include "eh_host_mcu_hci_internal.h"
+#include "eh_common_header.h"
+#include "eh_common_header_v2.h"
+
+#ifdef ESP_PLATFORM
+
+#include "eh_host_port.h"
+#include "eh_host_port_power.h"
+#include "eh_host_transport_config.h"
+#include "driver/uart.h"
+#include "esp_err.h"
+#include "esp_log.h"
+
+#define EH_UART_TASK_STACK      4096
+#define EH_UART_TASK_PRIO       22
+
+#define EH_UART_MAX_BUF         ESP_TRANSPORT_HOST_MAX_BUF_SIZE
+#define EH_UART_RX_BUF_SIZE     (EH_UART_MAX_BUF * 2)
+#define EH_UART_TX_BUF_SIZE     0   /* 0 -> driver ring; caller blocks */
+#define EH_UART_EVT_QUEUE_LEN   20
+#define EH_UART_EVT_STOP        UART_EVENT_MAX
+
+static const char *TAG = "eh_bus_uart";
+
+static struct eh_host_uart_config s_cfg;   /* transport config, snapshotted at bus init */
+
+/* Config encodings: parity 0/1/2 = none/even/odd, stop bits 0/1/2 = 1/1.5/2. */
+static void show_config(void)
+{
+	static const char *const stop[] = { "1", "1.5", "2" };
+	ESP_LOGI(TAG, "transport[host]: UART port=%d %u bps %d%c%s "
+		"TX=%d RX=%d RESET=%d",
+		(int)s_cfg.port, (unsigned int)s_cfg.baud_rate, (int)s_cfg.num_data_bits,
+		"NEO"[s_cfg.parity], stop[s_cfg.stop_bits],
+		s_cfg.pin_tx.pin, s_cfg.pin_rx.pin, s_cfg.pin_reset.pin);
+}
+
+#endif /* ESP_PLATFORM */
+
+#ifdef ESP_PLATFORM
+static eh_host_port_task_t      *s_rx_task;
+static eh_host_port_mutex_t     *s_bus_lock;
+static volatile uint8_t     s_running;
+static QueueHandle_t        s_uart_q;
+static eh_host_port_sem_t  *s_rx_open;
+static volatile uint8_t     s_driver_installed;
+#endif
+
+#ifdef ESP_PLATFORM
+
+/* Stream reassembly: byte 0 == 0xE9 -> V2, else V1. Returns bytes consumed,
+ * 0 = need more, -1 = framing corruption (caller drops byte 0 to resync). */
+static int eh_uart_try_decode_one(uint8_t *acc, size_t acc_len)
+{
+    if (acc_len < 1) return 0;
+
+    uint8_t hdr_ver = (acc[0] == 0xE9)
+        ? ESP_HOSTED_HDR_VERSION_V2
+        : ESP_HOSTED_HDR_VERSION_V1;
+    uint8_t hdr_sz = eh_frame_hdr_size_for_ver(hdr_ver);
+    if (hdr_sz == 0 || acc_len < hdr_sz) return 0;
+
+    /* Wire byte offsets:
+     *   V1: len @ [2..3] LE, offset @ [4..5] LE
+     *   V2: offset @ [8..9] LE, len @ [10..11] LE */
+    uint16_t payload_len, offset_val;
+    if (hdr_ver == ESP_HOSTED_HDR_VERSION_V1) {
+        payload_len = (uint16_t)acc[2] | ((uint16_t)acc[3] << 8);
+        offset_val  = (uint16_t)acc[4] | ((uint16_t)acc[5] << 8);
+    } else {
+        if (acc[1] != ESP_HOSTED_HDR_VERSION_V2) {
+            return -1;
+        }
+        offset_val  = (uint16_t)acc[8]  | ((uint16_t)acc[9]  << 8);
+        payload_len = (uint16_t)acc[10] | ((uint16_t)acc[11] << 8);
+    }
+
+    uint32_t total = (uint32_t)offset_val + (uint32_t)payload_len;
+    if (total == 0 || total > EH_UART_MAX_BUF) {
+        return -1;
+    }
+    if (acc_len < total) return 0;
+
+    interface_buffer_handle_t h = {0};
+    eh_frame_result_t r = eh_frame_decode(acc, (uint16_t)total, &h);
+    if (r == EH_FRAME_OK && h.payload && h.payload_len) {
+        if (h.if_type == ESP_HCI_IF) {
+            eh_host_mcu_hci_rx_deliver(h.payload, h.payload_len);
+        } else {
+            eh_host_mcu_transport_dispatch_frame(&h);
+        }
+    } else if (r == EH_FRAME_INVALID || r == EH_FRAME_CORRUPT) {
+        return -1;
+    }
+    return (int)total;
+}
+
+/* Read everything buffered in the driver and dispatch each complete frame. */
+static void eh_uart_rx_drain(uint8_t *acc, size_t cap, size_t *acc_len)
+{
+    size_t avail = 0;
+    uart_get_buffered_data_len((uart_port_t)s_cfg.port, &avail);
+    while (avail > 0) {
+        size_t room = cap - *acc_len;
+        if (room == 0) {
+            /* Accumulator full but no complete frame — framing lost. */
+            ESP_LOGW(TAG, "accumulator full; resyncing");
+            memmove(acc, acc + 1, *acc_len - 1);
+            *acc_len -= 1;
+            room = 1;
+        }
+        int n = uart_read_bytes((uart_port_t)s_cfg.port,
+                                acc + *acc_len, avail < room ? avail : room, 0);
+        if (n <= 0) return;
+        *acc_len += (size_t)n;
+        avail -= (size_t)n;
+
+        for (;;) {
+            int consumed = eh_uart_try_decode_one(acc, *acc_len);
+            if (consumed == 0) break;
+            if (consumed < 0) {
+                memmove(acc, acc + 1, *acc_len - 1);
+                *acc_len -= 1;
+                if (*acc_len == 0) break;
+                continue;
+            }
+            if ((size_t)consumed >= *acc_len) {
+                *acc_len = 0;
+            } else {
+                memmove(acc, acc + consumed, *acc_len - (size_t)consumed);
+                *acc_len -= (size_t)consumed;
+            }
+        }
+    }
+}
+
+static void eh_uart_rx_task(void *arg)
+{
+    (void)arg;
+    const size_t cap = EH_UART_MAX_BUF * 2;
+    uint8_t *acc = malloc(cap);
+    if (!acc) {
+        ESP_LOGE(TAG, "accumulator alloc failed, exiting");
+        esp_event_post(EH_HOST_EVENT, (int32_t)EH_HOST_EVENT_TRANSPORT_FAILURE, NULL, 0, 0);
+#if EH_HOST_TRANSPORT_RESTART_ON_FAILURE
+        eh_host_port_restart_host();
+#endif
+        return;
+    }
+    size_t acc_len = 0;
+
+    ESP_LOGI(TAG, "UART RX task started (acc_cap=%u)", (unsigned int)cap);
+
+    /* Don't read before connect has reset or resumed the CP. */
+    eh_host_port_sem_wait_ms(s_rx_open, EH_HOST_PORT_WAIT_FOREVER);
+
+    while (s_running) {
+        uart_event_t ev;
+        if (xQueueReceive(s_uart_q, &ev, portMAX_DELAY) != pdTRUE) continue;
+        if (ev.type == EH_UART_EVT_STOP) break;
+        if (ev.type == UART_FIFO_OVF) {
+            /* Bytes were lost: drop the partial frame and resync. */
+            ESP_LOGW(TAG, "RX FIFO overflow; resyncing");
+            uart_flush_input((uart_port_t)s_cfg.port);
+            acc_len = 0;
+            continue;
+        }
+        if (ev.type == UART_DATA || ev.type == UART_BUFFER_FULL) {
+            eh_uart_rx_drain(acc, cap, &acc_len);
+        }
+    }
+
+    free(acc);
+    ESP_LOGI(TAG, "UART RX task exiting");
+}
+
+#endif /* ESP_PLATFORM */
+
+int eh_host_bus_init(void)
+{
+    eh_frame_cfg_t fcfg = EH_FRAME_CFG_HOST_MCU_UART_DEFAULT;
+
+    fcfg.checksum_enabled = 0;
+    if (eh_frame_init(&fcfg) != ESP_OK) {
+        return -1;
+    }
+
+#ifdef ESP_PLATFORM
+    struct eh_host_uart_config *cfg_in = NULL;
+    if (eh_host_uart_get_config(&cfg_in) != EH_HOST_TRANSPORT_RC_OK || !cfg_in) {
+        goto fail;
+    }
+    s_cfg = *cfg_in;
+    show_config();
+    s_bus_lock = eh_host_port_mutex_create();
+    if (!s_bus_lock) {
+        goto fail;
+    }
+
+    static const uart_parity_t parity[] = { UART_PARITY_DISABLE, UART_PARITY_EVEN, UART_PARITY_ODD };
+    static const uart_stop_bits_t stop[] = { UART_STOP_BITS_1, UART_STOP_BITS_1_5, UART_STOP_BITS_2 };
+    uart_config_t ucfg = {
+        .baud_rate  = (int)s_cfg.baud_rate,
+        .data_bits  = (uart_word_length_t)(UART_DATA_5_BITS + (s_cfg.num_data_bits - 5)),
+        .parity     = parity[s_cfg.parity],
+        .stop_bits  = stop[s_cfg.stop_bits],
+        .flow_ctrl  = (uart_hw_flowcontrol_t)s_cfg.flow_ctrl,
+        .source_clk = (uart_sclk_t)s_cfg.clk_src,
+    };
+    esp_err_t ret = uart_param_config((uart_port_t)s_cfg.port, &ucfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "uart_param_config failed: %d", (int)ret);
+        goto fail;
+    }
+    ret = uart_set_pin((uart_port_t)s_cfg.port,
+                       s_cfg.pin_tx.pin, s_cfg.pin_rx.pin,
+                       UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "uart_set_pin failed: %d", (int)ret);
+        goto fail;
+    }
+    ret = uart_driver_install((uart_port_t)s_cfg.port,
+                              EH_UART_RX_BUF_SIZE, EH_UART_TX_BUF_SIZE,
+                              EH_UART_EVT_QUEUE_LEN, &s_uart_q, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "uart_driver_install failed: %d", (int)ret);
+        goto fail;
+    }
+    s_driver_installed = 1;
+    uint32_t baud = 0;
+    uart_get_baudrate((uart_port_t)s_cfg.port, &baud);
+    ESP_LOGI(TAG, "bus applied: baud=%lu", (unsigned long)baud);
+
+    s_rx_open = eh_host_port_sem_create();
+    if (!s_rx_open) {
+        goto fail_drv;
+    }
+    s_running = 1;
+    {
+        eh_host_port_task_create_cfg_t tcfg = {
+            .fn = eh_uart_rx_task, .arg = NULL,
+            .stack_bytes = EH_UART_TASK_STACK, .priority = EH_UART_TASK_PRIO,
+            .name = "eh_uart_rx",
+        };
+        if (eh_host_port_task_create(&tcfg, &s_rx_task) != EH_HOST_PORT_OK) {
+            ESP_LOGE(TAG, "rx task create failed");
+            s_running = 0;
+            goto fail_drv;
+        }
+    }
+    return 0;
+
+fail_drv:
+    if (s_rx_open) { eh_host_port_sem_destroy(s_rx_open); s_rx_open = NULL; }
+    uart_driver_delete((uart_port_t)s_cfg.port);
+    s_driver_installed = 0;
+    s_uart_q = NULL;
+fail:
+    if (s_bus_lock) { eh_host_port_mutex_destroy(s_bus_lock); s_bus_lock = NULL; }
+    eh_frame_deinit();
+    esp_event_post(EH_HOST_EVENT, (int32_t)EH_HOST_EVENT_TRANSPORT_FAILURE, NULL, 0, 0);
+#if EH_HOST_TRANSPORT_RESTART_ON_FAILURE
+        eh_host_port_restart_host();
+#endif
+    return -1;
+#else
+    return -1;
+#endif
+}
+
+int eh_host_bus_connect_to_slave(void)
+{
+#ifdef ESP_PLATFORM
+#if EH_HOST_FEAT_POWER_SAVE_READY
+    /* On a power-save wake the CP only light-slept — it keeps its state and its
+     * link, so must NOT be reset (a reset would wipe its Wi-Fi/RPC state and the
+     * post-wake re-init would fail). Resume the existing transport, as the SDIO
+     * path does. Only a cold boot (UNKNOWN wake reason) resets the CP. */
+    if (eh_host_port_wakeup_reason_get() != EH_HOST_PORT_WAKEUP_UNKNOWN) {
+        ESP_LOGI(TAG, "Host woke up from power save");
+        /* Tell the CP we're awake (FLAG_POWER_SAVE_STOPPED) so it exits its
+         * wake-toggle loop, fires ESP_POWER_SAVE_OFF and resumes servicing RPCs
+         * — otherwise the post-wake wifi re-init RPC never gets answered. Matches
+         * the SDIO wake path's bus_notify_slave_ps_exit(). */
+        eh_host_mcu_transport_state_set(EH_HOST_MCU_TRANSPORT_RX_ACTIVE);
+        eh_host_port_sem_post(s_rx_open);
+        eh_host_bus_inform_slave_ps_exit();
+        return 0;
+    }
+#endif
+    /* Drop what the CP instance about to be reset sent (e.g. its boot INIT);
+     * without a reset pin that INIT is the only one, so keep it. */
+    eh_gpio_pin_t rst_pin = { .port = NULL, .pin = -1 };
+    if (eh_host_transport_get_reset_config(&rst_pin) == EH_HOST_TRANSPORT_RC_OK &&
+        rst_pin.pin >= 0) {
+        uart_flush_input((uart_port_t)s_cfg.port);
+    }
+    eh_host_port_err_t rst = eh_host_port_reset_slave();
+    if (rst == EH_HOST_PORT_OK) {
+        ESP_LOGI(TAG, "Slave reset issued; bringing up UART");
+    } else if (rst == EH_HOST_PORT_ERR_NOT_CONFIGURED) {
+        ESP_LOGW(TAG, "RST pin not configured; UART bring-up without reset");
+    } else {
+        ESP_LOGW(TAG, "Slave reset failed (rc=%d); continuing", (int)rst);
+    }
+    eh_host_mcu_transport_state_set(EH_HOST_MCU_TRANSPORT_RX_ACTIVE);
+    eh_host_port_sem_post(s_rx_open);
+    return 0;
+#else
+    return -1;
+#endif
+}
+
+int eh_host_bus_deinit(void)
+{
+#ifdef ESP_PLATFORM
+    s_running = 0;
+    if (s_rx_task) {
+        /* Wake the RX task wherever it waits; it exits at a frame boundary. */
+        uart_event_t stop = { .type = EH_UART_EVT_STOP };
+        xQueueReset(s_uart_q);
+        xQueueSend(s_uart_q, &stop, 0);
+        eh_host_port_sem_post(s_rx_open);
+        eh_host_port_task_join(s_rx_task);
+        eh_host_port_task_destroy(s_rx_task);
+        s_rx_task = NULL;
+    }
+    if (s_driver_installed) {
+        uart_driver_delete((uart_port_t)s_cfg.port);
+        s_driver_installed = 0;
+        s_uart_q = NULL;
+    }
+    if (s_rx_open) { eh_host_port_sem_destroy(s_rx_open); s_rx_open = NULL; }
+    if (s_bus_lock) { eh_host_port_mutex_destroy(s_bus_lock); s_bus_lock = NULL; }
+#endif
+    eh_frame_deinit();
+    return 0;
+}
+
+int eh_host_bus_tx(interface_buffer_handle_t *bh)
+{
+#ifdef ESP_PLATFORM
+    bool header_only = false;
+    if (!bh) {
+        return -1;
+    }
+    header_only = (bh->payload_len == 0 && bh->flags != 0);
+    if (!header_only && (!bh->payload || bh->payload_len == 0)) {
+        if (bh && bh->free_buf_handle) bh->free_buf_handle(bh->priv_buffer_handle);
+        return -1;
+    }
+    /* bh->payload points past wire header; recover frame start. */
+    const uint8_t *buf = header_only ? NULL : (bh->payload - eh_frame_hdr_size());
+    uint8_t hdr[sizeof(eh_header_v2_t)] = {0}; /* fits V1 (12) or V2 (20) header */
+    size_t len = 0;
+    if (header_only) {
+        interface_buffer_handle_t hb = { .if_type = ESP_SERIAL_IF, .flags = bh->flags };
+        eh_frame_encode(hdr, &hb, 0);
+        buf = hdr;
+        len = eh_frame_hdr_size();
+    } else {
+        len = (size_t)bh->payload_len + eh_frame_hdr_size();
+    }
+    if (!header_only && bh->if_type == ESP_HCI_IF && bh->payload_zcopy) {
+        ESP_LOGE(TAG, "HCI zerocopy is not supported on UART");
+        if (bh->free_buf_handle) bh->free_buf_handle(bh->priv_buffer_handle);
+        return -1;
+    }
+    if (!header_only && bh->if_type == ESP_HCI_IF && !bh->payload_zcopy) {
+        uint8_t *mframe = (uint8_t *)(uintptr_t)buf;
+        interface_buffer_handle_t hb = *bh;
+        hb.pkt_type = eh_host_mcu_hci_take_type(mframe + eh_frame_hdr_size(),
+                                                &hb.payload_len);
+        eh_frame_encode(mframe, &hb, hb.payload_len);
+        len = (size_t)eh_frame_hdr_size() + hb.payload_len;
+    }
+    int rc = -1;
+
+    if (len > EH_UART_MAX_BUF || !s_driver_installed || !s_bus_lock) {
+        goto out;
+    }
+    eh_host_port_mutex_lock(s_bus_lock);
+    int written = uart_write_bytes((uart_port_t)s_cfg.port,
+                                   (const char *)buf, len);
+    eh_host_port_mutex_unlock(s_bus_lock);
+    rc = (written == (int)len) ? 0 : -1;
+out:
+    if (bh->free_buf_handle) bh->free_buf_handle(bh->priv_buffer_handle);
+    return rc;
+#else
+    (void)bh;
+    return -1;
+#endif
+}
+
+/* TX-ready: UART has no slave-side waterline; "driver installed" is the
+ * strongest gate available. */
+int eh_host_bus_is_tx_ready(void)
+{
+#ifdef ESP_PLATFORM
+    return s_driver_installed ? 1 : 0;
+#else
+    return -1;
+#endif
+}
+
+/* PS-inform: header-only frame on ESP_SERIAL_IF, flags=PS_STARTED/STOPPED. */
+#ifdef ESP_PLATFORM
+#include "eh_common_interface.h"
+#include "eh_common_header.h"
+
+static int eh_uart_send_ps_flag(uint8_t flag)
+{
+    interface_buffer_handle_t bh = {0};
+    bh.payload_len = 0;
+    bh.flags = flag;
+    return eh_host_bus_tx(&bh) < 0 ? -1 : 0;
+}
+
+int eh_host_bus_inform_slave_ps_enter(void)
+{
+    return eh_uart_send_ps_flag(FLAG_POWER_SAVE_STARTED);
+}
+
+int eh_host_bus_inform_slave_ps_exit(void)
+{
+    return eh_uart_send_ps_flag(FLAG_POWER_SAVE_STOPPED);
+}
+#endif
+
+#endif /* EH_HOST_TRANSPORT_BUS_UART */

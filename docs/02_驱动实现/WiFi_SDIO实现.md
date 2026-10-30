@@ -10676,3 +10676,88 @@ ESP-IDF 反过来：`sdmmc_host_dma_prepare()`（末尾 `enable_dma` + `poll_dem
 
 > 说明：本轮**只**做了 B 方案与判定，未改动数据通路代码；`sendcmd()` 的复位顺序是静态对照 +
 > 签名吻合得出的首要嫌疑，尚未上板验证。
+
+### 附录 AK —— **数据通路打通**：三个真根因 + CPU(PIO) 数据路径（2026-10-31）
+
+附录 AJ 判定「从机侧正常、卡点在主机接收路径」之后，逐条上板消掉，**CMD53 读已经返回 `ret=0` 并
+把真实数据搬进缓冲区，接收循环开始收到真包**。以下是三个真根因、每一条的实测证据，以及最后
+为了让数据真正落到内存而采取的 CPU 数据路径。
+
+#### AK.1 根因一：DAT3 在 4 位模式下没有交给控制器
+
+`esp_sdmmc.c` 的 slot 1 引脚路由里，D3 被当成「模式选择脚」配成**普通 GPIO 输出并拉高**——
+这在总线还是 1 位时是对的（从机上电时采样 D3 选 SD/SPI 模式），但一旦总线切到 4 位，D3 就是
+**DAT3**，必须回到控制器手里。ESP-IDF 在 `sdmmc_host_set_bus_width()` 里正是这么做的
+（注释原文："D3 was set to GPIO high to force slave into SD mode, until 4-bit mode is set"）。
+
+- 症状：CIU 认数据块起始位的判据是「四条数据线同时为低一拍」；DAT3 被本端 GPIO 拉着，
+  这个起始位**永远不成立** → 没有 RXDR、没有 DATA_OVER、没有错误位、FIFO 空、主机超时，
+  而分析仪上从机把四条线都驱动得好好的（附录 AJ 的波形）。
+- 修法：`esp_sdmmc_widebus()` 里按宽度重新路由（`g_widebus` 标志），4 位时把 D3 接回控制器
+  （in/out 信号 + `INPUT|OUTPUT|PULLUP`），1 位时保持 GPIO 拉高。
+- 实测：修完后 `status` 从 `0001ad06`（FIFO_COUNT=0）变为 `0003a900`：**FIFO_COUNT=1**，
+  数据状态机 `mc=0`（数据阶段已跑完），FIFO 里的字节读出来是 **0x3c**（= 同刻 CMD52 读到的
+  `PACKET_LEN` 低字节）。
+
+#### AK.2 根因二：FIFOTH 的接收水位是 511 字节
+
+本板起来时 `FIFOTH = 0x01ff0000` → `rx_wmark = 511`（几乎整个 512 字节 FIFO）。内部 DMA 只在
+FIFO 计数**越过接收水位**时才被请求搬数据，而这条链路上任何一次传输都远小于 511 字节，
+于是 IDMAC 从不取描述符：
+
+```
+dwait[1..8]  status=0003a900 fifo=1 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+timeout with 1 byte(s) still in the FIFO: first=0x0000003c fifoth=0x01ff0000 idsts=00002000 des0=8000001c
+```
+
+- 修法：`esp_sdmmc_reset_data_path()` 顶部把 `rx_wmark/tx_wmark` 都写成 0。
+  **必须放在每次传输前**，不能只在初始化时写一次：时钟路径会复位控制器，复位把 FIFOTH 打回默认值
+  （实测放初始化里写无效，读回仍是 `0x01ff0000`）。
+- 实测：写下去之后 `fifoth=0x00000000`，FIFO 开始真正攒数据（`fifo=1/2/4/5/8/15`）。
+
+#### AK.3 卡点三：IDMAC 引擎在这块板上根本不取描述符
+
+水位问题解决后，数据能进 FIFO，但**引擎仍然一动不动**：
+
+```
+status=0003a900 (FIFO_COUNT=1)  idsts=00002000 (FSM=DMA_SUSPEND, 无 DU、无 FBE)
+des0=8000001c (OWN 仍为 1)  dbaddr=4ff69ec0  bmod=00000082  ctrl=02000030（已使能内部 DMA）
+```
+
+试过并**无效**的手段（都做了实测）：写 `PLDMND`（含在飞行中反复补踢）、`BMOD.SWR` 复位引擎后
+重新使能、把复位从 `sendcmd()` 移到 DMA 装载之前（附录 AJ 的 F1）。引擎始终停在 SUSPEND，
+而同样寄存器组合（`ctrl=02000030 bmod=00000082 idinten=00000103`）在官方固件里 `idsts=00000000`。
+
+结论：**这不是我们软件顺序能修好的**——CIU 侧一切正常（数据阶段跑完、数据正确），
+只有把数据从 FIFO 搬到内存的那一段不通。
+
+#### AK.4 采取的做法：CPU（PIO）数据路径
+
+对 ≤512 字节（一个 FIFO）的传输，把 CIU 从「内部 DMA 模式」切出来，由 CPU 搬：
+
+| 方向 | 做法 |
+|---|---|
+| 读 | `dmarecvsetup()`：`enable_dma(false)` + 记下缓冲区/长度；`eventwait()` 轮询 `STATUS.FIFO_COUNT`，从 FIFO 数据口（偏移 `0x200`）按字取出、按**字节数**截断写入缓冲区；收满即置 `TRANSFERDONE` |
+| 写 | `dmasendsetup()`：同样切出 DMA + 记下缓冲区；`eventwait()` 在 FIFO 未满（`STATUS` bit3）时按字填入 |
+
+- **FIFO_COUNT 的单位是字节**，不是 32 位字（实测：1 字节读→1、2 字节读→2、四次传输累计 8 字节→15），
+  按字取数时要向上取整、按调用方要的字节数截断。
+- 大于 512 字节的传输仍走原来的 DMA 装载（当前无人使用）。
+- DMA 路径的代码全部保留，注释里写明为什么暂时不走它。
+
+#### AK.5 实测结果（复位后同一次启动内）
+
+```
+esp_hosted_sdio: sweep[6] FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a
+esp_hosted_sdio: sweep[6] FN1@0x60 size= 4 ret=0 first=f4 0a 60 2f
+...
+esp_hosted_sdio: sweep[6] summary max_ok=60 r1=0 r4=0 r20=0 r60=-110
+esp_hosted_sdio: rxloop[6] len=1144 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: rxloop[7] len=1236 ret=0 tail=03 00 50 00
+```
+
+- **CMD53 读全部返回 0**（1/2/4/8/16/20/32 字节，含 20 字节寄存器窗口读），不再有 `-5/-110`；
+- 接收循环读真包成功（`len=` 递增、`tail=` 是包尾字节），说明从机→主机的数据通路已经通了；
+- 仍未通过：① 60 字节负载读（`r60=-110`）；② `sweep[6]` 里 0x60 的 4 字节读内容与同刻 CMD52
+  读到的 `3c 00 c0 03` 不一致（读到 `f4 0a 60 2f`），**下次要先判定这是「FIFO 排空对齐」还是
+  「从机把该地址当流端口」**；③ 写方向（CMD53 写）本轮未取到证据。

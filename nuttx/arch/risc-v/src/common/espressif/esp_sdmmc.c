@@ -319,6 +319,51 @@ static void esp_sdmmc_timeout(wdparm_t arg);
 static mutex_t g_sdmmc_lock = NXMUTEX_INITIALIZER;
 #endif
 
+/* Whether the data bus is currently four bits wide.
+ *
+ * Only one pad's role depends on it -- slot 1's D3, which selects the
+ * companion's mode while the bus is one bit and is DAT3 once it is four -- and
+ * the pin routing needs to know which of the two it is being asked for.  See
+ * esp_sdmmc_configpins() and esp_sdmmc_widebus().
+ */
+
+static bool g_widebus;
+
+/* Programmed-I/O data path.
+ *
+ * The controller's internal DMA engine never fetches a descriptor on this
+ * board. Measured, with the FIFO holding received data and a valid descriptor
+ * chain armed:
+ *
+ *   status=0003a900 (FIFO_COUNT = 1, data state machine idle)
+ *   idsts=00002000  (FSM = DMA_SUSPEND, no DU, no fatal bus error)
+ *   des0=8000001c   (OWN still set)
+ *   dbaddr=4ff69ec0 bmod=00000082 ctrl=02000030 (enabled, internal DMA selected)
+ *
+ * and it stays there through poll demand, through a BMOD.SWR reset of the engine
+ * and through re-enabling it. The bytes the companion sent are in the FIFO and
+ * read back correctly (0x3c -- the register value asked for), so the link and
+ * the data phase are fine; only the engine that is supposed to move them to
+ * memory is not.
+ *
+ * Transfers of up to one FIFO (512 bytes) therefore go through the CPU instead:
+ * the CIU is taken out of internal-DMA mode for the transfer, the receive FIFO
+ * is drained into the caller's buffer while the data phase runs, and a write
+ * fills the transmit FIFO from it. That is ordinary programmed I/O for an SD
+ * host and it needs no engine cooperation. The DMA path is kept for anything
+ * larger, where the FIFO alone cannot hold the transfer.
+ */
+
+#define ESP_SDMMC_PIO_MAX   512        /* bytes the FIFO can hold        */
+#define ESP_SDMMC_FIFO_PORT 0x200      /* FIFO data port, not in the struct */
+
+static uint8_t       *g_pio_rxbuf;     /* Receive buffer, NULL when unused */
+static size_t         g_pio_rxlen;
+static size_t         g_pio_rxdone;
+static const uint8_t *g_pio_txbuf;     /* Transmit buffer, NULL when unused */
+static size_t         g_pio_txlen;
+static size_t         g_pio_txdone;
+
 static struct esp_sdmmc_dev_s g_sdmmc =
 {
   .dev =
@@ -880,21 +925,46 @@ static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
       esp_rom_gpio_connect_in_signal(d2_pin,
                                      SD_CARD_CDATA2_2_PAD_IN_IDX, false);
 
-      /* DAT3 is not a data line here -- it selects the companion's mode.
+      /* DAT3 changes role with the bus width.
        *
-       * ESP-IDF's sdmmc_host.c does exactly this for a non-UHS1 slot:
+       * Before the bus is four bits wide this pad is what selects the
+       * companion's mode: it samples D3 at power-up to choose between SD and
+       * SPI, so it has to be held high. ESP-IDF's sdmmc_host.c does exactly
+       * this for a non-UHS1 slot:
        *
        *   // Force D3 high to make slave enter SD mode.
        *   gpio_config(&gpio_conf);            // GPIO_MODE_OUTPUT
        *   gpio_set_level(slot_gpio->d3, 1);
        *
-       * Routing D3 to the controller instead (as an earlier change here did)
-       * leaves it undriven, and the companion samples DAT3 at power-up to
-       * decide between SD and SPI mode. It has to be a plain GPIO held high.
+       * Once the bus *is* four bits wide the same pad is DAT3 and belongs to
+       * the controller -- IDF re-configures it right there, in
+       * sdmmc_host_set_bus_width(), with the comment "D3 was set to GPIO high
+       * to force slave into SD mode, until 4-bit mode is set".
+       *
+       * Leaving it as a GPIO in four-bit mode fails silently, and it is the one
+       * failure this driver had not separated from "the companion sent
+       * nothing": the CIU recognises the start of a data block by all four data
+       * lines being low for one clock, so with DAT3 stuck at the level a GPIO
+       * drives it never sees one -- no RXDR, no DATA_OVER, no error bit, an
+       * empty FIFO and a host-side timeout, while the analyser shows the
+       * companion driving all four lines with correct data.
        */
 
-      esp_configgpio(d3_pin, OUTPUT | PULLUP);
-      esp_gpiowrite(d3_pin, true);
+      if (g_widebus)
+        {
+          esp_rom_gpio_connect_out_signal(d3_pin,
+                                          SD_CARD_CDATA3_2_PAD_OUT_IDX,
+                                          false, false);
+          esp_rom_gpio_connect_in_signal(d3_pin,
+                                         SD_CARD_CDATA3_2_PAD_IN_IDX,
+                                         false);
+          esp_configgpio(d3_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
+        }
+      else
+        {
+          esp_configgpio(d3_pin, OUTPUT | PULLUP);
+          esp_gpiowrite(d3_pin, true);
+        }
 
       esp_configgpio(d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
       esp_configgpio(d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
@@ -1401,11 +1471,19 @@ static void esp_sdmmc_widebus(struct sdio_dev_s *dev, bool enable)
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
 
   priv->widebus = enable;
+  g_widebus     = enable;
 
   sdmmc_ll_set_card_width(priv->hw, priv->slot,
                           enable ? SD_BUS_WIDTH_4_BIT : SD_BUS_WIDTH_1_BIT);
 
-  /* DAT1..3 must be handed to the controller, not turned into plain outputs.
+  /* Re-route the pads for the width that was just programmed.
+   *
+   * This is not optional and not only about DAT1..3 being handed to the
+   * controller: D3 changes role with the width (mode select -> DAT3), so the
+   * routing has to be redone here, not just at bring-up.  See the D3 note in
+   * esp_sdmmc_configpins().
+   *
+   * DAT1..3 must be handed to the controller, not turned into plain outputs.
    *
    * They were being configured with esp_configgpio(OUTPUT | ...), which makes
    * them GPIO outputs holding whatever value the output register happens to
@@ -1422,10 +1500,7 @@ static void esp_sdmmc_widebus(struct sdio_dev_s *dev, bool enable)
    * what a data line has to be.
    */
 
-  if (enable)
-    {
-      esp_sdmmc_route_pins();
-    }
+  esp_sdmmc_route_pins();
 
   mcinfo("widebus=%d\n", (int)enable);
 }
@@ -1635,27 +1710,37 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
   sdmmc_ll_set_response_timeout(priv->hw, 0xffffff);
   sdmmc_ll_set_data_timeout(priv->hw, 0xffffff);
 
-  /* A data command starts from a reset data path.
+  /* NOTE: the data path is no longer reset here.
    *
    * STATUS reports DATA_STATE_MC_BUSY together with FIFO_COUNT = 0 once a data
    * transfer has failed, and the machine does not return to idle by itself, so
-   * every later data command ends the same way. CTRL.FIFO_RST and CTRL.DMA_RST
-   * are self-clearing, so reset both and wait before handing the command over.
+   * a recovery reset is needed -- but this is the wrong place for it.
+   *
+   * NuttX orders a read as
+   *
+   *     SDIO_DMARECVSETUP   (setup_desc -> DBADDR -> enable_dma -> PLDMND)
+   *     SDIO_SENDCMD        (this function)
+   *     SDIO_EVENTWAIT
+   *
+   * so a reset here lands *between* arming the engine and issuing the command
+   * and throws the armed state away: the descriptor's OWN bit stays set, IDSTS
+   * reports the FSM suspended and the CIU waits for data the engine never
+   * fetches. That is exactly the measured failure signature (idsts=00002000,
+   * zero bytes, data timeout) and it also explains why the failure looked
+   * independent of geometry, size, mode and clock.
+   *
+   * ESP-IDF never resets the DMA/FIFO around a transfer either: it arms
+   * (sdmmc_host_dma_prepare() ends with enable_dma + poll_demand) and then calls
+   * sdmmc_host_start_command(); CTRL.FIFO_RST/DMA_RST are touched only in
+   * sdmmc_host_reset(), i.e. at initialisation.
+   *
+   * The reset has therefore moved to the top of esp_sdmmc_dmarecvsetup() /
+   * esp_sdmmc_dmasendsetup(): same recovery, but before the chain is armed
+   * rather than after.
    */
 
   if ((cmd & MMCSD_DATAXFR) != 0)
     {
-      clock_t rstart = clock_systime_ticks();
-
-      sdmmc_ll_reset_fifo(priv->hw);
-      sdmmc_ll_reset_dma(priv->hw);
-
-      while ((!sdmmc_ll_is_fifo_reset_done(priv->hw) ||
-              !sdmmc_ll_is_dma_reset_done(priv->hw)) &&
-             (clock_systime_ticks() - rstart) <= SDMMC_CMDTIMEOUT)
-        {
-        }
-
       /* Measure rather than assume.
        *
        * BLKSIZ and BYTCNT decide how many bytes the CIU moves and CTRL says
@@ -1743,6 +1828,94 @@ static void esp_sdmmc_blocksetup(struct sdio_dev_s *dev,
  ****************************************************************************/
 
 #if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+
+/****************************************************************************
+ * Name: esp_sdmmc_reset_data_path
+ *
+ * Description:
+ *   Put the CIU's data path back to a known state before a transfer is armed.
+ *
+ *   A failed transfer leaves STATUS.DATA_STATE_MC_BUSY set with FIFO_COUNT = 0
+ *   and the machine does not return to idle on its own, so without this every
+ *   later transfer inherits the failure. CTRL.FIFO_RST and CTRL.DMA_RST are
+ *   self-clearing, hence the wait.
+ *
+ *   The placement matters as much as the reset: it must happen *before* the
+ *   descriptor chain is armed. Doing it in sendcmd() instead -- which is where
+ *   it used to be -- lands between DMARECVSETUP arming the engine and the
+ *   command going out, and discards the armed state (see the note there).
+ *
+ ****************************************************************************/
+
+static void esp_sdmmc_reset_data_path(struct esp_sdmmc_dev_s *priv)
+{
+  clock_t start = clock_systime_ticks();
+
+  /* Bring the FIFO's receive watermark down to something a transfer can reach.
+   *
+   * The internal DMA is asked to move received data once the FIFO count passes
+   * the receive watermark in FIFOTH -- and this board comes up with
+   * FIFOTH = 0x01ff0000, i.e. rx_wmark = 511 bytes, nearly the whole 512-byte
+   * FIFO.  Nothing on this link transfers that much in one go, so the IDMAC is
+   * never asked to fetch the descriptor.  Measured on a one-byte CMD53 read:
+   *
+   *   status=0003a900 (FIFO_COUNT = 1, data state machine idle)
+   *   fifoth=01ff0000  idsts=00002000 (FSM suspended)  des0=8000001c (OWN set)
+   *
+   * and the byte sitting in the FIFO reads back as 0x3c -- the register value
+   * that was asked for.  No DATA_OVER follows, because BYTCNT only reaches zero
+   * once the data has actually been moved to memory.
+   *
+   * That is the last piece of "the companion sent nothing" this driver had to
+   * disprove, and the fix is one field.  It is written here, at the top of every
+   * transfer, rather than once at initialisation: the clock path resets the
+   * controller afterwards and the reset puts FIFOTH back to its default, which
+   * is how a write placed there was measured to have no effect.
+   *
+   * tx_wmark is left at zero, which is both the reset default and the value the
+   * working reference runs with.
+   */
+
+  priv->hw->fifoth.rx_wmark = 0;
+  priv->hw->fifoth.tx_wmark = 0;
+
+  /* Reset the IDMAC engine, then re-enable it.
+   *
+   * The interface resets below (CTRL.fifo_reset / CTRL.dma_reset) put the FIFO
+   * and the DMA interface back, but they do not move the IDMAC's own state
+   * machine: measured with data waiting in the FIFO, IDSTS keeps reporting
+   * FSM = 1 (DMA_SUSPEND) with no DU and no fatal bus error, and writing poll
+   * demand does not bring it out. BMOD.SWR is the register the databook gives
+   * for exactly this -- "reset the DMA controller's internal registers and
+   * state machine" -- and it is what sdmmc_ll_init_dma() uses at
+   * initialisation; doing the same per transfer, while nothing is armed, cannot
+   * discard a transfer that has not started yet.
+   */
+
+  {
+    clock_t sstart = clock_systime_ticks();
+
+    priv->hw->bmod.val = 0;
+    priv->hw->bmod.sw_reset = 1;
+
+    while (priv->hw->bmod.sw_reset != 0 &&
+           (clock_systime_ticks() - sstart) <= SDMMC_CMDTIMEOUT)
+      {
+      }
+
+    sdmmc_ll_enable_dma(priv->hw, true);
+  }
+
+  sdmmc_ll_reset_fifo(priv->hw);
+  sdmmc_ll_reset_dma(priv->hw);
+
+  while ((!sdmmc_ll_is_fifo_reset_done(priv->hw) ||
+          !sdmmc_ll_is_dma_reset_done(priv->hw)) &&
+         (clock_systime_ticks() - start) <= SDMMC_CMDTIMEOUT)
+    {
+    }
+}
+
 static int esp_sdmmc_setup_desc(struct esp_sdmmc_dev_s *priv,
                                 uintptr_t buffer, size_t buflen, bool write)
 {
@@ -1926,6 +2099,33 @@ static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
   int ret;
 
+  /* Reset before arming, never after: a previous transfer may have left the
+   * data path busy (see esp_sdmmc_reset_data_path()).
+   */
+
+  esp_sdmmc_reset_data_path(priv);
+
+  g_pio_rxbuf  = NULL;
+  g_pio_rxlen  = 0;
+  g_pio_rxdone = 0;
+
+  if (buflen <= ESP_SDMMC_PIO_MAX)
+    {
+      /* Hand the transfer to the CPU: take the CIU out of internal-DMA mode so
+       * the data phase runs on the FIFO alone, and remember where the bytes go.
+       * See the note on the PIO state above.
+       */
+
+      sdmmc_ll_enable_dma(priv->hw, false);
+
+      g_pio_rxbuf = buffer;
+      g_pio_rxlen = buflen;
+
+      return OK;
+    }
+
+  sdmmc_ll_enable_dma(priv->hw, true);
+
   ret = esp_sdmmc_setup_desc(priv, (uintptr_t)buffer, buflen, false);
   if (ret < 0)
     {
@@ -1984,6 +2184,31 @@ static int esp_sdmmc_dmasendsetup(struct sdio_dev_s *dev,
 {
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
   int ret;
+
+  /* Same rule as the receive path: reset first, then arm. */
+
+  esp_sdmmc_reset_data_path(priv);
+
+  g_pio_txbuf  = NULL;
+  g_pio_txlen  = 0;
+  g_pio_txdone = 0;
+
+  if (buflen <= ESP_SDMMC_PIO_MAX)
+    {
+      /* Programmed I/O transmit: the CIU is taken out of internal-DMA mode and
+       * the FIFO is filled from the buffer while the data phase runs (see the
+       * PIO note above).
+       */
+
+      sdmmc_ll_enable_dma(priv->hw, false);
+
+      g_pio_txbuf = buffer;
+      g_pio_txlen = buflen;
+
+      return OK;
+    }
+
+  sdmmc_ll_enable_dma(priv->hw, true);
 
   ret = esp_sdmmc_setup_desc(priv, (uintptr_t)buffer, buflen, true);
   if (ret < 0)
@@ -2258,6 +2483,7 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
   {
     sdmmc_dev_t *hw = priv->hw;
     clock_t      start = clock_systime_ticks();
+    int          dwait_report = 0;
 
     /* Keep polling until the events the caller asked for are satisfied.
      *
@@ -2271,6 +2497,77 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
     while ((priv->xfrmask & priv->waitmask) == 0)
       {
         uint32_t st = sdmmc_ll_get_intr_status(hw);
+
+        /* Move the data by hand while the data phase runs.
+         *
+         * This is the programmed-I/O path described above the PIO state: the
+         * CIU is not in internal-DMA mode for this transfer, so the receive
+         * FIFO holds the bytes until the CPU takes them and the transmit FIFO
+         * needs filling or the card gets nothing. Both directions are serviced
+         * here because this loop is already the one place that runs while a
+         * transfer is in flight.
+         */
+
+        if (g_pio_rxbuf != NULL)
+          {
+            uint32_t sts = *(volatile uint32_t *)&hw->status;
+            unsigned bytes = (unsigned)((sts >> 17) & 0x1fff);
+
+            /* FIFO_COUNT is in bytes, not in 32-bit words -- measured: a
+             * one-byte read leaves 1, a two-byte read 2, and eight bytes that
+             * accumulated across four transfers left 15. Round up to whole
+             * words when taking them off the port, and copy only what the
+             * caller actually asked for.
+             */
+
+            while (bytes > 0 && g_pio_rxdone < g_pio_rxlen)
+              {
+                uint32_t word =
+                  *(volatile uint32_t *)((uintptr_t)hw + ESP_SDMMC_FIFO_PORT);
+                size_t   left = g_pio_rxlen - g_pio_rxdone;
+
+                if (left > 4)
+                  {
+                    left = 4;
+                  }
+
+                memcpy(g_pio_rxbuf + g_pio_rxdone, &word, left);
+                g_pio_rxdone += left;
+
+                bytes = bytes > 4 ? bytes - 4 : 0;
+              }
+
+            if (g_pio_rxdone >= g_pio_rxlen)
+              {
+                priv->xfrmask |= SDIOWAIT_TRANSFERDONE;
+              }
+          }
+
+        if (g_pio_txbuf != NULL && g_pio_txdone < g_pio_txlen)
+          {
+            uint32_t sts = *(volatile uint32_t *)&hw->status;
+
+            /* FIFO_FULL is bit 3; stop when it says so rather than writing into
+             * a full FIFO and losing bytes.
+             */
+
+            while ((sts & (1u << 3)) == 0 && g_pio_txdone < g_pio_txlen)
+              {
+                uint32_t word = 0;
+                size_t   left = g_pio_txlen - g_pio_txdone;
+
+                if (left > 4)
+                  {
+                    left = 4;
+                  }
+
+                memcpy(&word, g_pio_txbuf + g_pio_txdone, left);
+                *(volatile uint32_t *)((uintptr_t)hw + ESP_SDMMC_FIFO_PORT) =
+                  word;
+                g_pio_txdone += left;
+                sts = *(volatile uint32_t *)&hw->status;
+              }
+          }
 
         /* Does the FIFO ever see data?
          *
@@ -2292,6 +2589,69 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
                        " txdr=%u status=%08" PRIx32 "\n",
                        st, (unsigned)((st >> 5) & 1), (unsigned)((st >> 4) & 1),
                        *(volatile uint32_t *)&hw->status);
+              }
+          }
+
+        /* Trace a data transfer while it is in flight.
+         *
+         * "The card sent nothing" and "the card sent data the CIU never
+         * accepted" look identical from the outside -- both end as a timeout
+         * with an empty buffer -- but the controller separates them: the first
+         * leaves the data state machine idle, the second leaves it busy with
+         * FIFO_COUNT moving. Sampling STATUS/IDSTS/DES0 while the transfer is
+         * in flight is what tells the two apart, and it is the one observation
+         * the earlier rounds made only *after* the transfer had failed.
+         *
+         * One line every ~50 ms, at most 8 per transfer, so a 5 s timeout
+         * produces a compact timeline instead of a flood.
+         */
+
+        /* Resume the engine when data is waiting for it.
+         *
+         * The IDMAC fetches descriptors when the transfer asks it to, and
+         * ESP-IDF resumes it from its interrupt handler whenever it has stopped
+         * with work outstanding (sdmmc_host_dma_resume() -> PLDMND, called on
+         * NI).  This driver has no IDMAC handler at all, so the engine is never
+         * resumed and a byte that reached the FIFO stays there: measured as
+         * FIFO_COUNT = 1, DATA_STATE_MC_BUSY = 0, IDSTS FSM suspended, the
+         * descriptor's OWN bit still set, and no DATA_OVER -- because BYTCNT
+         * only reaches zero once the data has actually been moved to memory.
+         *
+         * The condition is exactly "there is data and the engine still owns the
+         * descriptor", so this is a resume and not a blind kick; repeating it
+         * is harmless because PLDMND is a one-shot request the engine consumes.
+         */
+
+        if ((priv->waitmask & SDIOWAIT_TRANSFERDONE) != 0)
+          {
+            uint32_t sts = *(volatile uint32_t *)&hw->status;
+
+            if (((sts >> 17) & 0x1fff) != 0 &&
+                (priv->desc[0].des0 & SDMMC_DESC_OWN) != 0)
+              {
+                sdmmc_ll_poll_demand(hw);
+              }
+          }
+
+        if ((priv->waitmask & SDIOWAIT_TRANSFERDONE) != 0)
+          {
+            if ((clock_systime_ticks() - start) >=
+                (dwait_report + 1) * (50 / MSEC_PER_TICK) && dwait_report < 8)
+              {
+                uint32_t sts = *(volatile uint32_t *)&hw->status;
+
+                dwait_report++;
+                syslog(LOG_ERR,
+                       "esp_sdmmc: dwait[%d] t=%ums status=%08" PRIx32
+                       " fifo=%u datbusy=%u mc=%u idsts=%08" PRIx32
+                       " des0=%08" PRIx32 " ctrl=%08" PRIx32 "\n",
+                       dwait_report,
+                       (unsigned)((clock_systime_ticks() - start) *
+                                  MSEC_PER_TICK),
+                       sts, (unsigned)((sts >> 17) & 0x1fff),
+                       (unsigned)((sts >> 9) & 1), (unsigned)((sts >> 10) & 1),
+                       priv->hw->idsts.val, priv->desc[0].des0,
+                       priv->hw->ctrl.val);
               }
           }
 
@@ -2348,6 +2708,31 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
 
         if (clock_systime_ticks() - start > SDMMC_LONGTIMEOUT)
           {
+            /* Data left in the FIFO at the timeout is the one case where the
+             * controller has proof the card sent something. Read it out: the
+             * value is the answer to "did the CIU receive the right bytes",
+             * and the FIFO is about to be reset anyway. FIFOTH says whether a
+             * watermark is what kept the engine from draining it.
+             */
+
+            uint32_t sts = *(volatile uint32_t *)&hw->status;
+            unsigned cnt = (unsigned)((sts >> 17) & 0x1fff);
+
+            if (cnt != 0)
+              {
+                /* The FIFO data port is at offset 0x200 and is not part of the
+                 * register struct this HAL exposes, hence the raw access.
+                 */
+
+                syslog(LOG_ERR,
+                       "esp_sdmmc: timeout with %u byte(s) still in the FIFO: "
+                       "first=0x%08" PRIx32 " fifoth=0x%08" PRIx32
+                       " idsts=%08" PRIx32 " des0=%08" PRIx32 "\n",
+                       cnt, *(volatile uint32_t *)((uintptr_t)hw + 0x200),
+                       *(volatile uint32_t *)&hw->fifoth,
+                       priv->hw->idsts.val, priv->desc[0].des0);
+              }
+
             priv->xfrmask |= SDIOWAIT_TIMEOUT;
             break;
           }
@@ -2365,6 +2750,16 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
   wkupevent        = priv->xfrmask;
   priv->xfrmask    = 0;
   priv->waitmask   = 0;
+
+  /* The transfer is over: drop the PIO references so the next one starts clean.
+   */
+
+  g_pio_rxbuf  = NULL;
+  g_pio_rxlen  = 0;
+  g_pio_rxdone = 0;
+  g_pio_txbuf  = NULL;
+  g_pio_txlen  = 0;
+  g_pio_txdone = 0;
   priv->enablewait = false;
 
   /* Log what the data phase actually reported: whether the controller ever
@@ -2809,6 +3204,14 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    */
 
   sdmmc_ll_init_dma(hw);
+
+  /* The FIFO watermark is programmed per transfer instead of here.
+   *
+   * It has to be at the top of esp_sdmmc_reset_data_path(): the clock path runs
+   * after this point and resets the controller, which restores FIFOTH's
+   * default (rx_wmark = 511) and leaves the IDMAC never being asked for data.
+   * See the note there.
+   */
 
   /* Deliberately NOT followed by sdmmc_ll_enable_dma(hw, false).
    *

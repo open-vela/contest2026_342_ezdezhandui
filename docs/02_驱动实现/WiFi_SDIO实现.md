@@ -10535,3 +10535,35 @@ OS 原语映射：`xSemaphoreCreate*→nxsem_init`、`xQueueCreate→固定深�
 
 官方栈的 RX/TX **同样依赖 CMD53 传输**（附录 AE 已证：官方 IDF 基线在本板同样零字节），
 因此本路线只在**数据通路恢复后**才有意义；在此之前落地只会得到"编译通过但跑不通"的代码。
+
+### 附录 AI —— 交接备忘（2026-10-31，接手第一件事看这里）
+
+#### 基准物（务必用对的）
+
+| 用途 | 路径 | 配置 |
+|---|---|---|
+| **真基线** | `~/p4official`（持久化副本，原在 `/tmp`） | esp_hosted 3.0.10 + esp_wifi_remote，**4-bit @ 40 MHz**，slot 1；实测工作态（`eh_wifi: rx RPC …`） |
+| ❌ 不要当基线 | `/tmp/p4sdiohost` | 上一会话写的最小探针，**1-bit @ 400 kHz**，实测零字节；附录 AE/AC 的结论已据此纠正 |
+| 板级守卫留档 | `~/mmu_hal.c.with-psram-guard` | MCUboot `PSRAM_CORE_CLK_EN` 一行守卫（实测有效） |
+
+烧录基线：`erase_flash` → 三镜像（`0x2000` bootloader / `0x8000` 分区表 / `0x10000` app）；烧回我们：
+`erase_flash` → `tools/build_flash/usb_stable.sh`（`0x2000` + `0x20000`）。
+
+#### 当前卡点（唯一）
+
+CMD53 数据阶段不启动。失败签名：`idsts=00002000`（IDMAC FSM 挂起）、`clkena=00000002`、
+`rintsts=00000000`。官方工作态对照：`idsts=00000000`、`clkena=00020002`、`rintsts=00000010`。
+
+#### 下一步三件事（按序）
+
+1. **MCUboot 守卫 patch 化**：`tools/build_flash/patches/psram-clk-guard.patch` + 构建前 `git apply` + manifest 条目。
+   验收：干净工作区重编 → 手工清 bit15（`mww 0x500E6030 0x0000505D`）→ 复位 → 板子自愈。
+2. **补 `clkena` 的 `0x00020000`**（slot1 卡时钟使能位），验收 `regs2` 显示 `clkena=00020002`。
+3. 若 `idsts` 仍 `0x2000` → 改 **IDMAC 装载**（我们一次性 PLDMND；官方由中断补描述符）。
+
+#### 两个必须记住的坑
+
+1. `nuttx/arch/.../bootloader/esp-hal-3rdparty-mcuboot/` **未被任何 git 仓库跟踪** —— 守卫目前只存在于本地源码树，
+   评审环境重建时不会生效，**必须 patch 化**才能进交付物。
+2. 跨栈烧录后只重烧 `0x2000/0x20000` 会因 IDF 在 `0x8000/0x10000` 的残留导致 MCUboot boot loop ——
+   必须先 `erase_flash`（附录 AF）。

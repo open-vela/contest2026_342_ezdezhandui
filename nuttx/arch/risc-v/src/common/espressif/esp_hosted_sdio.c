@@ -598,10 +598,18 @@ int esp_hosted_sdio_initialize(void)
          * says nothing about the configuration now.
          */
 
-        ret = sdio_set_wide_bus(sdio);
+        /* Stay on one data line.
+         *
+         * The IDF baseline probe -- the only host stack on this board that is
+         * known to move data -- configures its slot as 1-bit, and the analyser
+         * work quoted below found one bit carried more traffic than four. The
+         * value read from CCCR is still logged so the configuration is visible.
+         */
+
+        ret = OK;
 
         syslog(LOG_INFO,
-               "%s: card bus width requested 4 bit (CCCR 0x07 was %02x, ret %d)\n",
+               "%s: card bus width stays 1 bit (CCCR 0x07 was %02x, ret %d)\n",
                HOSTED_TAG, busif, ret);
 
         /* Four bits was tried here once DAT1..3 were finally routed to the

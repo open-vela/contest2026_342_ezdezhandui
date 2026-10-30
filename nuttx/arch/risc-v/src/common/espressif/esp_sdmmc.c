@@ -1032,7 +1032,18 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
       case CLOCK_MMC_TRANSFER:
       case CLOCK_SD_TRANSFER_1BIT:
       case CLOCK_SD_TRANSFER_4BIT:
-        div = 0;
+
+        /* Match the one configuration on this board known to deliver data.
+         *
+         * The IDF baseline probe (/tmp/p4sdiohost) runs the link at 400 kHz and
+         * says so in its own comment: sdmmc_card_init leaves the host at the
+         * card's advertised speed and "at that rate this companion stops
+         * answering registers altogether". This driver has been running the
+         * transfer clock at the controller maximum (div = 0) instead, which is
+         * the first thing to rule out for a data phase that never starts.
+         */
+
+        div = 250;
         break;
     }
 

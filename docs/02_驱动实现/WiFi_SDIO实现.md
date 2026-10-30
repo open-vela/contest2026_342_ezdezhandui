@@ -10245,3 +10245,30 @@ dma state: des0=8000001c des1=0000003c … idsts=00002000   # OWN 位仍为 1
 1. 用分析仪抓 **CMD53 读命令发出后 D0–D3 是否有起始位**（区分「从机不驱动」与「驱动了但被衰减」）
 2. 换一颗同型号 C6 做 A/B；或确认 C6 侧固件 `CONFIG_EH_TRANSPORT_CP_SDIO_*` 与主机侧 4-bit/时钟设置一致
 3. 若确认从机侧不下数据：走 RPC 之外的备选传输（UART/SPI 已由官方主机栈支持，tier A 内含 `eh_host_bus_uart.c` / `eh_host_bus_spi.c`）
+
+### 附录 AB 补充 —— FN1 寄存器访问可信度判决（2026-10-31，P0b）
+
+诊断读数（每 5 轮复现一行，避免被每轮 ~32 行轮询挤出窗口）：
+
+```
+diag FN0 CCCR00=32  FN0 BLKSIZ=0200  FN1 BLKSIZ=0200
+     INT_RAW/PKT_LEN t0=0040cc00/3c00c003  t1=0040cc00/3c00c003
+rxloop[30] card-intr=0 ab=-110 ee ee cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=…（同）
+```
+
+| 读数 | 含义 | 判定 |
+|---|---|---|
+| `FN0 BLKSIZ = 0x0200` | 我们自己写入 512 的 CCCR 0x10/0x11 回读 | ✅ 写读一致 |
+| `FN1 BLKSIZ = 0x0200` | **FN1 的 FBR 块大小（地址 0x110/0x111）** 回读 | ✅ **FN1 寄存器访问可信** |
+| `CCCR00 = 0x32` | SDIO 3.0 / CCCR 格式 2 | ✅ 合法 |
+| `t0 == t1`（间隔 50 ms） | INT_RAW/PACKET_LEN 窗口两次采样 | ✅ 读是确定性的 |
+| `PKT_LEN` 低字节 `0x3c` | 从机通告 60 字节 | ✅ 与 rxloop 的 `len=60` 同源 |
+| `INT_RAW` bit23 置位 | 从机在通告"有包" | ✅ |
+
+**结论**：主机侧 SDIO 寄存器通路（CMD52、FN0 与 FN1）**正确**，"读到的都是垃圾"这一假设排除。
+失败的定位收窄为：**从机通告了包，但 CMD53 读的数据阶段不驱动数据线**（无起始位、IDMAC 不收描述符、
+`eventwait` 只报 TIMEOUT）。注意此前读 0x100/0x101 得 0 是**我的地址取错**（FBR 块大小在 0x10 偏移，
+即 FN1 的 0x110/0x111）—— NuttX 的 `SDIO_CCCR_FN0_BLKSIZE_0=0x10` 是对的。
+
+**下一步（P0）**：把官方基线 `/tmp/p4sdiohost`（IDF SDMMC 主机工程，已构建）烧到同一块 P4、对同一颗 C6，
+抓它**成功**的 CMD53 读时序与参数，与我们的 `arg=0x1fef8801`（块模式）/`0x17ef883c`（字节模式）逐项对照。

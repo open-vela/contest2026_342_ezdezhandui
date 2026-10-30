@@ -673,6 +673,76 @@ int esp_hosted_sdio_initialize(void)
     uint8_t ab_b0 = 0;
     uint8_t ab_b1 = 0;
 
+    /* Known-value test for FN1 register access.
+     *
+     * Two of the values read below are fixed independently of this driver:
+     * FN0's CCCR revision (spec-defined) and FN1's Function Block Size
+     * registers at 0x100/0x101, which this driver wrote itself a few lines
+     * above (512 -> 00 02).  If FN1 reads return those, the whole SLCHOST
+     * window (INT_RAW 0x50, PACKET_LEN 0x60 ...) is trustworthy; if they
+     * return anything else, then every number the RX loop has been acting on
+     * -- including the announced packet length that triggers each CMD53 read
+     * -- was never a register value at all.
+     *
+     * The window is sampled twice, 50 ms apart, so one line shows both the
+     * values and whether they hold still.
+     */
+
+    uint8_t dg_cccr = 0;
+    uint8_t dg_fbr0 = 0;
+    uint8_t dg_fbr1 = 0;
+    uint8_t dg_f0b0 = 0;
+    uint8_t dg_f0b1 = 0;
+    uint8_t dg_w0[8];
+    uint8_t dg_w1[8];
+    int dg_r0;
+    int dg_r1;
+    int dg_r2;
+    int dg_r3;
+    int i;
+
+    /* FBR block size lives at FBR offset 0x10 (SDIO_CCCR_FN0_BLKSIZE_0), so
+     * function 1's copy is at 0x110/0x111 -- not at 0x100/0x101, which is
+     * simply a different (read-as-zero) FBR byte.
+     */
+
+    dg_r0 = sdio_io_rw_direct(sdio, false, 0, 0x0000, 0, &dg_cccr);
+    dg_r1 = sdio_io_rw_direct(sdio, false, 0, 0x0010, 0, &dg_f0b0);
+    dg_r2 = sdio_io_rw_direct(sdio, false, 0, 0x0011, 0, &dg_f0b1);
+    dg_r3 = sdio_io_rw_direct(sdio, false, 0, 0x0110, 0, &dg_fbr0);
+    sdio_io_rw_direct(sdio, false, 0, 0x0111, 0, &dg_fbr1);
+
+    for (i = 0; i < 4; i++)
+      {
+        dg_w0[i]     = 0;
+        dg_w0[4 + i] = 0;
+        sdio_io_rw_direct(sdio, false, 1, 0x00050u + (uint32_t)i, 0, &dg_w0[i]);
+        sdio_io_rw_direct(sdio, false, 1, 0x00060u + (uint32_t)i, 0,
+                          &dg_w0[4 + i]);
+      }
+
+    usleep(50 * 1000);
+
+    for (i = 0; i < 4; i++)
+      {
+        dg_w1[i]     = 0;
+        dg_w1[4 + i] = 0;
+        sdio_io_rw_direct(sdio, false, 1, 0x00050u + (uint32_t)i, 0, &dg_w1[i]);
+        sdio_io_rw_direct(sdio, false, 1, 0x00060u + (uint32_t)i, 0,
+                          &dg_w1[4 + i]);
+      }
+
+    syslog(LOG_INFO,
+           "%s: diag FN0 CCCR00=%02x(r%d) FN0 BLKSIZ=%02x%02x FN1 BLKSIZ=%02x%02x(r%d) "
+           "INT_RAW/PKT_LEN t0=%02x%02x%02x%02x/%02x%02x%02x%02x "
+           "t1=%02x%02x%02x%02x/%02x%02x%02x%02x\n",
+           HOSTED_TAG, dg_cccr, dg_r0, dg_f0b1, dg_f0b0, dg_fbr1, dg_fbr0,
+           dg_r3,
+           dg_w0[0], dg_w0[1], dg_w0[2], dg_w0[3],
+           dg_w0[4], dg_w0[5], dg_w0[6], dg_w0[7],
+           dg_w1[0], dg_w1[1], dg_w1[2], dg_w1[3],
+           dg_w1[4], dg_w1[5], dg_w1[6], dg_w1[7]);
+
     for (round = 0; round < 400; round++)
       {
         uint32_t now = 0;
@@ -701,10 +771,19 @@ int esp_hosted_sdio_initialize(void)
         {
           bool ci = esp_sdmmc_wait_card_intr(sdio, 50);
 
-          if (round < 6 || (round % 25) == 0)
+          if (round < 6 || (round % 5) == 0)
             {
-              syslog(LOG_INFO, "%s: rxloop[%d] card-intr=%d ab=%d %02x %02x\n",
-                     HOSTED_TAG, round, (int)ci, ab_ret, ab_b0, ab_b1);
+              syslog(LOG_INFO,
+                     "%s: rxloop[%d] card-intr=%d ab=%d %02x %02x "
+                     "cccr=%02x f0b=%02x%02x f1b=%02x%02x "
+                     "w0=%02x%02x%02x%02x/%02x%02x%02x%02x "
+                     "w1=%02x%02x%02x%02x/%02x%02x%02x%02x\n",
+                     HOSTED_TAG, round, (int)ci, ab_ret, ab_b0, ab_b1,
+                     dg_cccr, dg_f0b1, dg_f0b0, dg_fbr1, dg_fbr0,
+                     dg_w0[0], dg_w0[1], dg_w0[2], dg_w0[3],
+                     dg_w0[4], dg_w0[5], dg_w0[6], dg_w0[7],
+                     dg_w1[0], dg_w1[1], dg_w1[2], dg_w1[3],
+                     dg_w1[4], dg_w1[5], dg_w1[6], dg_w1[7]);
             }
         }
 

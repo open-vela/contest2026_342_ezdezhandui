@@ -1743,7 +1743,26 @@ static int esp_sdmmc_setup_desc(struct esp_sdmmc_dev_s *priv,
           up_invalidate_dcache((uintptr_t)addr, (uintptr_t)addr + chunk);
         }
 
-      priv->desc[index].des0   = SDMMC_DESC_OWN | SDMMC_DESC_DIC;
+      /* Match ESP-IDF's descriptor bits exactly.
+       *
+       * Reference (sdmmc_host.c, fill_dma_descriptors):
+       *
+       *     desc->last_descriptor        = last;
+       *     desc->second_address_chained = 1;        // always
+       *     desc->owned_by_idmac         = 1;
+       *
+       * Three differences mattered. The chained bit was set only for chains
+       * longer than one descriptor; disable_int_on_completion was set, which
+       * the reference never does; and end_of_ring was set on the last
+       * descriptor -- a bit describing a ring this driver does not build.
+       *
+       * Measured with those bits: des0=8000002e (OWN still set, so the engine
+       * never took the descriptor) with IDSTS reporting the engine suspended.
+       * Aligning the bits is the smallest change towards a chain the engine is
+       * known to accept.
+       */
+
+      priv->desc[index].des0   = SDMMC_DESC_OWN | SDMMC_DESC_CH;
       priv->desc[index].des1   = chunk;
       priv->desc[index].buffer = (uint32_t)addr;
       priv->desc[index].next   = 0;
@@ -1760,13 +1779,19 @@ static int esp_sdmmc_setup_desc(struct esp_sdmmc_dev_s *priv,
 
   priv->desc[0].des0 |= SDMMC_DESC_FS;
 
+  /* CH is already set on every descriptor; only the link pointer is needed. */
+
   if (index > 1)
     {
-      priv->desc[0].des0 |= SDMMC_DESC_CH;
-      priv->desc[0].next  = (uint32_t)(uintptr_t)&priv->desc[1];
+      priv->desc[0].next = (uint32_t)(uintptr_t)&priv->desc[1];
     }
 
-  priv->desc[index - 1].des0 |= SDMMC_DESC_LD | SDMMC_DESC_ER;
+  /* Only the last descriptor is marked; end_of_ring is deliberately NOT set,
+   * because it describes a ring this driver does not build and the reference
+   * never sets it either.
+   */
+
+  priv->desc[index - 1].des0 |= SDMMC_DESC_LD;
 
   /* The engine reads the chain from memory, so the CPU's writes to it must
    * reach DRAM first.  For a write the data must too; for a read the stale

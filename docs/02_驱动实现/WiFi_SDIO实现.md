@@ -10373,3 +10373,44 @@ PLDMND（注释里也写了这一点）。
 
 IDMAC 按 32 位字搬运，该字段必须是 4 的倍数。已改为 `(chunk + 3u) & ~3u`。
 **实测：尺寸扫描结果不变**（`size=1 ret=-5`、2/4/8 仍 `-110`、数据仍为零）→ 该分歧虽真实但**不是本因**。
+
+### 附录 AE —— 官方基线本体实测：同一块板上同样零字节（2026-10-31，目标①判决）
+
+按目标①执行：把官方基线 **IDF 工程 `/tmp/p4sdiohost`**（IDF 自带 sdmmc 主机栈，1-bit @ 400 kHz）
+烧到同一块 P4（`0x2000` bootloader / `0x8000` 分区表 / `0x10000` 应用，hash 校验通过），
+对**同一颗 C6**（程序自己先脉冲 C6_EN=GPIO54 释放从机复位）跑一轮读写探针。串口原文：
+
+```
+I (1885) p4sdio: host init ...
+I (1918) p4sdio: sdmmc_card_init -> ESP_OK (0)          ← 枚举成功
+I (1918) p4sdio: set_card_clk(400 kHz) -> ESP_OK
+E (1919) sdmmc_io: sdmmc_io_rw_extended: sdmmc_send_cmd returned 0x107   ← CMD53 写超时
+I (1924) p4sdio: OPEN_DATA_PATH -> ESP_ERR_TIMEOUT
+E (2529) ... 0x107
+I (2529) p4sdio:     LEN read err ESP_ERR_TIMEOUT        ← CMD53 读超时
+E (2629) ... 0x107
+I (2629) p4sdio:     TOKEN read err ESP_ERR_TIMEOUT
+I (2629) p4sdio: [0] PACKET_LEN=cccccccc TOKEN=cccccccc
+E (2734) ... 0x107
+I (2734) p4sdio:     read60 -> ESP_ERR_TIMEOUT
+I (2734) p4sdio:     buf: cc cc cc cc cc cc cc cc        ← 一个字节都没到
+I (2738) p4sdio: probe done
+```
+
+**结论（对目标①的判决）**
+
+1. **官方 IDF 主机栈在这块板上同样零字节**：枚举 OK，但 **CMD53 读与写全部超时**（`0x107` = `ESP_ERR_TIMEOUT`）。
+2. 因此「官方固件能和 C6 通讯」这一前提，**在这块板 + 这颗 C6 的组合上不成立**；本驱动的失败
+   **不是自研端口层独有**，同一现象在参考栈上完全复现。
+3. 对本驱动已排除的 15 项（几何/尺寸/速率/位宽/命令字/描述符/寄存器通路…）是**交叉印证**：
+   那些差异即便全部改掉也不会有效。
+4. **对路线②的影响**：把官方 esp-hosted 协议栈 + NuttX 薄移植层编进来**不能绕过**这个卡点 ——
+   官方栈的 RX/TX 同样依赖 CMD53 传输。路线②只在数据通路恢复后才有意义。
+
+**下一步需要线下动作（按优先级）**
+
+1. **整板断电冷启动后重跑一次基线**（C6 可能已被此前上千次失败的 CMD53 打挂；EN 脉冲不等于上电复位）
+2. **重烧/更换 C6 从机固件**（官方 esp-hosted-mcu slave），或换一颗同型号 C6 做 A/B
+3. **分析仪抓官方基线驱动下的 CMD53 波形**（通道 0-5 已接）：看从机侧 DAT0 是否出现起始位 ——
+   这一次"主机"是官方栈，因此能干净地把"从机不驱动"与"主机不接收"分开
+4. 核对 4-bit 走线与串阻/上拉（此前结论：改 1-bit 也不通，故优先级最低）

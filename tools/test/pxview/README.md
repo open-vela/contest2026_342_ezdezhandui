@@ -24,6 +24,22 @@ init()
 print(call("get_devices"))
 ```
 
+## 帧解码：`frames.py`（**优先用它，而不是自带解码器**）
+
+```sh
+python3 tools/test/pxview/frames.py <startSample> <windowSamples> [sampleRate]
+# 例：解码 17.0-18.0 s 这 1 s（1 MHz 采样）
+python3 tools/test/pxview/frames.py 17000000 1000000 1000000
+```
+
+- 直接从样本解 48 位命令/响应帧，**CRC7 校验**后才算数，不需要挂解码器，也不改采样配置；
+- CMD53 会打印**方向位本身**（`READ`/`WRITE` = 参数 bit31，IDF `SD_ARG_CMD53_READ = 0<<31`）、
+  功能号、地址、块模式、count —— 这些都是推理要用的字段。
+
+> ⚠️ 实测（2026-10-31）：分析仪**自带** SDIO 解码器把我们的 CMD53 读命令标成
+> `R/W flag: Write` / `Block mode`，与线上真实位相反/不符。凡涉及方向、块模式、count 的结论，
+> 一律以 `frames.py` 的原始位解码为准。
+
 ## 服务端
 
 - 地址：`http://127.0.0.1:10110/mcp`（streamable-http）

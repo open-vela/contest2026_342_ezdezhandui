@@ -77,8 +77,10 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <string.h>
 #include <syslog.h>
 
+#include <nuttx/clock.h>
 #include <nuttx/mmcsd.h>
 #include <nuttx/signal.h>
 #include <nuttx/sdio.h>
@@ -134,6 +136,27 @@
 #define ESP_HOSTED_SDIO_PROBE_TRIES       4
 #define ESP_HOSTED_SDIO_PROBE_INTERVAL_MS 250
 
+/* Cadence of the CMD53 read ladder.
+ *
+ * The ladder used to run exactly once, a few seconds into bring-up, which made
+ * it useless as a waveform target: a capture window that missed those seconds
+ * saw no read-direction CMD53 at all, and the one question still open -- does
+ * the companion drive DAT[3:0] once a read command is accepted -- could not be
+ * answered from the bus.  Repeating it on a timer puts read traffic on the
+ * wire at a known cadence, so any capture window of a few seconds catches
+ * some, and the console shows the same experiment repeating in time.
+ *
+ * One period runs the one-byte probe: the shortest read this card can be
+ * given, and the one whose failure returns immediately (SDIOWAIT_ERROR rather
+ * than sitting out the transfer timeout).  The full ladder repeats only every
+ * HOSTED_SWEEP_FULL_EVERY probes, because each failing transfer in it costs up
+ * to SDIO_CMD53_TIMEOUT_MS (1 s) and running the whole ladder every period
+ * would starve the receive loop instead of observing it.
+ */
+
+#define HOSTED_SWEEP_PERIOD_MS   5000
+#define HOSTED_SWEEP_FULL_EVERY  6
+
 /* Defaults for the companion enable line.
  *
  * These mirror ESPRESSIF_HOSTED_SDIO_EN_GPIO / _EN_DELAY_MS so that the driver
@@ -156,6 +179,121 @@
 
 static enum esp_hosted_sdio_state_e g_hosted_state = ESP_HOSTED_SDIO_RESET;
 static int g_hosted_errcode;
+
+/****************************************************************************
+ * Private Types
+ ****************************************************************************/
+
+/* Outcome of the CMD53 read ladder.
+ *
+ * It is passed back to the receive loop, which reprints the latest values
+ * every few rounds: one line printed once scrolls out of reach within a
+ * second or two, which is exactly how the earlier one-shot ladder became
+ * unobservable in the first place.
+ */
+
+struct hosted_sweep_s
+{
+  int     max_ok;    /* Largest read size that completed, -1 for none   */
+  int     ret1;      /* One-byte byte-mode read at FN1 0x60             */
+  int     ret4;      /* Four-byte byte-mode read at FN1 0x60            */
+  int     ret20;     /* 20-byte register window at FN1 0x50             */
+  int     ret60;     /* 60-byte announced packet                        */
+  uint8_t first[4];  /* Leading bytes of the last one-byte read         */
+};
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: hosted_cmd53_read_sweep
+ *
+ * Description:
+ *   Drive the CMD53 read ladder on function 1 and report what came back.
+ *
+ *   This does not answer "which size works" -- the earlier one-shot run of the
+ *   same ladder already showed that none of them do (appendix AD).  It answers
+ *   whether the companion drives DAT[3:0] at all after a read command has been
+ *   accepted, and that can only be settled by watching the bus while a read is
+ *   in flight.  Hence the second job of this routine: put a read-direction
+ *   CMD53 on the wire on a schedule, so a capture no longer has to be aligned
+ *   to the second.
+ *
+ * Input Parameters:
+ *   sdio - The SDIO device handle
+ *   seq  - Probe sequence number, tagged onto every line it prints
+ *   full - true: the whole ladder; false: the one-byte probe only
+ *   out  - Running results, updated in place
+ *
+ ****************************************************************************/
+
+static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
+                                    unsigned int seq, bool full,
+                                    FAR struct hosted_sweep_s *out)
+{
+  static uint8_t swbuf[64] __attribute__((aligned(64)));
+  static const uint16_t swsize[8] = { 1, 2, 4, 8, 16, 20, 32, 60 };
+  int k;
+
+  if (!full)
+    {
+      memset(swbuf, 0x5a, sizeof(swbuf));
+
+      out->ret1 = sdio_io_rw_extended(sdio, false, 1, 0x00060u, true, swbuf,
+                                      1, 0);
+      memcpy(out->first, swbuf, sizeof(out->first));
+
+      syslog(LOG_INFO,
+             "%s: sweep[%u] probe FN1@0x60 size= 1 ret=%d "
+             "first=%02x %02x %02x %02x\n",
+             HOSTED_TAG, seq, out->ret1,
+             out->first[0], out->first[1], out->first[2], out->first[3]);
+      return;
+    }
+
+  for (k = 0; k < 8; k++)
+    {
+      int r;
+
+      memset(swbuf, 0x5a, sizeof(swbuf));
+      r = sdio_io_rw_extended(sdio, false, 1, 0x00060u, true, swbuf,
+                              (int)swsize[k], 0);
+      syslog(LOG_INFO,
+             "%s: sweep[%u] FN1@0x60 size=%2u ret=%d first=%02x %02x %02x %02x\n",
+             HOSTED_TAG, seq, (unsigned)swsize[k], r,
+             swbuf[0], swbuf[1], swbuf[2], swbuf[3]);
+
+      if (r == 0)
+        {
+          out->max_ok = (int)swsize[k];
+        }
+
+      if (swsize[k] == 1)
+        {
+          out->ret1 = r;
+          memcpy(out->first, swbuf, sizeof(out->first));
+        }
+
+      if (swsize[k] == 4)
+        {
+          out->ret4 = r;
+        }
+    }
+
+  memset(swbuf, 0x5a, sizeof(swbuf));
+  out->ret20 = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true, swbuf,
+                                   20, 0);
+
+  memset(swbuf, 0x5a, sizeof(swbuf));
+  out->ret60 = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - 60u, true,
+                                   swbuf, 60, 0);
+
+  syslog(LOG_INFO,
+         "%s: sweep[%u] summary max_ok=%d r1=%d r4=%d r20=%d r60=%d\n",
+         HOSTED_TAG, seq, out->max_ok, out->ret1, out->ret4, out->ret20,
+         out->ret60);
+}
 
 /****************************************************************************
  * Public Functions
@@ -683,14 +821,23 @@ int esp_hosted_sdio_initialize(void)
     uint8_t ab_b0 = 0;
     uint8_t ab_b1 = 0;
 
-    /* CMD53 read size sweep results, reprinted every round for the same reason
-     * as the A/B result: a line printed once is gone in a second.
+    /* CMD53 read ladder results, reprinted every round for the same reason as
+     * the A/B result: a line printed once is gone in a second.
      */
 
-    int sw_max = -1;
-    int sw_ret4 = 0x7fffffff;
-    int sw_ret20 = 0x7fffffff;
-    int sw_ret60 = 0x7fffffff;
+    struct hosted_sweep_s sw;
+    unsigned int sweep_seq = 0;
+    uint32_t sweep_next;
+
+    sw.max_ok   = -1;
+    sw.ret1     = 0x7fffffff;
+    sw.ret4     = 0x7fffffff;
+    sw.ret20    = 0x7fffffff;
+    sw.ret60    = 0x7fffffff;
+    sw.first[0] = 0;
+    sw.first[1] = 0;
+    sw.first[2] = 0;
+    sw.first[3] = 0;
 
     /* Known-value test for FN1 register access.
      *
@@ -762,7 +909,7 @@ int esp_hosted_sdio_initialize(void)
            dg_w1[0], dg_w1[1], dg_w1[2], dg_w1[3],
            dg_w1[4], dg_w1[5], dg_w1[6], dg_w1[7]);
 
-    /* CMD53 read size sweep.
+    /* CMD53 read ladder.
      *
      * The IDF baseline reads the same registers this driver does -- FN1 0x60
      * and 0x44 -- but with four-byte CMD53 byte-mode transfers, and it is the
@@ -770,47 +917,24 @@ int esp_hosted_sdio_initialize(void)
      * here so far was 20, 60 or 512 bytes and every one of them stalled.  If
      * some sizes work and larger ones do not, the fault is in this port's
      * transfer setup rather than in the link; if none work, it is not the size.
+     *
+     * This first pass is the same ladder the one-shot version ran, kept so the
+     * baseline result still appears on the console before the loop's own lines.
+     * The loop then repeats the ladder on a timer: that repetition is what
+     * turns "a read command happened at some point during bring-up" into
+     * something a logic analyzer capture can be aimed at.
      */
 
-    {
-      static uint8_t swbuf[64] __attribute__((aligned(64)));
-      static const uint16_t swsize[8] = { 1, 2, 4, 8, 16, 20, 32, 60 };
-      int k;
+    hosted_cmd53_read_sweep(sdio, sweep_seq, true, &sw);
+    sweep_seq++;
 
-      for (k = 0; k < 8; k++)
-        {
-          int r;
+    /* Time base for the periodic probe, taken after the ladder rather than
+     * before it: when every transfer times out the ladder itself runs for up
+     * to ten seconds, and measuring the period from its start would fire the
+     * first probe immediately after it.
+     */
 
-          memset(swbuf, 0x5a, sizeof(swbuf));
-          r = sdio_io_rw_extended(sdio, false, 1, 0x00060u, true, swbuf,
-                                  (int)swsize[k], 0);
-          syslog(LOG_INFO,
-                 "%s: sweep FN1@0x60 size=%2u ret=%d first=%02x %02x %02x %02x\n",
-                 HOSTED_TAG, (unsigned)swsize[k], r,
-                 swbuf[0], swbuf[1], swbuf[2], swbuf[3]);
-
-          if (r == 0)
-            {
-              sw_max = (int)swsize[k];
-            }
-
-          if (swsize[k] == 4)
-            {
-              sw_ret4 = r;
-            }
-        }
-
-      memset(swbuf, 0x5a, sizeof(swbuf));
-      sw_ret20 = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true, swbuf,
-                                     20, 0);
-
-      memset(swbuf, 0x5a, sizeof(swbuf));
-      sw_ret60 = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - 60u, true,
-                                     swbuf, 60, 0);
-
-      syslog(LOG_INFO, "%s: sweep summary max_ok=%d r4=%d r20=%d r60=%d\n",
-             HOSTED_TAG, sw_max, sw_ret4, sw_ret20, sw_ret60);
-    }
+    sweep_next = clock_systime_ticks() + MSEC2TICK(HOSTED_SWEEP_PERIOD_MS);
 
     for (round = 0; round < 400; round++)
       {
@@ -818,6 +942,37 @@ int esp_hosted_sdio_initialize(void)
         uint8_t  ib[4];
         uint32_t iraw;
         int k;
+
+        /* Periodic CMD53 read probe.
+         *
+         * Everything this driver can do to the companion that is *known* to
+         * work -- register reads, register writes, the interrupt handshake,
+         * CMD53 writes -- runs through paths the logic analyzer has already
+         * captured.  A CMD53 read is the one operation that does not, and the
+         * question it settles is a single one: does the companion drive
+         * DAT[3:0] in the data phase of a read, or does it stay silent? That
+         * is visible on the bus in one capture -- but only if a read command
+         * is guaranteed to be in the window.
+         *
+         * The one-shot ladder gave no such guarantee: it ran once, seconds
+         * into a boot whose timing moves with every flash, so a capture either
+         * had to be guessed to the second or saw nothing (appendix AG).  Here
+         * the same command is issued every HOSTED_SWEEP_PERIOD_MS, so a window
+         * of a few seconds always contains at least one, and the console shows
+         * the same experiment repeating over time rather than a single sample.
+         *
+         * The period is measured from the end of the previous probe, so a
+         * timed-out probe cannot make the next one late.
+         */
+
+        if ((int32_t)(clock_systime_ticks() - sweep_next) >= 0)
+          {
+            hosted_cmd53_read_sweep(sdio, sweep_seq,
+                                    (sweep_seq % HOSTED_SWEEP_FULL_EVERY) == 0,
+                                    &sw);
+            sweep_seq++;
+            sweep_next = clock_systime_ticks() + MSEC2TICK(HOSTED_SWEEP_PERIOD_MS);
+          }
 
         /* Wait for the card to raise its SDIO interrupt (DAT1) first.
          *
@@ -844,12 +999,13 @@ int esp_hosted_sdio_initialize(void)
             {
               syslog(LOG_INFO,
                      "%s: rxloop[%d] card-intr=%d ab=%d %02x %02x "
-                     "sw=%d/%d/%d max=%d "
+                     "sw=%d/%d/%d max=%d p%d=%d/%02x "
                      "cccr=%02x f0b=%02x%02x f1b=%02x%02x "
                      "w0=%02x%02x%02x%02x/%02x%02x%02x%02x "
                      "w1=%02x%02x%02x%02x/%02x%02x%02x%02x\n",
                      HOSTED_TAG, round, (int)ci, ab_ret, ab_b0, ab_b1,
-                     sw_ret4, sw_ret20, sw_ret60, sw_max,
+                     sw.ret4, sw.ret20, sw.ret60, sw.max_ok,
+                     sweep_seq, sw.ret1, sw.first[0],
                      dg_cccr, dg_f0b1, dg_f0b0, dg_fbr1, dg_fbr0,
                      dg_w0[0], dg_w0[1], dg_w0[2], dg_w0[3],
                      dg_w0[4], dg_w0[5], dg_w0[6], dg_w0[7],

@@ -10567,3 +10567,112 @@ CMD53 数据阶段不启动。失败签名：`idsts=00002000`（IDMAC FSM 挂起
    评审环境重建时不会生效，**必须 patch 化**才能进交付物。
 2. 跨栈烧录后只重烧 `0x2000/0x20000` 会因 IDF 在 `0x8000/0x10000` 的残留导致 MCUboot boot loop ——
    必须先 `erase_flash`（附录 AF）。
+
+### 附录 AJ —— B 方案落地 + CMD53 读方向判定（2026-10-31，波形证据）
+
+按交接备忘（附录 AI）指定的接手第一步执行：**先把尺寸扫描改成周期触发（B 方案），再用波形判定
+CMD53 读方向。** 原始证据：[logs/2026-10-31_sdio-cmd53-read-wire.md](../../logs/2026-10-31_sdio-cmd53-read-wire.md)。
+
+#### AJ.1 代码改动（只改诊断时序，不动数据通路）
+
+`esp_hosted_sdio.c`：
+
+| 项 | 内容 |
+|---|---|
+| 新增私有函数 | `hosted_cmd53_read_sweep(sdio, seq, full, out)` —— 把原来内联在 `esp_hosted_sdio_initialize()` 里的阶梯抽成函数，带序号打印 |
+| 新增节拍宏 | `HOSTED_SWEEP_PERIOD_MS = 5000`、`HOSTED_SWEEP_FULL_EVERY = 6` |
+| 周期触发点 | `rxloop` 每轮开头：距上次探针 ≥ 5 s 就跑一次；`seq % 6 == 0` 跑**完整阶梯**（1/2/4/8/16/20/32/60 B @0x60 + 20 B @0x50 + 60 B @包地址），其余只跑 **1 字节探针** |
+| 保留 | bring-up 仍跑一次完整阶梯（`sweep[0]`），并把结果并入每轮 `rxloop[…]` 行（新增 `p<seq>=<ret>/<first>` 字段） |
+
+设计理由：1 字节探针是**失败返回最慢路径里最短**的一条（其余尺寸都要等满 5 s 长超时），
+周期触发后任意采集窗口内都会有读方向 CMD53，这正是附录 AG 缺的那一半证据。
+
+实测两点（证据文件里都有原始解码）：
+
+- 每次失败的读要等满 `SDMMC_LONGTIMEOUT = 5 s` 才返回，所以**阶梯本身就是「5 s 一条读命令」的节拍**
+  （17.65 / 17.77 / 22.88 / 27.99 s，count = 1 / 2 / 4 / 8）；
+- 探针在**每一轮 rxloop 开头**判到期，因此它的实际上线节拍 = 轮询周期（不是严格 5 s）。
+  在运行中的 loop 里实测抓到探针 `arg=0x1400c001`（31.42 s），同一窗口内 `rxloop` 的 CMD52
+  轮询每 ~40 ms 一对 —— 读方向命令在采集窗口里稳定可抓，B 方案的目的达到。
+
+#### AJ.2 判定结果：从机侧正常，主机侧不收
+
+串口（探针周期复现，缓冲区仍是预填值）：
+
+```
+esp_hosted_sdio: sweep[7] probe FN1@0x60 size= 1 ret=-110 first=5a 5a 5a 5a
+esp_hosted_sdio: rxloop[40] card-intr=0 ab=-110 ee ee sw=-110/-110/-110 max=-1 p10=-110/5a ...
+```
+
+波形（1 MHz × 32 M = 32 s，`ch0=CMD ch1=CLK ch2..5=D0..D3`），用**新增的 `tools/test/pxview/frames.py`
+做原始位解码 + CRC7 校验**：
+
+```
+17.6549 s  CMD53 cmd READ blk=0 fn=1 addr=0x060 count=1 op=1 arg=0x1400c001
+17.6561 s  CMD53 rsp READ                                  arg=0x00001000
+17.7745 s  CMD53 cmd READ ... count=2 arg=0x1400c002
+22.8851 s  CMD53 cmd READ ... count=4 arg=0x1400c004
+27.9953 s  CMD53 cmd READ ... count=8 arg=0x1400c008
+```
+
+| 观测 | 判定 |
+|---|---|
+| 读命令 `bit31 = 0`、`fn=1 addr=0x060`、字节模式、count 递增 | ✅ 方向/几何正确（IDF：`SD_ARG_CMD53_READ = 0<<31`） |
+| 从机 R5 = `0x00001000`（错误位全 0） | ✅ 从机接受了读命令 |
+| 命令后 **四条 DAT 线都出现数据阶段**，起始位是四条全低的 1 拍，长度随 count 增长 | ✅ **从机在驱动数据线** |
+| 1 字节读的数据阶段头两拍 = `0x3`、`0xC` → **0x3C**；2 字节读 = `0x3C 0x00` | ✅ 与同刻 CMD52 读到的 `PACKET_LEN = 0x3c`（=60）一致，**数据是对的** |
+| 主机缓冲区仍 `5a`/`ee`、`idsts=00002000`、5 s 超时 | ❌ 主机接收路径一个字节都没收 |
+| 空闲对照窗（19.0–19.2 s）`CMD/DAT0/DAT1` 跳变均为 0 | ✅ 上面的数据阶段确由读命令触发 |
+
+**结论：CMD53 读方向的问题不在从机，在主机接收路径。** 附录 AI 判定式走
+「`rw==Read` 且其后出现起始位/数据 → 查 IDMAC 描述符装载」这一支。
+
+> ⚠️ 顺带纠正：分析仪自带 SDIO 解码器把同样这些帧标成 `R/W flag: Write` / `Block mode`。
+> 本板上一律以 `frames.py` 的原始位解码 + CRC7 校验为准，自带解码器的字段标注不可采信。
+
+#### AJ.3 同时纠正的两条既往结论（都在附录 AB/AD 里被我写错过）
+
+1. **「CMD53 写是通的」从来没被测量过。** 诊断里那句 `INT_CLR as one 4-byte CMD53 write: ret 0`
+   是死代码：`w = 0;` 之后只打印，**根本没有发起传输**（`esp_hosted_sdio.c` 该处）。
+   全树唯一真实的 CMD53 写（512 B 块模式 @`0x1F800-512`）实测是 `-110`、
+   `TOKEN 00021000 -> 00021000` 未变（AA.116）。→ **数据阶段两个方向都不通**，
+   附录 AB「只有读方向坏」这条前提作废，建立在它之上的排除清单需要重估。
+2. **`clkena` 的位定义写错了。** `[1:0]` 是 `cclk_enable`（逐卡，bit1 = slot 1），
+   `[17:16]` 是 `lp_enable`（逐卡，bit17 = slot 1 空闲门控）。官方工作态 `0x00020002` =
+   「slot1 卡时钟使能 + slot1 空闲门控」；我们 `0x00000002` **已经**有时钟使能（`esp_sdmmc.c:1087`），
+   缺的 `0x00020000` 是**空闲门控**，清 0 只意味着「时钟常开」——**不可能造成数据阶段不启动**。
+   → 附录 AI「下一步第 2 条」按字面执行没有意义，先撤回。
+
+#### AJ.4 下一个卡点（主机接收路径）——首要嫌疑已定位，尚未改动
+
+`esp_sdmmc.c` 的 `sendcmd()` 在**每条数据命令**里复位 FIFO/DMA：
+
+```c
+if ((cmd & MMCSD_DATAXFR) != 0)
+  {
+    sdmmc_ll_reset_fifo(priv->hw);
+    sdmmc_ll_reset_dma(priv->hw);
+    ... 等自清 ...
+  }
+```
+
+而 NuttX 读方向的调用顺序是 `SDIO_DMARECVSETUP`（`setup_desc` → `set_desc_addr` → `enable_dma`
+→ `poll_demand`）**然后**才 `SDIO_SENDCMD`（`drivers/mmcsd/sdio.c:308-309`）——
+**这次复位正好落在「描述符已装好」与「命令下发」之间**，把已装载的传输状态清掉。
+ESP-IDF 反过来：`sdmmc_host_dma_prepare()`（末尾 `enable_dma` + `poll_demand`）→ `start_command()`，
+**从不在传输前后复位 DMA/FIFO**（只在 `sdmmc_host_reset()` 里做）。
+
+这与实测签名吻合：`idsts=00002000`（IDMAC FSM 停在 DMA_SUSPEND）、描述符 OWN 位不清、零字节、超时。
+
+**建议的下一步（一次一个变量，改完立刻复测）**：
+
+1. 把这两条复位从 `sendcmd()` 里**删掉**（或移到 `dmarecvsetup()/dmasendsetup()` 的**最前面**：
+   复位 → 装描述符 → dbaddr → enable_dma → poll_demand → 下命令）；
+2. 重跑本轮同样的采集，验收：`sweep[n] probe … ret=0` 且 1 字节读的 `first=` 变成 `3c`（不再是 `5a`）、
+   线上数据阶段之后 `idsts` 回到 `0`；
+3. 再看 512 B 写（AA.116 的探针）是否随之打通 —— 写方向还差一条
+   `SDIO_CAPS_DMABEFOREWRITE`（NuttX 会在写命令**之后**才 `DMASENDSETUP`，见 `sdio.c:296-303`），
+   但那要等读方向先成立再动，避免同时改两个变量。
+
+> 说明：本轮**只**做了 B 方案与判定，未改动数据通路代码；`sendcmd()` 的复位顺序是静态对照 +
+> 签名吻合得出的首要嫌疑，尚未上板验证。

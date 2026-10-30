@@ -25,7 +25,7 @@
  *
  * This is the bottom layer of the board's WiFi path: the ESP32-P4 has no
  * radio of its own (SOC_WIFI_SUPPORTED is not defined for it), so Wi-Fi comes
- * from a companion module reached over SDIO.  See docs/08_WiFi_SDIO实现.md.
+ * from a companion module reached over SDIO.  See docs/02_驱动实现/WiFi_SDIO实现.md.
  *
  * ## Why this is not a copy of the ESP32-S3 driver
  *
@@ -2673,7 +2673,7 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * reg_sdio_ls_clk_div_num (the one field in this path that nothing in the
    * HAL ever writes, left at its reset value of 0) to 1, and taking the
    * high-speed path instead via sdmmc_ll_set_clock_div(hw, 1). In every case
-   * CLK stayed at a constant level. See docs/08 appendix Q.
+   * CLK stayed at a constant level. See docs/02_驱动实现/WiFi_SDIO实现.md appendix Q.
    */
   sdmmc_ll_init_phase_delay(hw);
 

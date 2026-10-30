@@ -29,7 +29,7 @@
 > ⚠️ 顺序不能反：`eh_frame_encode()` 对 `sizeof(hdr) + payload_len` 计算校验和，
 > 所以负载必须**已经在缓冲区里**再调用它，否则每一帧都会在对端校验失败。
 > 另外校验和是在"校验和字段自身为 0"的前提下算的。
-> 这两条都是 `tools/test/eh_frame/` 的往返测试实际抓出来的，见 docs/08 §E.8。
+> 这两条都是 `tools/test/eh_frame/` 的往返测试实际抓出来的，见 docs/02_驱动实现/WiFi_SDIO实现.md §E.8。
 
 ## 唯一的本地补充：`shim/linux/types.h`
 

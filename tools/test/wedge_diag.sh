@@ -75,7 +75,7 @@ cat <<'EOF'
  ECALL(SYS_restore_context) 也一起吞掉，于是任何任务退出都卡成 ECALL 死循环
  （修复：该保护只对 irq > RISCV_MAX_EXCEPTION 的硬件中断生效）。
  本脚本保留作**回归检查**：若再出现下面的读数，说明这条路径又断了。
- 现场与验证：logs/verify-2026-09-17/wedge_fix.txt、docs/06 §26.7
+ 现场与验证：logs/verify-2026-09-17/wedge_fix.txt、docs/01_开发流程/开发过程复盘与改进清单.md §26.7
 
 ──────── 读数对照（修复前基线，原始记录 wedge_jtag.txt）────────
  健康态: pc 落在 esp_cpu_wait_for_intr(WFI) ; mstatus.MIE=1 ; g_system_ticks 每次采样都在涨

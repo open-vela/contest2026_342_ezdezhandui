@@ -319,7 +319,7 @@ int esp32p4_audio_es8311_initialize(void)
    *
    * Registering a device that hangs when used is worse than not registering
    * it, so it stays out until the missing piece is found.  What is already
-   * known is written down in docs/07 appendix C so the next attempt starts
+   * known is written down in docs/02_驱动实现/ES8311音频驱动.md appendix C so the next attempt starts
    * from there instead of from scratch.
    */
 

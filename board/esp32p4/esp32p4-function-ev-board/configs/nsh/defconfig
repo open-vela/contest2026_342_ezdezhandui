@@ -133,7 +133,7 @@ CONFIG_SYSTEM_SYSTEM=y
 # properly instead of starving it.
 # ⚠️ This is sizing hygiene, NOT the fix for the "agent runs -> board goes deaf"
 # symptom: the 8->128 change was A/B tested on hardware and that symptom was
-# unchanged (see docs/STATUS.md §四.1, docs/05 §二十五).
+# unchanged (see docs/01_开发流程/STATUS.md §四.1, docs/01_开发流程/功能闭环测试.md §二十五).
 # slim system features not needed for the demo
 # CONFIG_SCHED_BACKTRACE is not set
 # CONFIG_LIBC_STRERROR is not set
@@ -169,7 +169,7 @@ CONFIG_MBEDTLS_ECP_WINDOW_SIZE=2
 # take down ai_agent / lvgldemo / camera (the demo's whole app set).  That is
 # strictly worse than the "&" abort, so keep the in-process dispatch.
 #
-# The "&" abort is fully root-caused in docs/05 §23.10; re-validating the
+# The "&" abort is fully root-caused in docs/01_开发流程/开发过程复盘与改进清单.md §23.10; re-validating the
 # nsh_fileapp route needs a working console (see §23.11) before it is retried.
 CONFIG_NSH_BUILTIN_AS_COMMAND=y
 # TLS record buffers: 4KB each (was 16KB) — MiMo JSON fits, saves 24KB bss
@@ -390,7 +390,7 @@ CONFIG_NXPLAYER_COMMAND_LINE=y
 #   CONFIG_MMCSD_SDIO=y
 #
 # 引脚（slot 1 = 协处理器走 GPIO matrix，slot 0 = microSD 走 IO_MUX）由
-# Kconfig 默认值给出，与本板接线一致。详见 docs/08_WiFi_SDIO实现.md。
+# Kconfig 默认值给出，与本板接线一致。详见 docs/02_驱动实现/WiFi_SDIO实现.md。
 
 # ── 音频输出自检：NSH 内置 `audiotest` ──
 # 在 RAM 里合成一段 PCM（可 -s 扫频）直接写 /dev/audio/pcm0，不依赖 SD 卡/网络，

@@ -129,7 +129,7 @@ nuttx/boards/risc-v/esp32p4/
 > 看着都像硬件问题，实际根因分别在 **NuttX 驱动层**（`drivers/video/mipidsi/mipi_dsi_device.c`
 > 未零初始化 `mipi_dsi_msg`）、**传感器驱动**（GT911 产品 ID 校验）与 **V4L2 上层**
 > （`v4l2_cap.c` 在驱动未声明 `frmintervals` 时回退写死 15 fps）。三处均已修复，
-> 详见 `docs/06_开发过程复盘与改进清单.md` §22/§23。
+> 详见 `docs/01_开发流程/开发过程复盘与改进清单.md` §22/§23。
 
 ### 3) 内核层：NuttX 本体（按目录读）
 
@@ -454,7 +454,7 @@ grep -E "Mapped IROM|start=0x|NuttShell" /tmp/boot.log
 
 ---
 
-> 相关文档：`docs/04_框架模块设计.md`（本项目的模块设计）、
-> `docs/05_功能闭环测试.md`（五层测试体系与真机结果）、
-> `docs/踩坑笔记_04_MCUboot与FlashXIP.md`（RAM 执行 → Flash XIP 迁移的 10 个坑）、
-> 移植代码地图与复现步骤见根 `README.md` §四 与 `docs/03_工程框架开发.md`。
+> 相关文档：`docs/01_开发流程/框架模块设计.md`（本项目的模块设计）、
+> `docs/01_开发流程/功能闭环测试.md`（五层测试体系与真机结果）、
+> `docs/03_踩坑笔记/04_MCUboot与FlashXIP.md`（RAM 执行 → Flash XIP 迁移的 10 个坑）、
+> 移植代码地图与复现步骤见根 `README.md` §四 与 `docs/01_开发流程/工程框架与日常开发.md`。

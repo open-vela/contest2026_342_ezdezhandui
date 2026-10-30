@@ -194,7 +194,7 @@ uintreg_t *riscv_doirq(int irq, uintreg_t *regs)
    * terminal hang: the ECALL was re-executed forever (~5e5/s) with
    * interrupts effectively dead, taking the tick, the network and the
    * console down with it (observed on ai_agent startup and on a plain
-   * NSH `exit`; details in docs/06 §26). */
+   * NSH `exit`; details in docs/01_开发流程/开发过程复盘与改进清单.md §26). */
 
   if (g_running_task == NULL && irq > RISCV_MAX_EXCEPTION)
     {

@@ -163,7 +163,7 @@ def scene_llm():
 def scene_display():
     img, d = new_frame()
     draw_header(d, "④ 7\" 触控显示 + LVGL", "MIPI-DSI 1024×600（EK79007）+ GT911 触摸，真机渲染已核实")
-    lv = os.path.join(ROOT, "docs/验证截图_LVGL界面_1024x600.png")
+    lv = os.path.join(ROOT, "docs/04_证据/验证截图_LVGL界面_1024x600.png")
     if os.path.exists(lv):
         pv = Image.open(lv)
         pv = pv.resize((int(pv.width * 0.9), int(pv.height * 0.9)))

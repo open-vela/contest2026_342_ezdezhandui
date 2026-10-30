@@ -213,7 +213,7 @@ WiFi 上线后需要注意：
 1. 万用表确认 `SD2_CLK(18)/CMD(19)/D0(14)/D1(15)/D2(16)/D3(17)` 确实连到 C5 模组
 2. 确认 C5 模组的供电与 `C5_CHIP_PU`（使能）由 P4 的 GPIO54 控制
    （J1 表脚注：默认 P4 控制 C5 使能；如被 R76→R80 改动则此控制失效）
-3. 用原厂 IDF 固件先确认 WiFi 工作正常（`docs/ref_stock_boot_esp-idf_v5.5.2.log`
+3. 用原厂 IDF 固件先确认 WiFi 工作正常（`docs/04_证据/ref_stock_boot_esp-idf_v5.5.2.log`
    是原厂启动日志，可作为"硬件好"的基线）
 4. 确认 C5 侧是否有可用的 esp-hosted slave 固件/固件烧写通道
    （板上有 "ESP32-C5 Module Programming Connector"）

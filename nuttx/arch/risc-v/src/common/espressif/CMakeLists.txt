@@ -612,4 +612,4 @@ endif()
 
 # The reference implementation from contest2026_031 was compiled in here during
 # the cross-check that showed it fails identically on this board. Its finding is
-# written up in docs/08 appendix K; the code itself is not needed any more.
+# written up in docs/02_驱动实现/WiFi_SDIO实现.md appendix K; the code itself is not needed any more.

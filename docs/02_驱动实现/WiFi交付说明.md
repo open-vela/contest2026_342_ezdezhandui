@@ -1,7 +1,7 @@
 # WiFi（板载 C6 / SDIO + ESP-Hosted）交付说明
 
 > 2026-10-29 · 这份文档把 WiFi 这一项的**实际状态、证据、与待办**说清楚。
-> 完整排查过程见 `docs/08_WiFi_SDIO实现.md` 附录 A–AA（一百余节）。
+> 完整排查过程见 `docs/02_驱动实现/WiFi_SDIO实现.md` 附录 A–AA（一百余节）。
 
 ## 一、一句话结论
 
@@ -224,7 +224,7 @@ D3   : 100% 高
   从不报错"；
 - **主机侧驱动的每一个环节都被独立验证过**（波形、寄存器读数、日志）——
   任何人拿这套驱动去接一个正常的 SDIO 从机，它应当能工作；
-- **完整的排查记录**（`docs/08` 附录 A–AA，一百余节），包括误判与修正；
+- **完整的排查记录**（`docs/02_驱动实现/WiFi_SDIO实现.md` 附录 A–AA，一百余节），包括误判与修正；
 - **一套可复用的诊断工具**（`tools/test/pxview`、`tools/test/tabby`）。
 
 **如果后续换了 C6 模组或确认了这颗 C6 的状态，驱动这边不需要改动。**
@@ -354,8 +354,8 @@ data-phase error bits raw=00008008 [dto=1, ebe=1]       <- 数据超时 + 结束
 **工具**（`tools/test/pxview` 逻辑分析仪驱动、`tools/test/tabby` 串口、`tools/test/c6_sdio_minimal`
 最小从机测试固件、`tools/test/p4_sdio_host_idf` IDF 主机对照探针）
 
-**记录**（`docs/08` 附录 A–AA 一百八十余节，含误判与自我修正；`docs/09` 上游树改动审计；
-`docs/10` 本文档；`docs/STATUS.md`）
+**记录**（`docs/02_驱动实现/WiFi_SDIO实现.md` 附录 A–AA 一百八十余节，含误判与自我修正；`docs/02_驱动实现/上游树改动审计.md`；
+`docs/02_驱动实现/WiFi交付说明.md` 本文档；`docs/01_开发流程/STATUS.md`）
 
 ### 11.6 后续接手的建议
 
@@ -472,7 +472,7 @@ D0/D1/D2/D3  全部 100% 高（上拉电平，无人驱动）
 **主要文件：**
 - `nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.c`（约 2550 行）
 - `nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.c`（约 1250 行）
-- `docs/08_WiFi_SDIO实现.md` 附录 A–AA（一百九十余节排查记录，含全部误判与更正）
+- `docs/02_驱动实现/WiFi_SDIO实现.md` 附录 A–AA（一百九十余节排查记录，含全部误判与更正）
 - `tools/test/pxview/`、`tools/test/tabby/`、`tools/test/c6_sdio_minimal/`、`tools/test/p4_sdio_host_idf/`
 
 ---

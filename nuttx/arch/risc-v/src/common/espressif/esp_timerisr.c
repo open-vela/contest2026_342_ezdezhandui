@@ -66,7 +66,7 @@
 static systimer_hal_context_t systimer_hal;
 
 /* WEDGE_DIAG: 节拍 ISR 实际进入次数（配合 esp_irq.c 的 g_dbg_* 判"中断有没有跑到
- * 处理器"；JTAG 只读）。默认关，需要时改 1 编诊断固件。详见 docs/06 §26。
+ * 处理器"；JTAG 只读）。默认关，需要时改 1 编诊断固件。详见 docs/01_开发流程/开发过程复盘与改进清单.md §26。
  */
 
 #define ESP_WEDGE_DIAG 0

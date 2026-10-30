@@ -70,7 +70,7 @@ logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提�
 > 那个软链只有 make 构建路径在用（该路径本身已不通，评审走 `--cmake`），已随本次改动删除。
 >
 > 因此评审只需 `repo sync` + `build.sh`，**不需要 deploy/rsync 之类的部署步骤**
-> （详见 `docs/06` §二十四）。
+> （详见 `docs/01_开发流程/开发过程复盘与改进清单.md` §二十四）。
 
 ```bash
 # 1. 拉取（repo sync 自动应用全部改动）
@@ -119,10 +119,10 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | LLM 对话 | ai_agent + MiMo（`llm_router` 多后端）；**端到端已实测**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`） | ① Agent 上硬件 |
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
 | 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |
-| LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实（证据 `docs/验证截图_LVGL界面_1024x600.png`） | ① + 加分 |
+| LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实（证据 `docs/04_证据/验证截图_LVGL界面_1024x600.png`） | ① + 加分 |
 | 事件主动（摄像头）| ✅ **openvela 下可用**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 抓帧稳定（`camera_verify.sh` 13/13 断言通过，15/15 帧）。**根因**是 ESP32-P4 的 CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 从未初始化 ISP 输入模块 → 修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`（`esp_csi_isp_bypass_init()`）。复测：`tools/test/camera_verify.sh` | ③ |
 
-> 逐项真机证据与根因见 `docs/STATUS.md`；测试体系与结果见 `docs/05_功能闭环测试.md`。
+> 逐项真机证据与根因见 `docs/01_开发流程/STATUS.md`；测试体系与结果见 `docs/01_开发流程/功能闭环测试.md`。
 
 ## 六、AI 开发记录
 
@@ -140,12 +140,12 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 - ✅ **移植与引导**：`repo sync` 即得完整工作树（329 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
 - ✅ **真机闭环**：`tools/build_flash/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
 - ✅ **联网**：eth0 DHCP `192.168.1.105` RUNNING（主机同网段，ICMP 通）；DNS 可用
-- ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/验证截图_LVGL界面_1024x600.png`
-- ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`）；「启动后整机失聪」已定位并修复（根因见 `docs/06` §26.7）
+- ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/04_证据/验证截图_LVGL界面_1024x600.png`
+- ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`）；「启动后整机失聪」已定位并修复（根因见 `docs/01_开发流程/开发过程复盘与改进清单.md` §26.7）
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
 - ✅ **摄像头出帧**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定抓帧 —— `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15、连跑两轮一致（`--preview` 可见真实画面）；根因是 CSI bridge 与 ISP 共享而 openvela 未初始化 ISP 输入模块，修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`
 - ✅ **提交与仓库**：全部提交经 fork 汇入 **PR #15（摄像头出帧修复 + 工程整理）** 与 **PR #16（manifest revision 重锁）**，历史提交见 PR #12（均已合并）；提交材料清单见 §八
-- 📌 详细状态与逐项证据见 `docs/STATUS.md`、`docs/05_功能闭环测试.md` §七、`docs/06_开发过程复盘与改进清单.md`
+- 📌 详细状态与逐项证据见 `docs/01_开发流程/STATUS.md`、`docs/01_开发流程/功能闭环测试.md` §七、`docs/01_开发流程/开发过程复盘与改进清单.md`
 
 ## 八、提交材料
 
@@ -158,13 +158,13 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | 文档 | `docs/` + `README.md` + `tools/README.md` | 规划 / 框架 / 测试 / 复盘 / 状态 / 踩坑笔记 |
 | AI 开发技能资产 | manifest → 工作区 `.agents/` | `openvela-skills`（19 个 skills），`repo sync` 自动拉取 |
 | 专属仓地址 | `https://github.com/open-vela/contest2026_342_ezdezhandui` | 大赛仅在 GitHub，提交经 fork + PR（当前 #12） |
-| 《作品介绍》 | `docs/07_作品介绍.md`（源稿）+ `提交材料/作品介绍_桌伴DeskMate.docx/.pdf` | 源稿已入仓（做了什么 / 输出什么 / 问题与解法，含未完成项如实记录）；docx/pdf 已从源稿导出随提交 |
+| 《作品介绍》 | `docs/01_开发流程/作品介绍.md`（源稿）+ `提交材料/作品介绍_桌伴DeskMate.docx/.pdf` | 源稿已入仓（做了什么 / 输出什么 / 问题与解法，含未完成项如实记录）；docx/pdf 已从源稿导出随提交 |
 
-**评分对照**（评分规则 30/20/20/10/10/10，详见 `docs/01` §四）：
+**评分对照**（评分规则 30/20/20/10/10/10，详见 `docs/01_开发流程/项目规划与方案.md` §四）：
 
 | 评分项 | 本作品对应 |
 |---|---|
-| 技术难度 30 | ESP32-P4X 新平台移植 + MCUboot 二级引导 + flash XIP + **5 个平台级驱动缺陷修复**（板级 Kconfig 静默失效 / UART 丢字节 / GT911 / V4L2 / risc-v 任务退出失聪，见 `docs/06`） |
+| 技术难度 30 | ESP32-P4X 新平台移植 + MCUboot 二级引导 + flash XIP + **5 个平台级驱动缺陷修复**（板级 Kconfig 静默失效 / UART 丢字节 / GT911 / V4L2 / risc-v 任务退出失聪，见 `docs/01_开发流程/开发过程复盘与改进清单.md`） |
 | 产品创新性 20 | 桌伴「能主动、会执行」产品叙事：ai_agent + 自定义 Skill ×2 + cron 定时主动 |
 | 项目完整度 20 | 代码 + 可复现 Demo + 文档齐备（本表）；免部署复现路径；真机证据逐项归档 |
 | AI 开发 10 | 全流程 AI Coding，29 会话日志 + `.agents/` 技能资产 |
@@ -179,14 +179,14 @@ tools/test/camera_diag.sh                                      # 摄像头链路
    而 openvela 从未初始化 ISP 输入模块（RAW8 走 bypass）；修复后稳定出帧。
    复测：`tools/test/camera_verify.sh`（`RESULT: PASS` 即出帧）。
    同批修掉 `sc2336.c` 寄存器表缺终止符导致的越界写缺陷。
-   逐段取证、三次结论修正与源码级比对见 `docs/STATUS.md` §四.4。
+   逐段取证、三次结论修正与源码级比对见 `docs/01_开发流程/STATUS.md` §四.4。
 2. **LLM 问答延迟**：一次端到端问答实测约 **261s**（推理模型 + 15KB 工具 schema 的固有开销），
-   体验偏慢但非功能缺陷；已在 `docs/06` §27 如实记录。
+   体验偏慢但非功能缺陷；已在 `docs/01_开发流程/开发过程复盘与改进清单.md` §27 如实记录。
 3. ⚠️ **MiMo API key 安全**：该 key 曾两次误入公开仓历史（commit `4d7f318`、日志文件），
    已在 `logs/` 中脱敏并移除，但**必须到平台侧轮换/吊销**才算处置完成（仅从仓库删除不能使其失效）。
    新 key 一律经**工作区** `packages/ai_agent/include/agent_secrets.h`（`.gitignore` 忽略、不入仓）注入，
    注入后需重新构建烧录。提交前对 `logs/` 做凭据扫描：
    `grep -rEo 'tp-[A-Za-z0-9]{40,}|sk-[A-Za-z0-9]{20,}' logs/`
-4. **本机开发环境的两处坑**（评审全新 clone 不受影响，详见 `docs/03` §3.2、`docs/STATUS.md` §四.8）：
+4. **本机开发环境的两处坑**（评审全新 clone 不受影响，详见 `docs/01_开发流程/工程框架与日常开发.md` §3.2、`docs/01_开发流程/STATUS.md` §四.8）：
    ① 本地 `.repo/manifests` 与 gitee 分叉，`repo sync` 需带 `--no-manifest-update`；
    ② 本地曾遗留一个交互式 rebase 半成品，与交付物无关。

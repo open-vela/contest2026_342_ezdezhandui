@@ -2203,7 +2203,7 @@ config ESPRESSIF_HOSTED_SDIO
 		network path regardless.
 
 		The ESP-Hosted protocol layer is not implemented yet; see
-		docs/08_WiFi_SDIO实现.md.
+		docs/02_驱动实现/WiFi_SDIO实现.md.
 
 config ESPRESSIF_HOSTED_SDIO_EN_GPIO
 	int "Companion module enable GPIO (-1 = no enable line)"

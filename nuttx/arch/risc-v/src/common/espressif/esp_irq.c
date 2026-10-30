@@ -122,7 +122,7 @@ static uint64_t g_iram_count[CONFIG_SMP_NCPUS][NR_IRQS];
  *                     {irq, 调用者返回地址} —— 谁最后动了哪条线，直接看这里
  *
  * 读法（openocd）: mdw <符号地址> <字数>，符号地址见 System.map；
- * 完整流程见 tools/wedge_diag.sh 与 docs/05 §26。
+ * 完整流程见 tools/wedge_diag.sh 与 docs/01_开发流程/开发过程复盘与改进清单.md §26。
  */
 
 #define ESP_WEDGE_DIAG 0

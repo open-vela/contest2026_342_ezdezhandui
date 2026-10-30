@@ -138,6 +138,15 @@
 #define SDMMC_RXDR            (1u << 5)   /* RX FIFO data available */
 #define SDMMC_TXDR            (1u << 4)   /* TX FIFO data request   */
 
+/* Card interrupt.  RINTSTS carries the SDIO interrupt the *card* raises by
+ * pulling DAT1 low (bits 16-17 of the register).  esp-hosted's host waits for
+ * exactly this before it reads anything, and it is the one signal a pure
+ * register poll cannot replace: the card asserts it as soon as it has something
+ * queued, whereas polling only ever samples INT_RAW at arbitrary moments.
+ */
+
+#define SDMMC_SDIO_INTR       (3u << 16)  /* SDIO card interrupt    */
+
 /* Error bits: response error/CRC, data CRC, response and data timeouts, FIFO
  * under/overrun, hardware lock, start-bit and end-bit errors.
  */
@@ -160,7 +169,7 @@
                                SDMMC_ERR_SBE | SDMMC_ERR_EBE)
 
 #define SDMMC_INT_ENABLE      (SDMMC_CMD_DONE | SDMMC_DATA_OVER | \
-                               SDMMC_ALL_ERRORS)
+                               SDMMC_SDIO_INTR | SDMMC_ALL_ERRORS)
 
 /****************************************************************************
  * Private Types
@@ -211,6 +220,7 @@ struct esp_sdmmc_dev_s
   uint8_t waitmask;              /* Events the waiter cares about     */
   volatile uint8_t xfrmask;      /* Events that have occurred         */
   volatile bool enablewait;      /* A waiter is parked                */
+  volatile bool cardintr;        /* The card raised DAT1              */
   sem_t waitsem;                 /* Posted when an event arrives      */
   struct wdog_s timeout;         /* Transfer timeout                  */
 
@@ -2310,6 +2320,18 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
       eventset |= SDIOWAIT_TRANSFERDONE;
     }
 
+  /* The card pulled DAT1: it has something queued for the host.
+   *
+   * Recorded on its own rather than as a transfer event, because it belongs to
+   * no single command -- it is the card asking the host to come and read, which
+   * is the step esp-hosted's own host waits for before it touches a register.
+   */
+
+  if ((status & SDMMC_SDIO_INTR) != 0)
+    {
+      priv->cardintr = true;
+    }
+
   if (status & SDMMC_ALL_ERRORS)
     {
       eventset |= SDIOWAIT_ERROR;
@@ -2338,6 +2360,53 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: esp_sdmmc_wait_card_intr
+ *
+ * Description:
+ *   Wait for the card to raise its SDIO interrupt (DAT1 pulled low).
+ *
+ *   esp-hosted's host blocks on this before reading anything, and it is the
+ *   part of the protocol this driver never had: without it the host can only
+ *   poll INT_RAW and hope to sample after the card has queued something. The
+ *   flag is cleared on entry, so a caller always waits for a fresh interrupt.
+ *
+ * Input Parameters:
+ *   dev        - The SDIO device to watch
+ *   timeout_ms - How long to wait, in milliseconds
+ *
+ * Returned Value:
+ *   true if the card signalled within the timeout, false otherwise.
+ *
+ ****************************************************************************/
+
+bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
+{
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+  clock_t start;
+
+  if (priv == NULL)
+    {
+      return false;
+    }
+
+  priv->cardintr = false;
+
+  start = clock_systime_ticks();
+  while (!priv->cardintr)
+    {
+      if (clock_systime_ticks() - start > MSEC2TICK(timeout_ms))
+        {
+          return false;
+        }
+
+      nxsig_usleep(1000);
+    }
+
+  priv->cardintr = false;
+  return true;
+}
 
 /****************************************************************************
  * Name: esp_sdmmc_initialize

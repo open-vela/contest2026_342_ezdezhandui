@@ -165,6 +165,28 @@ void esp_sdmmc_identify_pins(void);
 void esp_sdmmc_sample_idle(void);
 
 /****************************************************************************
+ * Name: esp_sdmmc_wait_card_intr
+ *
+ * Description:
+ *   Wait until the card raises its SDIO interrupt (DAT1 pulled low), i.e.
+ *   until it has something queued for the host.
+ *
+ *   This is the step esp-hosted's own host performs before reading any
+ *   register. The companion asserts the line as soon as it has data, so
+ *   waiting for it is what turns "poll INT_RAW and hope" into a protocol.
+ *
+ * Input Parameters:
+ *   dev        - The SDIO device to watch
+ *   timeout_ms - How long to wait, in milliseconds
+ *
+ * Returned Value:
+ *   true if the card signalled within the timeout, false otherwise.
+ *
+ ****************************************************************************/
+
+bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms);
+
+/****************************************************************************
  * Name: esp_sdmmc_debug
  *
  * Description:

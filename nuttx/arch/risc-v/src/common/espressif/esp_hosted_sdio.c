@@ -613,6 +613,17 @@ int esp_hosted_sdio_initialize(void)
         uint32_t iraw;
         int k;
 
+        /* Wait for the card to raise its SDIO interrupt (DAT1) first.
+         *
+         * This is the opening move of esp-hosted's own host, and it is what
+         * this loop never had: it went straight to INT_RAW, sampling at
+         * arbitrary moments, which is how the companion ended up with an
+         * ever-growing send queue and no reader. The short timeout keeps a
+         * missed edge degrading to the poll below instead of stalling.
+         */
+
+        (void)esp_sdmmc_wait_card_intr(sdio, 50);
+
         /* Step 1: wait for the companion's "new packet" interrupt, bit 23.
          *
          * This is the documented first step of the Sending-FIFO procedure and

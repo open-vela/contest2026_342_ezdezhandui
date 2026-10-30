@@ -9746,3 +9746,77 @@ C6 ：（之后无日志 —— 阻塞在 sdio_slave_transmit）
 这不是任一方的软件能修复的问题。**
 
 **需要的手段：更换 C6 模组验证、或厂商工具检查这颗 C6 的 SDIO 从机外设。**
+
+### AA.192 第 202–207 轮：**持续收包循环验证 + 引脚定义最终确认**
+
+#### 持续收包循环（替代"只读一次"）
+
+把诊断改成轮询：读 `INT_RAW` 的 bit 23 → 读 `PACKET_LEN` → 清中断 → CMD53。
+共 400 轮、每轮 200 ms（80 秒窗口）。
+
+**结果：**
+
+```
+starting receive loop (400 rounds)
+receive loop done, 0 packet(s) with data
+```
+
+**`rxloop[...]` 一行都没打印 —— 循环期间 bit 23 始终为 0。**
+
+**而初始化阶段的 20 次监视里 `INT_RAW = 0x00cc4800`、bit 23 = 1 稳定。**
+
+#### 这两个读数合起来给出的时间线
+
+```
+1. 从机排好 60 字节，置起 bit 23          INT_RAW=00cc4800, bit23=1
+2. 主机读 PACKET_LEN → 60
+3. 主机发 CMD53 → 数据阶段失败（SBE/EB + DTO）
+4. 这次读取消费了从机的"已读指针"
+5. CP 阻塞在 sdio_slave_transmit → 不再产生新数据
+6. 80 秒 400 轮轮询 → bit 23 恒为 0
+```
+
+**第 6 步不是新问题，而是第 5 步的必然结果。**
+
+#### 引脚定义的最终确认
+
+`components/soc/esp32c6/include/soc/sdio_slave_pins.h`：
+
+```c
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_CMD  18
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_CLK  19
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D0   20
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D1   21
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D2   22
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D3   23
+#define SDIO_SLAVE_SLOT0_FUNC               0
+```
+
+**与板上接线（P4 GPIO19/18/14/15/16/17 ↔ C6 IO18/19/20/21/22/23）逐一吻合。**
+
+**这是最后一个可能"接线搞错"的怀疑点，已排除。**
+
+#### 并且 IDF 对从机侧的引脚配置是完整的
+
+`sdio_slave.c` 的 `configure_pin()` 对每个引脚做：
+`gpio_input_enable` + `gpio_func_sel(pin, func)` + `gpio_set_drive_capability(3)`
++ `gpio_pulldown_dis` + 可选 `gpio_pullup_en`。
+
+**CLK/CMD/D0/D3 一定配置；D1/D2 依 flags 配置 —— esp-hosted 与最小固件都没禁用它们。**
+
+#### 至此所有可疑点清单
+
+| 可疑点 | 状态 |
+|---|---|
+| 接线/引脚映射 | ✅ 与 C6 官方定义吻合 |
+| 从机引脚配置 | ✅ IDF 已做，代码可查 |
+| 从机软件（固件逐段读）| ✅ 无遗漏、零错误 |
+| 主机寄存器地址 | ✅ 与参考实现逐项一致 |
+| 主机 CMD53 参数 | ✅ 波形解码逐位正确 |
+| 从机通告（bit 23）| ✅ 为 1 |
+| 从机长度、缓冲区 | ✅ 60 字节、2 个 |
+| 总线宽度 / 时钟 / 边沿 | ✅ 1-bit、100 kHz、四种边沿都试过 |
+| 主机引脚方向 | ✅ 实测排除"输出驱动器争抢" |
+| **数据阶段数据线** | 🔴 **无人驱动** |
+
+**没有剩余的主机侧可疑点。**

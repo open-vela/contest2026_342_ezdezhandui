@@ -10414,3 +10414,35 @@ I (2738) p4sdio: probe done
 3. **分析仪抓官方基线驱动下的 CMD53 波形**（通道 0-5 已接）：看从机侧 DAT0 是否出现起始位 ——
    这一次"主机"是官方栈，因此能干净地把"从机不驱动"与"主机不接收"分开
 4. 核对 4-bit 走线与串阻/上拉（此前结论：改 1-bit 也不通，故优先级最低）
+
+### 附录 AF —— 烧录纪律与假死恢复（2026-10-31，实战教训）
+
+**1. 跨栈烧录后必须整片擦除**
+
+把 IDF 基线（布局 `0x2000` 引导 / `0x8000` 分区表 / `0x10000` 应用）烧过之后，只按我们的布局
+重烧 `0x2000` + `0x20000` **不够**：`0x8000` 的分区表与 `0x10000..0x20000` 的应用残留在
+MCUboot 自己的区域里，MCUboot 读到脏数据 → **boot loop**（串口只见 `Booting MCUboot …` 反复出现）。
+正确顺序：
+
+```
+python3 ~/.local/bin/esptool.py --chip esp32p4 -p /dev/ttyACM0 erase_flash
+tools/build_flash/usb_stable.sh        # 0x2000 引导 + 0x20000 应用，hash 校验
+tools/build_flash/usb_stable.sh "" "" reset
+```
+
+**2. `PSRAM_CORE_CLK_EN=0` 假死态：恢复命令必须用 `reset halt`**
+
+现象：`Guru Meditation Error: Store/AMO access fault`，`MTVAL=0x5008e380`
+（= `SPI_MEM_C_MMU_ITEM_INDEX_REG`），MCUboot 在 PSRAM 初始化里崩。根因是
+`HP_SYS_CLKRST_PERI_CLK_CTRL00_REG(0x500E6030)` 的 bit15 `PSRAM_CORE_CLK_EN` 被清 0，
+该 8 KB 寄存器窗口整块不响应。
+
+```
+OCDROOT=/home/ez/.espressif/tools/openocd-esp32/v0.12.0-esp32-20260831/openocd-esp32
+$OCDROOT/bin/openocd -s $OCDROOT/share/openocd/scripts -f board/esp32p4-builtin.cfg \
+  -c "init" -c "reset halt" -c "mww 0x500E6030 0x0000D05D" \
+  -c "mdw 0x500E6030 1" -c "reset run" -c "shutdown"
+```
+
+⚠️ **直接 `halt` 会失败**（`Examination failed / not examined`）；必须先 `reset halt`，两核才会
+`Examined RISC-V core`，之后回读应为 `0x500e6030: 0000d05d`。

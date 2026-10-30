@@ -1513,7 +1513,25 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
   if (cmd & MMCSD_DATAXFR)
     {
       hwcmd.data_expected = 1;
-      hwcmd.rw            = (cmd & MMCSD_WRDATAXFR) ? 1 : 0;
+
+      /* Direction comes from the dedicated write bit, NOT from MMCSD_WRDATAXFR.
+       *
+       * sdio.h defines the two transfer flags so that they overlap:
+       *
+       *     MMCSD_RDDATAXFR = MMCSD_DATAXFR               (bit 10)
+       *     MMCSD_WRDATAXFR = MMCSD_DATAXFR|MMCSD_WRXFR   (bits 10 and 12)
+       *
+       * Testing `cmd & MMCSD_WRDATAXFR` is therefore non-zero for a read as
+       * well, because a read sets bit 10 too. Every read was consequently
+       * handed to the controller with rw = 1 (write to card): the measured
+       * command word 0xa0010775 has bit 10 set and bit 12 clear, the CIU
+       * answered with TXDR (RINTSTS bit 4, "TX FIFO data request") and the data
+       * phase ran into the data timeout with nothing ever read.
+       *
+       * MMCSD_WRXFR is the bit that actually distinguishes the two.
+       */
+
+      hwcmd.rw            = (cmd & MMCSD_WRXFR) ? 1 : 0;
 
       /* A multi-block transfer stops itself so the caller does not have to
        * issue CMD12 separately.

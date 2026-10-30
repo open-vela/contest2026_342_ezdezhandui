@@ -661,6 +661,18 @@ int esp_hosted_sdio_initialize(void)
 
     syslog(LOG_INFO, "%s: starting receive loop (400 rounds)\n", HOSTED_TAG);
 
+    /* Result of the A/B read-geometry test, carried across rounds.
+     *
+     * The loop prints ~13 lines per round, so a line printed once scrolls out
+     * of reach within a second or two.  Keeping the result in a variable and
+     * reprinting it every round is what makes it observable at all.
+     * 0x7fffffff means "not run yet".
+     */
+
+    int ab_ret = 0x7fffffff;
+    uint8_t ab_b0 = 0;
+    uint8_t ab_b1 = 0;
+
     for (round = 0; round < 400; round++)
       {
         uint32_t now = 0;
@@ -691,8 +703,8 @@ int esp_hosted_sdio_initialize(void)
 
           if (round < 6 || (round % 25) == 0)
             {
-              syslog(LOG_INFO, "%s: rxloop[%d] card-intr=%d\n",
-                     HOSTED_TAG, round, (int)ci);
+              syslog(LOG_INFO, "%s: rxloop[%d] card-intr=%d ab=%d %02x %02x\n",
+                     HOSTED_TAG, round, (int)ci, ab_ret, ab_b0, ab_b1);
             }
         }
 
@@ -895,6 +907,33 @@ int esp_hosted_sdio_initialize(void)
             memset(rxbuf, 0xee, sizeof(rxbuf));
             rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - now, true,
                                      rxbuf, ESP_HOSTED_SDIO_BLOCK_SIZE, 1);
+
+            /* A/B: the second geometry the reference itself carries.
+             *
+             * The reference reads the announced length either rounded up to a
+             * whole block (EH_HOST_PORT_SDIO_RX_BLOCK_ONLY_XFER=1, the branch
+             * used above) or exactly as announced, which its port layer turns
+             * into a byte-mode CMD53.  Both are reference code paths; running
+             * both against the same announced length is what separates "the
+             * slave refuses this transfer geometry" from "the slave refuses
+             * CMD53 reads here at all".
+             */
+
+            if (rr != 0 && now != 0 && now <= sizeof(rxbuf))
+              {
+                int rr2 = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - now,
+                                              true, rxbuf, (int)now, 0);
+
+                ab_ret = rr2;
+                ab_b0  = rxbuf[0];
+                ab_b1  = rxbuf[1];
+
+                syslog(LOG_INFO,
+                       "%s: rxloop[%d] byte-mode retry len=%" PRIu32
+                       " ret=%d first=%02x %02x %02x %02x\n",
+                       HOSTED_TAG, round, now, rr2,
+                       rxbuf[0], rxbuf[1], rxbuf[2], rxbuf[3]);
+              }
 
             /* The packet is the tail of the block, so look there. */
 

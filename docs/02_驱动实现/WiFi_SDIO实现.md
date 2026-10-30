@@ -10187,3 +10187,61 @@ MTVAL = 0x5008e380   A2 = 0x00000400 (1024)
 - 作品仓干净（`ae5b7c5`），主树与其逐字节一致，构建 0 error；
 - 板子当前运行**官方 IDF 固件**（WiFi 可用），恢复本仓库固件执行
   `tools/build_flash/usb_stable.sh`。
+
+## 附录 AB —— CMD53 读几何 A/B 实验（2026-10-31，交付版驱动 + 官方参考实现入仓后）
+
+### 背景
+
+官方 ESP-Hosted 主机侧有**两条**读几何，由 `EH_HOST_PORT_SDIO_RX_BLOCK_ONLY_XFER` 选择
+（`host/eh_host_config/include/eh_host_port_master_config.h:783` 默认 = 1）：
+
+| 分支 | 几何 | 端口层落地 |
+|---|---|---|
+| 块模式（默认） | `round_up(len, 512)` 字节，地址 `END - len`（从机补 0） | `sdmmc_io_read_blocks` |
+| 精确长度 | 恰好 `len` 字节，地址 `END - len` | `sdmmc_io_read_bytes`（字节模式） |
+
+我们此前只跑过第一条，它一直失败。为把「从机拒绝这个几何」与「从机根本不在这里做 CMD53 读」
+分开，在**同一个包**上两条都跑了一遍（`rxloop` 里加 A/B，结果每轮复现）。
+
+### 实验（复位后第一个包，`PACKET_LEN=60` 由 CMD52 读出）
+
+```
+issue CMD53 arg=0x1fef8801        # 块模式：1×512B @0x1F7C4（=0x1F800-60）
+eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+issue CMD52 arg=0x00000000        # CMD52 ABRT
+data cmd regs: blksiz=0000003c bytcnt=0000003c
+issue CMD53 arg=0x17ef883c        # 字节模式：60B @0x1F7C4（官方另一分支）
+eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+rxloop[0] byte-mode retry len=60 ret=-110 first=ee ee ee ee
+dma state: des0=8000001c des1=0000003c … idsts=00002000   # OWN 位仍为 1
+```
+
+### 结论
+
+1. **两条官方几何表现完全相同：都超时、都无数据**（`-110`；首字节仍是驱动预填的 `0xee`）。
+   → **几何/模式不是原因**，这条假设被实验排除。
+2. `des0` 的 **OWN 位仍为 1**：IDMAC 从未取走接收描述符 —— 数据阶段一个字节都没动过。
+3. `eventwait -> 0b` = `CMDDONE|RESPONSEDONE|TIMEOUT`：超时来自驱动自己的长超时，而非控制器报错位
+   （`rintsts=0`，ISR 里那条 `ERROR: SDMMC status=` 从未出现）。
+
+### 本轮同时排除的三条（都做了核对）
+
+| 假设 | 核对结果 |
+|---|---|
+| CMD52 数据字节取错（NuttX `resp.data & 0xff`） | ❌ 排除：`CCCR 0x07 = 0x42`（bit1 4-bit + bit6 SC 只读）、`CCCR 0x13: 0x01 → 使能后 0x03`（SHS/EHS），全部符合规范 |
+| 握手位写错（`HOST_TO_SLAVE_INTR`） | ❌ 排除：官方 `HOST_TO_SLAVE_INTR = SCRATCH_REG_7 = 0x8C`，掩码 = `BIT(ESP_OPEN_DATA_PATH + ESP_SDIO_CONF_OFFSET) = BIT(0+0) = 0x01`，与实现一致；该寄存器 write-only，回读 0 属正常 |
+| 官方默认走「精确长度」而我们走块模式 | ❌ 排除：官方默认正是块模式（`RX_BLOCK_ONLY_XFER=1`），且 A/B 已证明两者等价失败 |
+
+### 当前故障画像（更新）
+
+- CMD52 读**通**（寄存器值随读变化，`waitresponse -> OK`）
+- CMD53 **写**通（`INT_CLR as one 4-byte CMD53 write: ret 0`）
+- CMD53 **读**在任何几何下都不出数据：无起始位、IDMAC 不收描述符
+- 链路会随长时间运行退化为「卡完全不应答」（`resp 00000000`、无完成位、`INT_RAW=00000000`）；
+  **整板复位可恢复**，且复位后从机会重新通告一次包（`PACKET_LEN=60`）
+
+### 下一步（按代价排序）
+
+1. 用分析仪抓 **CMD53 读命令发出后 D0–D3 是否有起始位**（区分「从机不驱动」与「驱动了但被衰减」）
+2. 换一颗同型号 C6 做 A/B；或确认 C6 侧固件 `CONFIG_EH_TRANSPORT_CP_SDIO_*` 与主机侧 4-bit/时钟设置一致
+3. 若确认从机侧不下数据：走 RPC 之外的备选传输（UART/SPI 已由官方主机栈支持，tier A 内含 `eh_host_bus_uart.c` / `eh_host_bus_spi.c`）

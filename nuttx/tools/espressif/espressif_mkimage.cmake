@@ -141,6 +141,19 @@ if(CONFIG_ESPRESSIF_BOOTLOADER_MCUBOOT)
     set(SLOT_SIZE 0x100000)
   endif()
 
+  # Reserve room for MCUboot's trailer.
+  #
+  # imgtool pads the signed image to exactly the size given with -S, and
+  # MCUboot keeps its trailer (magic and status bits) at the very end of the
+  # real slot. Signing at the full slot size therefore produces an image that
+  # fills the slot completely, leaving nowhere for the trailer: MCUboot
+  # computes the trailer offset past the end and the write faults.
+  #
+  # The image is signed at the slot size minus a margin instead. MCUboot still
+  # uses the real slot size when it looks for the trailer, so the two agree
+  # only when that margin exists.
+  math(EXPR MCUBOOT_IMAGE_SLOT_SIZE "${SLOT_SIZE} - 0x1000")
+
   if(CONFIG_ESPRESSIF_ESPTOOL_TARGET_PRIMARY)
     set(VERIFIED --confirm)
   else()
@@ -148,7 +161,14 @@ if(CONFIG_ESPRESSIF_BOOTLOADER_MCUBOOT)
   endif()
 
   set(IMGTOOL_SIGN_ARGS
-      --pad
+      # NOTE: --pad is deliberately NOT used here.
+      #
+      # It pads the signed image to exactly --slot-size bytes. MCUboot keeps its
+      # trailer (magic and status bits) at the very end of the slot, so an image
+      # that fills the slot entirely leaves no room for it: the offset is
+      # computed past the end and the write lands outside the slot, which is the
+      # store fault at 0x5008e380 seen during boot. This build is upgrade-only
+      # (no swap), so the image does not need to be padded.
       ${VERIFIED}
       ${IMGTOOL_ALIGN_ARGS}
       -v
@@ -159,7 +179,7 @@ if(CONFIG_ESPRESSIF_BOOTLOADER_MCUBOOT)
       ${HEADER_SIZE}
       --pad-header
       -S
-      ${SLOT_SIZE})
+      ${MCUBOOT_IMAGE_SLOT_SIZE})
 
   execute_process(
     COMMAND ${ESPTOOL} -c ${CHIP_SERIES} elf2image -fs ${FLASH_SIZE} -fm

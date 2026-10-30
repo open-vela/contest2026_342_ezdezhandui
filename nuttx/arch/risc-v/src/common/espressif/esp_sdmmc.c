@@ -1535,6 +1535,16 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
   priv->xfrmask = 0;
   priv->nblocks = 0;
 
+  /* Drop the previous command's completion flags before this one goes out.
+   *
+   * The ISR records CMDDONE/RESPONSEDONE in xfrmask, and a command can finish
+   * before waitresponse() is even entered. Clearing here (rather than at the
+   * start of waitresponse) keeps such an early completion instead of throwing
+   * it away -- which is exactly what made every command after CMD5 time out.
+   */
+
+  priv->xfrmask &= ~(SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE);
+
   return esp_sdmmc_ciu_sendcmd(hwcmd, arg);
 }
 
@@ -1802,25 +1812,28 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
     uint32_t resp_before = *(volatile uint32_t *)&hw->resp[0];
     bool done = false;
 
-    /* Drop any completion left over from the previous command.
-     *
-     * The ISR records CMDDONE/RESPONSEDONE in xfrmask and nothing cleared them
-     * between commands, so the check below would fire immediately and the
-     * caller would read a stale RESP0.
-     */
-
-    p->xfrmask &= ~(SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE);
-
     for (;;)
       {
         /* The ISR now runs, and it clears RINTSTS before this loop can see it.
          *
          * So check the event mask the ISR fills first: it records that the
          * command completed even though the hardware bit is already gone.
+         * The matching clear happens in sendcmd(), before the command is
+         * issued -- clearing here would discard an early completion.
          */
 
         if ((p->xfrmask & (SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE)) != 0)
           {
+            /* The ISR already recorded the completion.
+             *
+             * This must set the same flag the polling path does: every
+             * completion now arrives here (the handler clears RINTSTS before
+             * this loop can see the hardware bit), and leaving 'done' false
+             * made the caller report -ETIMEDOUT for commands that had in fact
+             * completed -- the measured "xfrmask=03 but no command completion".
+             */
+
+            done = true;
             break;
           }
 
@@ -1836,6 +1849,10 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
             break;
           }
       }
+
+    syslog(LOG_INFO,
+           "esp_sdmmc: waitresponse exit xfrmask=%02x waitmask=%02x\n",
+           (unsigned)p->xfrmask, (unsigned)p->waitmask);
 
     syslog(LOG_INFO,
            "esp_sdmmc: CMD%.2u resp %08" PRIx32 " -> %08" PRIx32 " %s "
@@ -2157,6 +2174,14 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
     if (isr_count <= 5 || (isr_count % 20) == 0)
       {
         syslog(LOG_INFO, "esp_sdmmc: ISR #%" PRIu32 "\n", isr_count);
+      }
+
+    if (isr_count <= 12)
+      {
+        syslog(LOG_INFO, "esp_sdmmc: ISR raw status=%08" PRIx32
+               " intmask=%08" PRIx32 "\n",
+               sdmmc_ll_get_intr_status(priv->hw),
+               *(volatile uint32_t *)&priv->hw->intmask);
       }
   }
 

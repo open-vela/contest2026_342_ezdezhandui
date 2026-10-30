@@ -36,6 +36,8 @@
     <copyfile src="nuttx/CMakeLists.txt" dest="nuttx/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/Kconfig" dest="nuttx/arch/risc-v/Kconfig"/>
     <copyfile src="nuttx/arch/risc-v/include/esp32p4/chip.h" dest="nuttx/arch/risc-v/include/esp32p4/chip.h"/>
+    <copyfile src="nuttx/arch/risc-v/include/esp32p4/gpio_sig_map.h" dest="nuttx/arch/risc-v/include/esp32p4/gpio_sig_map.h"/>
+    <copyfile src="nuttx/arch/risc-v/include/esp32p4/irq.h" dest="nuttx/arch/risc-v/include/esp32p4/irq.h"/>
     <copyfile src="nuttx/arch/risc-v/src/cmake/Toolchain.cmake" dest="nuttx/arch/risc-v/src/cmake/Toolchain.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/src/common/Make.defs" dest="nuttx/arch/risc-v/src/common/Make.defs"/>

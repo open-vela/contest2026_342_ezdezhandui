@@ -10360,3 +10360,16 @@ PLDMND（注释里也写了这一点）。
 **数据通路的 IDMAC 描述符装载/启动顺序**（`esp_sdmmc_dmarecvsetup()`）与**对齐缓冲**两处。
 下一轮的对照对象：IDF `components/sdmmc/sdmmc_host.c`（描述符构造与 `dbaddr` 装载、DMA 复位顺序）
 对比我们的 `dmarecvsetup()`；若仍无差异，则执行"跑官方基线本体"拿到波形级参照。
+
+#### AD 补充二 —— 描述符缓冲大小对齐 IDF（2026-10-31）
+
+对照 IDF `components/esp_driver_sdmmc/src/sdmmc_host.c:1083-1141`，我们的 `setup_desc()` 与之
+逐项一致（`OWN`/`second_address_chained`/FS/LD/`next` 末项 NULL/装载顺序 `set_desc_addr`→`poll_demand`），
+**唯一分歧**：
+
+| 项 | IDF | 本驱动（改前） |
+|---|---|---|
+| `des1` 缓冲大小 | `(size_to_fill + 3) & (~3)`（向上取 4 的倍数） | 直接写 `chunk`（1、2 字节时非 4 的倍数） |
+
+IDMAC 按 32 位字搬运，该字段必须是 4 的倍数。已改为 `(chunk + 3u) & ~3u`。
+**实测：尺寸扫描结果不变**（`size=1 ret=-5`、2/4/8 仍 `-110`、数据仍为零）→ 该分歧虽真实但**不是本因**。

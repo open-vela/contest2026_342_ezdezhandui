@@ -1786,7 +1786,21 @@ static int esp_sdmmc_setup_desc(struct esp_sdmmc_dev_s *priv,
        */
 
       priv->desc[index].des0   = SDMMC_DESC_OWN | SDMMC_DESC_CH;
-      priv->desc[index].des1   = chunk;
+
+      /* The IDMAC moves whole 32-bit words, and the reference rounds this field
+       * up accordingly:
+       *
+       *     sdmmc_host.c: desc->buffer1_size = (size_to_fill + 3) & (~3);
+       *
+       * A descriptor whose size is not a multiple of four was passing straight
+       * through here, and the one-byte CMD53 read -- the hardest failure of the
+       * size sweep, SDIOWAIT_ERROR rather than a timeout -- is exactly the case
+       * that produces it.  The caller's buffer is at least this large because
+       * every transfer here is word-aligned, but the extra bytes are read from
+       * the card and discarded, so the round-up is safe.
+       */
+
+      priv->desc[index].des1   = (chunk + 3u) & ~3u;
       priv->desc[index].buffer = (uint32_t)addr;
       priv->desc[index].next   = 0;
 

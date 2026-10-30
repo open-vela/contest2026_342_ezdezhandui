@@ -9549,3 +9549,70 @@ esp_sdmmc: data-phase error bits raw=00008008
 并在最后用"把 IDF 官方主机栈烧到同一块板"做了实现层对照。
 
 **核心结论**：**C6 的 SDIO 从机数据通路不工作。**
+
+### AA.187 第 194–195 轮：**用 pxview 波形与 C6 固件结合的最终核对**
+
+#### 波形数据（C6 跑 esp-hosted 稳定固件）
+
+```
+13.60s  沿 10000  CMD高100.0%  D0高100.0%  D1高100.0%
+13.80s  沿  9999  CMD高 95.5%  D0高100.0%  D1高100.0%
+14.20s  沿  9999  CMD高 94.6%  D0高100.0%  D1高100.0%
+14.70s  沿  9033  CMD高 95.3%  D0高100.0%  D1高100.0%
+```
+
+**时钟在跑（约 100 kHz）、CMD 空闲（93–100% 高），而 `D0`/`D1` 全程 100% 高。**
+
+#### 从机侧硬件配置的核对（没有异常）
+
+`sdio_slave_ll_set_timing()` 对 `PSEND_PSAMPLE`：
+
+```c
+host->conf.frc_sdio20 = 0x1f;    host->conf.frc_sdio11 = 0;
+host->conf.frc_pos_samp = 0x1f;  host->conf.frc_neg_samp = 0;
+```
+
+`sdio_slave_ll_init()`：
+
+```c
+slc->slcconf0.slc0_rx_auto_wrback = 1;
+slc->slcconf0.slc0_token_auto_clr = 0;
+slc->slc_rx_dscr_conf.slc0_token_no_replace = 1;
+```
+
+**都是 ESP-IDF 的标准配置 —— 从机软件层没有遗漏。**
+
+**反证：`CMD` 线是从机驱动的（主机能收到 R5 响应），说明 GPIO 矩阵路由通、SLC 有能力驱动总线。**
+
+#### 关于"主机输出驱动器与从机争抢 D0"的假设 —— 已实测排除
+
+**假设**：波形显示 D0 在数据阶段全程被拉高。如果 P4 的 D0 引脚同时开着输出驱动器，
+它会与从机争抢，导致从机发不出起始位。
+
+**做法**：把 D0 从 `INPUT | OUTPUT | PULLUP | DRIVE_3` 改为 `INPUT | PULLUP`（关闭输出驱动器），
+重建、烧录、复位。
+
+**结果**：
+
+```
+RX block mode (proper wait): ret -110 / -5
+data-phase error bits raw=00000088 [dto=1, sbe=1]
+data-phase error bits raw=0000800c [dto=1, ebe=1]
+```
+
+**错误完全一样**（`SBE` + `DTO` + `EBE`）。
+
+**=> 主机没有在与从机争抢数据线。从机是真的不驱动。**
+
+该改动已撤回（`INPUT | OUTPUT` 是 GPIO 矩阵路由下与 IDF 一致的配置）。
+
+#### 三方证据的最终合流
+
+| 来源 | 结论 |
+|---|---|
+| **C6 固件源码** | 帧已入队、描述符已挂、发送中断已使能、LL 配置标准 —— **软件层没有任何遗漏** |
+| **主机驱动 + Tabby 日志** | CMD53 参数逐位正确、R5 无错误、等满超时 → `SBE`/`EB` + `DTO` |
+| **pxview 波形** | 数据阶段时钟在跑、CMD 空闲、**D0/D1 全程 100% 高** |
+| **主机引脚配置** | 已实测排除"输出驱动器争抢" |
+
+**四条独立证据指向同一件事：C6 的 SDIO 从机外设在数据阶段不驱动数据线。**

@@ -1924,6 +1924,15 @@ static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
 
   sdmmc_ll_poll_demand(priv->hw);
 
+  /* Keep the internal DMA armed.
+   *
+   * Switching it off to fall back on the FIFO was measured once: with DMA
+   * disabled neither RXDR nor TXDR ever appeared, i.e. the FIFO never received
+   * a single byte. That rules out "the IDMAC is the only fault" -- bypassing it
+   * moves no data either -- so there is no reason to leave transfers on a path
+   * that is measurably worse. The diagnostic that proved it stays in eventwait.
+   */
+
   return OK;
 }
 
@@ -2210,6 +2219,29 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
     while ((priv->xfrmask & priv->waitmask) == 0)
       {
         uint32_t st = sdmmc_ll_get_intr_status(hw);
+
+        /* Does the FIFO ever see data?
+         *
+         * With the internal DMA switched off, RXDR is the CIU saying "there are
+         * bytes in the receive FIFO", and TXDR the same for transmit. Either
+         * one proves the card is actually driving the bus; neither appearing
+         * means it never sent anything. Report it once per transfer.
+         */
+
+        if ((st & (SDMMC_RXDR | SDMMC_TXDR)) != 0)
+          {
+            static int fifo_report;
+
+            if (fifo_report < 6)
+              {
+                fifo_report++;
+                syslog(LOG_ERR,
+                       "esp_sdmmc: FIFO has data: raw=%08" PRIx32 " rxdr=%u"
+                       " txdr=%u status=%08" PRIx32 "\n",
+                       st, (unsigned)((st >> 5) & 1), (unsigned)((st >> 4) & 1),
+                       *(volatile uint32_t *)&hw->status);
+              }
+          }
 
         if (st & SDMMC_DATA_OVER)
           {

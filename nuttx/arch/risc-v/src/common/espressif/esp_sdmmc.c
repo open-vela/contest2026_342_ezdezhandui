@@ -1583,6 +1583,18 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
     {
       hwcmd.send_init = 1;
     }
+  /* wait_complete is deliberately NOT set here.
+   *
+   * ESP-IDF does set it (make_hw_cmd sets it on every command except GO_IDLE,
+   * STOP_TRANSMISSION and the voltage switch), so this is a real difference --
+   * but it cannot be adopted while CMD53 does not complete: with the bit set,
+   * the next command waits for the previous transfer and the driver reports
+   *   "previous command still pending after 100 ticks (cmd=a0012174 ...)"
+   * on the first CMD52 after a data command. That measurement is itself useful
+   * evidence -- the data command is issued and never finishes -- but turning the
+   * hang into a -EBUSY storm is worse than leaving the bit clear. Revisit once
+   * the data phase works.
+   */
 
   priv->xfrmask = 0;
   priv->nblocks = 0;
@@ -1858,33 +1870,6 @@ static int esp_sdmmc_cancel(struct sdio_dev_s *dev)
  ****************************************************************************/
 
 #if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
-/****************************************************************************
- * Name: esp_sdmmc_dma_wait_idle
- *
- * Description:
- *   Issue the DMA engine's software reset and wait for it to complete.
- *
- ****************************************************************************/
-
-static void esp_sdmmc_dma_wait_idle(struct esp_sdmmc_dev_s *priv)
-{
-  clock_t start;
-
-  sdmmc_ll_init_dma(priv->hw);
-
-  start = clock_systime_ticks();
-  while (!sdmmc_ll_is_dma_reset_done(priv->hw))
-    {
-      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
-        {
-          syslog(LOG_ERR,
-                 "esp_sdmmc: DMA reset did not complete (bmod=%08" PRIx32
-                 " ctrl=%08" PRIx32 ")\n",
-                 priv->hw->bmod.val, priv->hw->ctrl.val);
-          break;
-        }
-    }
-}
 
 static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
                                   size_t buflen)
@@ -1908,7 +1893,16 @@ static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
    * paths, so waiting here is consistent with how the block is used elsewhere.
    */
 
-  esp_sdmmc_dma_wait_idle(priv);
+  /* No DMA software reset here.
+   *
+   * ESP-IDF calls sdmmc_ll_init_dma() exactly once, when the host is
+   * initialised, and never again per transfer; this driver was resetting the
+   * engine inside every setup. A reset leaves the engine suspended, and the
+   * measured state is precisely that -- IDSTS FSM = 1 with the descriptor's OWN
+   * bit still set -- however the chain is built and however often the engine is
+   * kicked. The initialisation path already calls sdmmc_ll_init_dma(), so
+   * transfers now start from an engine that was armed once, like the reference.
+   */
 
   sdmmc_ll_set_desc_addr(priv->hw, (uint32_t)(uintptr_t)priv->desc);
   sdmmc_ll_enable_dma(priv->hw, true);
@@ -1958,7 +1952,16 @@ static int esp_sdmmc_dmasendsetup(struct sdio_dev_s *dev,
    * paths, so waiting here is consistent with how the block is used elsewhere.
    */
 
-  esp_sdmmc_dma_wait_idle(priv);
+  /* No DMA software reset here.
+   *
+   * ESP-IDF calls sdmmc_ll_init_dma() exactly once, when the host is
+   * initialised, and never again per transfer; this driver was resetting the
+   * engine inside every setup. A reset leaves the engine suspended, and the
+   * measured state is precisely that -- IDSTS FSM = 1 with the descriptor's OWN
+   * bit still set -- however the chain is built and however often the engine is
+   * kicked. The initialisation path already calls sdmmc_ll_init_dma(), so
+   * transfers now start from an engine that was armed once, like the reference.
+   */
 
   sdmmc_ll_set_desc_addr(priv->hw, (uint32_t)(uintptr_t)priv->desc);
   sdmmc_ll_enable_dma(priv->hw, true);

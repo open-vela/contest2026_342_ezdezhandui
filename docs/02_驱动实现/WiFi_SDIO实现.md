@@ -11073,3 +11073,41 @@ IDF 侧参考实现共 **11 个文件 / 2,257 行**（`port/os/idf/src/`：
 `read_block/write_block` 应当**直接复用我们这套 PIO 实现**（包成 `esp_sdmmc_*` 之上的函数），
 而不是另写一套 DMA 版本——两边共用同一份「唯一能工作的数据路径」，才不会又回到
 "编译通过但跑不通"。
+
+### 附录 AQ —— 路线②的真实体量：不是「薄层」，是十万行级的移植（2026-11-01）
+
+附录 AP 只数了**端口头文件**的符号数，这一轮把「官方栈本体 + 它依赖的 IDB API 补丁层」也量了。
+结论要写清楚，因为它直接影响目标②要怎么做。
+
+#### AQ.1 实测体量（`~/p4official/managed_components/espressif__esp_hosted/`，v3.0.10）
+
+| 部分 | 文件 | 行数 |
+|---|---|---|
+| `host/`（主机栈本体：core、transport、features） | 110 个 .c | **25,342** |
+| `common/`（主机/从机共用协议、RPC、帧层） | 20 个 .c | **47,459** |
+| `port/os/idf/src/`（IDF 端口实现，参考） | 11 个 .c | 2,257 |
+| `port/idf_components/`（**它拖来的 ESP-IDF API 补丁层**） | 129 个 .c | **40,956** |
+| 其中：`esp_wifi_remote` 23,560 / `esp_netif` 8,817 / `lwip` 5,894 / `nvs_flash` 1,688 / `esp_event` 534 / `esp_timer` 160 | | |
+
+即：**「官方主机栈 + 一层薄移植层」实际要吞下 ~70k 行栈代码 + ~41k 行 IDF API 补丁**。
+`host/eh_host_core` 的 include 已经直接依赖 `esp_log.h` / `esp_event.h` / `esp_err.h` / `sdkconfig.h`，
+而 `esp_netif`/`lwip`/`esp_wifi_remote` 的存在说明它还要**一整套网络栈与 WiFi API 的替身**。
+
+对 NuttX 来说这些不应该"照搬"：`esp_netif`/`lwip` 在 NuttX 侧有对应物（netdev/自身 TCP/IP），
+但要写桥接，量级并不比上面小。
+
+#### AQ.2 三个可选路线（必须在下一步之前定）
+
+| 路线 | 内容 | 体量 | 风险 |
+|---|---|---|---|
+| **A. 字面照做** | 全量引入 host/ + common/ + idf_components，写 NuttX 版 esp_netif/lwip 桥 | ~11 万行整合 | 周期最长；与「少改上游树/低耦合」冲突 |
+| **B. 只搬传输+协议** | 引入 `host/eh_host_core` + transport + `common/` 帧/RPC，跳过 esp_netif/lwip/esp_wifi_remote，把帧直接接到 NuttX netdev，RPC 用 NuttX 原语重写 | 栈 ~2.5 万行 + 移植/桥 ~5–8 千行 | 中等；仍是数轮工程量 |
+| **C. 收尾现有驱动** | 用已通的 SDIO 数据路径（附录 AK）继续把 `eh_frame.c` → RPC → netdev 收尾 | 存量 + 数轮 | 最小；但与目标②「改用官方栈」的字面要求不一致 |
+
+#### AQ.3 现状与建议
+
+- 目标①（已知良好数据通路）**基本达成**：读方向连续稳定、内容正确（附录 AN），只在板子退化态时失效（附录 AO，需整板断电）；
+- 目标②无论走 A 还是 B，都不是"一轮能完成"的量，且**都需要板子先恢复**才有真机验收；
+- 建议：先整板断电恢复 → 用**路线 B**把 RPC 打通（目标③）→ 再决定 wlan0（目标④）是接 NuttX netdev 还是继续桥 esp_netif。
+
+> 这一条要用户拍板：目标②是照字面走 A（周期最长），还是按 B（只搬传输+协议，网络侧用 NuttX 原生）执行。

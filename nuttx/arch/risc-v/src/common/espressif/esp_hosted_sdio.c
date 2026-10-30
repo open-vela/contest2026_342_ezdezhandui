@@ -622,7 +622,24 @@ int esp_hosted_sdio_initialize(void)
          * missed edge degrading to the poll below instead of stalling.
          */
 
-        (void)esp_sdmmc_wait_card_intr(sdio, 50);
+        /* Record whether the card actually pulled DAT1.
+         *
+         * Nothing so far has shown whether this interrupt ever arrives, and it
+         * is the one observation that splits the remaining possibilities: if it
+         * never fires the companion is not signalling at all, and if it fires
+         * often while every read still fails, the fault is on the host's data
+         * path rather than in the companion.
+         */
+
+        {
+          bool ci = esp_sdmmc_wait_card_intr(sdio, 50);
+
+          if (round < 6 || (round % 25) == 0)
+            {
+              syslog(LOG_INFO, "%s: rxloop[%d] card-intr=%d\n",
+                     HOSTED_TAG, round, (int)ci);
+            }
+        }
 
         /* Step 1: wait for the companion's "new packet" interrupt, bit 23.
          *

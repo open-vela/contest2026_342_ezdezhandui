@@ -2391,6 +2391,23 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
       return false;
     }
 
+  /* The D1 level IS the card interrupt, and it is active low.
+   *
+   * This is how ESP-IDF does it (sdmmc_host_io_int_wait): the CIU's SDIO
+   * status bit is edge-latched and "is only set when first interrupt
+   * triggered", so waiting on it alone misses every later assertion -- which is
+   * exactly what the measured card-intr=0 showed. Reading the pin first, and
+   * only falling back to the interrupt when it is high, is what the reference
+   * relies on: if D1 is high at entry, the coming negedge is guaranteed to
+   * raise the CIU interrupt.
+   */
+
+  if (esp_gpioread(priv->d1_pin) == 0)
+    {
+      priv->cardintr = false;
+      return true;
+    }
+
   priv->cardintr = false;
 
   start = clock_systime_ticks();

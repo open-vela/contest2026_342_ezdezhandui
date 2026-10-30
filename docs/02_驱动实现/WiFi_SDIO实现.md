@@ -10338,3 +10338,25 @@ sweep payload@0x1F7C4 size=60 ret=-110
 2. IDMAC 装载顺序：`poll_demand` 在命令之后（IDF 是在传输在飞时由中断补描述符再 resume）
 3. 对齐缓冲：基线设了 `SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF`（IDF 对 byte 模式 DMA 的明确要求）
 4. 寄存器读方式：基线用 4 字节 CMD53，我们退化为 CMD52 —— 若第 1/2/3 项修好后 CMD53 读仍不通，用官方基线的 `.bin` 直接对照波形
+
+#### AD 补充 —— 命令字字段与 IDF 参考逐项对齐（2026-10-31）
+
+依据：HAL 头 `sdmmc_struct.h`（各字段原文注释）+ IDF 参考实现
+`upper_hal_sdmmc/src/sd_host_sdmmc.c: sd_host_slot_start_command()`。
+
+| 字段 | HAL / IDF 参考 | 本驱动 | 判定 |
+|---|---|---|---|
+| `use_hold_reg` | HAL bit29："0: CMD and DATA sent to card bypassing HOLD Register; 1: through the HOLD Register"，**default 1**；IDF `:860 cmd.use_hold_reg = 1` | `esp_sdmmc.c:414` 每条命令置 1 | ✅ 一致（嫌疑排除） |
+| `card_num` | IDF `: cmd.card_num = slot->slot_id`；HAL bit[20:16]"physical slot number" | `:1519 hwcmd.card_num = priv->slot` | ✅ 一致 |
+| `wait_complete` | 仅 `sd_host_slot_start_command()` 的时钟更新路径置位 | 仅时钟更新路径置位 | ✅ 一致 |
+| `rw` 语义 | IDF 用 `cmd.data_expected && cmd.rw` 触发**写保护**检查 → `rw=1` 表示写 | 读 `rw=0` / 写 `rw=1` | ✅ 一致 |
+| `data_expected` | 由命令标志 `MMCSD_DATAXFR` 决定 | `:1560` 同样由 `MMCSD_DATAXFR` 决定 | ✅ 一致 |
+
+另外确认 IDF 的 `start_command` **不写 poll demand**：它由 IDMAC 中断
+（`sdmmc_host_dma_resume()` → PLDMND）在传输在飞时补描述符。我们的端口是在命令之后写一次
+PLDMND（注释里也写了这一点）。
+
+**结论**：命令字层面的字段已与 IDF 参考逐项对齐，全部排除。剩下的差异集中在
+**数据通路的 IDMAC 描述符装载/启动顺序**（`esp_sdmmc_dmarecvsetup()`）与**对齐缓冲**两处。
+下一轮的对照对象：IDF `components/sdmmc/sdmmc_host.c`（描述符构造与 `dbaddr` 装载、DMA 复位顺序）
+对比我们的 `dmarecvsetup()`；若仍无差异，则执行"跑官方基线本体"拿到波形级参照。

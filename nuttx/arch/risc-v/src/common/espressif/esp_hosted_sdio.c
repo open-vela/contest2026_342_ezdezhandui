@@ -704,14 +704,73 @@ int esp_hosted_sdio_initialize(void)
          * bit invisible, so the skip was never noticed.
          */
 
-        iraw = 0;
-        for (k = 0; k < 4; k++)
-          {
-            sdio_io_rw_direct(sdio, false, 1, 0x00050 + k, 0, &ib[k]);
-          }
+        /* Read the whole register block in ONE transfer, like the reference.
+         *
+         * esp-hosted's host does exactly this: sdio_read_regs() fetches
+         * REG_BUF_LEN bytes -- INT_RAW through PACKET_LEN inclusive, i.e.
+         * 0x50..0x63, 20 bytes -- from ESP_SLAVE_INT_RAW_REG in a single
+         * operation, and then indexes PACKET_LEN at offset 0x10.
+         *
+         * This driver instead sampled the same window with a dozen separate
+         * byte-wise CMD52s. That is not just slower: it reads a live window in
+         * pieces, so a value that the companion updates underneath produces a
+         * mix of old and new bytes. The measured PACKET_LEN sequence -- 60, 360,
+         * 452, 752, 844, 1144 ... i.e. alternating +300 and +92 -- is exactly
+         * what piecewise sampling of a changing window looks like.
+         */
 
-        iraw = (uint32_t)ib[0] | ((uint32_t)ib[1] << 8) |
-               ((uint32_t)ib[2] << 16) | ((uint32_t)ib[3] << 24);
+        {
+          uint8_t regs[20];
+          int     r20;
+
+          memset(regs, 0, sizeof(regs));
+          r20 = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true,
+                                    regs, (int)sizeof(regs), 0);
+
+          iraw = (uint32_t)regs[0] | ((uint32_t)regs[1] << 8) |
+                 ((uint32_t)regs[2] << 16) | ((uint32_t)regs[3] << 24);
+
+          now = (uint32_t)regs[16] | ((uint32_t)regs[17] << 8) |
+                ((uint32_t)regs[18] << 16) | ((uint32_t)regs[19] << 24);
+          now &= 0xfffffu;
+
+          if (r20 != 0)
+            {
+              /* Fall back to byte-wise CMD52 reads.
+               *
+               * The window read is what the reference does, but on this host
+               * every CMD53 data transfer fails, so the loop must still be able
+               * to read its registers. The failure is worth stating plainly: a
+               * 20-byte CMD53 from 0x50 is exactly esp-hosted's
+               * sdio_read_regs(), and it fails here too -- so the data path is
+               * broken in general, not only for the packet window.
+               */
+
+              if (round < 4)
+                {
+                  syslog(LOG_ERR,
+                         "%s: window read (CMD53 20B @0x50) failed: %d; "
+                         "falling back to CMD52\n", HOSTED_TAG, r20);
+                }
+
+              for (k = 0; k < 4; k++)
+                {
+                  sdio_io_rw_direct(sdio, false, 1, 0x00050 + k, 0, &ib[k]);
+                }
+
+              iraw = (uint32_t)ib[0] | ((uint32_t)ib[1] << 8) |
+                     ((uint32_t)ib[2] << 16) | ((uint32_t)ib[3] << 24);
+
+              for (k = 0; k < 4; k++)
+                {
+                  sdio_io_rw_direct(sdio, false, 1, 0x00060 + k, 0, &lb[k]);
+                }
+
+              now = (uint32_t)lb[0] | ((uint32_t)lb[1] << 8) |
+                    ((uint32_t)lb[2] << 16) | ((uint32_t)lb[3] << 24);
+              now &= 0xfffffu;
+            }
+        }
 
         if ((iraw & (1u << 23)) == 0)
           {
@@ -719,16 +778,7 @@ int esp_hosted_sdio_initialize(void)
             continue;
           }
 
-        /* Step 2: read the queued length. */
-
-        for (k = 0; k < 4; k++)
-          {
-            sdio_io_rw_direct(sdio, false, 1, 0x00060 + k, 0, &lb[k]);
-          }
-
-        now = (uint32_t)lb[0] | ((uint32_t)lb[1] << 8) |
-              ((uint32_t)lb[2] << 16) | ((uint32_t)lb[3] << 24);
-        now &= 0xfffffu;
+        /* Step 2 is already done: the block read above carried PACKET_LEN. */
 
         if (now != 0 && now != last)
           {

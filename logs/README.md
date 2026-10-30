@@ -1,20 +1,20 @@
-# logs/ — AI Coding 日志目录
+# logs —— 会话与调试记录
 
-存放你在开发中与 AI 工具的对话日志，和作品代码一并提交。
+| 文件 | 内容 |
+|---|---|
+| `2026-10-30_wifi-sdio-session.md` | WiFi（C6 + SDIO + ESP-Hosted）驱动实现全程会话记录（用户指令 / 助手正文 / 工具调用摘要）|
+| `2026-10-30_session-raw.jsonl.zstd` | 同一会话的**原始未加工**记录（DSH session v4 JSONL，zstd 压缩，33,723 行）|
 
-> 本目录现在是**示例**，请替换成你自己导出的真实日志（删掉示例的 `your-github-login/` 目录）。
+## 查看原始记录
 
-## 目录结构
-
-```text
-logs/
-└── <github_login>/              # 你的 GitHub 用户名，一人一目录
-    ├── manifest.json            # 会话清单
-    └── <date>/                  # 日期 YYYY-MM-DD
-        └── <tool>__<sid>.jsonl  # 一个会话一个文件（工具名与 session id 用 __ 连接）
+```bash
+zstd -d -c 2026-10-30_session-raw.jsonl.zstd | less
 ```
 
-- `<tool>`：`claude-code` / `opencode` / `codex` / `kiro`
-- 每个 `.jsonl` 每行一个事件，由组委会提供的日志归集工具导出，**只提交 JSONL 本身**。
+每行一条事件，`type` 字段区分类型：`user/message`、`assistant/message`、
+`tool/call`、`tool/result`、`step/start`、`step/end`、`goal/change` 等。
 
-导出与提交的完整步骤、字段定义见[《AI Coding 日志归集与提交手册》](https://github.com/open-vela/docs/blob/dev-ai-contest-2026/zh-cn/contest_2026/ai_coding_log_guide.md)。
+## 说明
+
+- 可读版只保留对话正文与工具调用摘要；**工具结果未展开**（原始记录里完整保留）。
+- 时间戳来自会话内部计时，仅用于排序。

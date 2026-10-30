@@ -9677,3 +9677,72 @@ default speed`）。时钟函数本身只设置分频、不碰引脚，所以这
 
 **C6 的 SDIO 从机外设为什么在数据阶段不驱动数据线。**
 **主机侧已无未试的假设；从机侧软件层无遗漏。**
+
+### AA.191 第 198–201 轮：**与参考实现的寄存器级逐项核对 + 卡点的最终定位**
+
+#### 寄存器级逐项核对（全部一致）
+
+| 项 | 参考实现 | 本驱动 |
+|---|---|---|
+| 中断状态 | `ESP_SLAVE_INT_RAW_REG` = base+`0x50` | `0x50` ✅ |
+| 中断清除 | `ESP_SLAVE_INT_CLR_REG` = base+`0xD4` | `0xD4` ✅ |
+| 包长度 | `ESP_SLAVE_PACKET_LEN_REG` = base+`0x60` | `0x60` ✅ |
+| Token | `ESP_SLAVE_TOKEN_RDATA` = base+`0x44` | `0x44` ✅ |
+| 主机→从机中断 | `HOST_TO_SLAVE_INTR` = `SCRATCH_REG_7` = base+`0x8C` | `0x8C` ✅ |
+| 新包中断位 | `SDIO_INT_NEW_PACKET` = **23** | 检查位 23 ✅ |
+| Token 解析 | `(len >> 16) & 0xFFF` | 相同 ✅ |
+
+**（过程中我曾据"SCRATCH 编号连续"误推出 `SCRATCH_REG_7 = 0x88`，读完定义后发现编号不连续
+——`REG_6 = 0x88`、`REG_7 = 0x8C`，本驱动正确。此处记录以免后来者重犯。）**
+
+#### 从机侧的发送模式
+
+C6 日志：`SDIO_SLAVE: Using SDIO interface (TX_MODE=0)`
+
+```c
+#define TX_MODE_SW_AGGR 0
+#define TX_MODE_STREAM  1
+#define TX_MODE_PACKET  2
+#define TX_MODE         0      /* SW_AGGR */
+...
+#if TX_MODE == TX_MODE_PACKET
+    .sending_mode = SDIO_SLAVE_SEND_PACKET,
+#else
+    .sending_mode = SDIO_SLAVE_SEND_STREAM,   /* 走这条 */
+#endif
+```
+
+**=> esp-hosted 的从机是 `SDIO_SLAVE_SEND_STREAM`；而最小测试固件用的是
+`SDIO_SLAVE_SEND_PACKET`。两种模式都试过，都失败。**
+
+#### 卡点的完整链条（每一环都有直接日志/波形证据）
+
+```
+主机：CMD52 写 SCRATCH_7 = 0x01            (OPEN_DATA_PATH)
+C6 ：event_handler: ESP_OPEN_DATA_PATH
+C6 ：Open Data Path                        <- datapath = 1
+C6 ：host_reset_task: preparing slave-up TLV
+C6 ：Send slave up event                   <- 帧交给 sdio_slave_transmit
+C6 ：SDIO_SLAVE: advertising transfer size 1536
+C6 ：（之后无日志 —— 阻塞在 sdio_slave_transmit）
+主机：slave LEN=3c 00 c0 TOKEN=00021000    <- 读到 60 字节与 2 个缓冲区
+主机：INT_RAW = 0                          <- 从机从未置起新包中断（位 23）
+主机：CMD53 arg=0x17ef8040                 <- 参数逐位正确
+主机：RX ret -110/-5，错误位 SBE/EB + DTO
+波形：数据阶段 100 kHz 时钟下 D0..D3 全部 100% 高（无人驱动）
+```
+
+#### 结论
+
+**`datapath` 已是 1、帧已交给 `sdio_slave_transmit`，但：**
+
+- **从机的"新包"中断（位 23）从未置起**（`INT_RAW = 0`，读取寄存器与参考实现一致）；
+- **数据阶段四条数据线无人驱动**（100 kHz 时钟下 1.2 秒窗口，波形实测）；
+- **控制器报起始位/结束位错误 + 数据超时**。
+
+**=> C6 的 SDIO 从机外设接收了这份数据，但没有发送它，也没有通知主机。**
+
+**主机侧在寄存器层面已逐项核对、无偏差；从机侧固件软件层无遗漏。
+这不是任一方的软件能修复的问题。**
+
+**需要的手段：更换 C6 模组验证、或厂商工具检查这颗 C6 的 SDIO 从机外设。**

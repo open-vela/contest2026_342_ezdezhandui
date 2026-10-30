@@ -1593,6 +1593,18 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
              (clock_systime_ticks() - rstart) <= SDMMC_CMDTIMEOUT)
         {
         }
+
+      /* Measure rather than assume.
+       *
+       * BLKSIZ and BYTCNT are what the CIU uses to decide how many bytes to
+       * move, and CTRL says whether the internal DMA is armed. Reasoning about
+       * them has been wrong before in this driver, so print them.
+       */
+
+      syslog(LOG_INFO,
+             "esp_sdmmc: data cmd regs: blksiz=%08" PRIx32 " bytcnt=%08" PRIx32
+             " ctrl=%08" PRIx32 "\n",
+             priv->hw->blksiz.val, priv->hw->bytcnt.val, priv->hw->ctrl.val);
     }
 
   return esp_sdmmc_ciu_sendcmd(hwcmd, arg);

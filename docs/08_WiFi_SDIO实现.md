@@ -9820,3 +9820,47 @@ receive loop done, 0 packet(s) with data
 | **数据阶段数据线** | 🔴 **无人驱动** |
 
 **没有剩余的主机侧可疑点。**
+
+### AA.193 第 208–210 轮：**核对 ESP32-C6 官方 Errata —— 没有 SDIO 相关问题**
+
+**动机**：如果这是已知的芯片缺陷，就能立刻解释现象并找到 workaround。
+
+**方法**：查阅 ESP32-C6 Series SoC Errata（官方文档）。
+
+**结果：ESP32-C6 的全部已知勘误如下 —— 没有一条与 SDIO 有关。**
+
+| 编号 | 内容 | 受影响版本 |
+|---|---|---|
+| `CLK-8588` | 32 kHz 内部慢速 RC 振荡器可能不起振 | v0.0 |
+| `ADC-305` | SAR ADC 访问 GDMA 时数据重复 | v0.0 / v0.1（v0.2 已修）|
+| `ADC-1477` | SAR ADC 低 4 位精度损失 | v0.0 |
+| `SPI-304` | 使能 Flash 自动挂起可能导致数据读取异常 | v0.0 / v0.1 |
+| `WIFI-9686` | 不能做 802.11mc FTM 发起方 | v0.0 / v0.1 |
+| `CPU-206` | 写 LP SRAM 时可能因乱序执行死锁 | v0.0 |
+| `CPU-863` | 非对齐内存访问可能触发异常 | **v0.0 / v0.1 / v0.2** |
+| `RMT-176` | RMT 连续发送模式空闲电平可能出错 | v0.0 |
+
+**本板的 C6 是 `Chip rev: v0.2`**（启动日志可见），已修复 `ADC-305`。
+
+#### 这个结果排除了什么
+
+**排除了「这是已知的芯片缺陷」这一可能性。** 没有官方 workaround 可以套用。
+
+**=> 如果驱动已经与参考实现逐项一致（前面各节已证），而从机硬件配置与引脚定义也吻合，
+那么剩下的只能是「这颗 C6 的 SDIO 从机外设个体异常」或「板级连接在某处衰减」。**
+
+#### 顺带核对：ESP32-C6 的 SDIO 从机引脚是固定的
+
+`components/soc/esp32c6/include/soc/sdio_slave_pins.h`：
+
+```c
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_CMD  18
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_CLK  19
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D0   20
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D1   21
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D2   22
+#define SDIO_SLAVE_SLOT0_IOMUX_PIN_NUM_D3   23
+#define SDIO_SLAVE_SLOT0_FUNC               0
+```
+
+**与板上接线逐一吻合，且 `FUNC = 0` 是 IO_MUX 固定功能 —— 不存在"选错功能"的可能。**

@@ -11002,3 +11002,74 @@ EN 脉冲不等于上电复位」）。驱动每次启动都会拉低 C6_EN 50 m
    the band (2.4 vs 5 GHz: ...))`，重试 6 次后 `connect FAILED`。
    → 走到目标④（scan/connect/取 IP）时，**要么给从机固件配正确的 SSID/频段并重烧 C6
    （需要你手动烧），要么用主机侧 esp-hosted 的 RPC 去配网**。这条要提前定。
+
+### 附录 AP —— 路线②施工图细化：官方 esp-hosted 的「端口契约」实测清单（2026-11-01）
+
+板子当前卡在退化态（附录 AO，需要整板断电），本轮把目标②要用的**官方栈端口契约**逐条读了出来，
+下一轮可以直接照单实现，不用再翻源码。
+
+来源：`~/p4official/managed_components/espressif__esp_hosted/`（v3.0.10，实测工作态那一套）。
+
+#### AP.1 SDIO 端口：9 个函数（`port/os/include/eh_host_port_sdio.h`）
+
+```c
+void *eh_host_port_sdio_init(void);
+int   eh_host_port_sdio_deinit(void *ctx);
+int   eh_host_port_sdio_card_init(void *ctx, bool show_config);
+int   eh_host_port_sdio_card_deinit(void *ctx);
+int   eh_host_port_sdio_read_reg (void *ctx, uint32_t reg, uint8_t *data, uint16_t size, bool lock);
+int   eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data, uint16_t size, bool lock);
+int   eh_host_port_sdio_read_block (void *ctx, uint32_t reg, uint8_t *data, uint16_t size, bool lock);
+int   eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data, uint16_t size, bool lock);
+int   eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait);
+```
+
+关键常量：
+
+| 宏 | 值 | 出处 |
+|---|---|---|
+| `ESP_TRANSPORT_SDIO_MAX_BUF_SIZE` | **1536** | `eh_common_interface.h`；C6 串口也打印 `advertising transfer size 1536` |
+| `MAX_TRANSPORT_BUFFER_SIZE` | 1536 | 同上（主机侧 DMA/缓冲要按这个量级准备） |
+| `MAX_PAYLOAD_SIZE` | 1536 − `EH_ESP_PAYLOAD_HEADER_OFFSET` | 同上 |
+| `ESP_HOSTED_SDIO_UNRESPONSIVE_CODE` | `0x107` | 端口层回给上层的错误码 |
+
+→ 我们现在 `esp_hosted_sdio.c` 里的 bring-up（probe、FN1 使能、块大小、CCCR）与
+`esp_sdmmc_*` 的 `sdio_io_rw_direct/extended` **正好覆盖** read_reg/write_reg/read_block/write_block
+四个函数；`wait_slave_intr` 用 `esp_sdmmc_wait_card_intr()`（DAT1 已实测可用）。
+
+#### AP.2 OS 端口：按符号数排的工作量（`port/os/include/`）
+
+| 头文件 | 需实现的符号数 | NuttX 对应 |
+|---|---|---|
+| `eh_host_port_sync.h` | **40** | `nxsem` / `nxmutex` / 固定深度环形队列 + 信号量 |
+| `eh_host_port_gpio.h` | **32** | `esp_configgpio` / `esp_gpiowrite` / `esp_gpioread` / GPIO 中断 |
+| `eh_host_port_task.h` | 15 | `kthread_create` / `nxsched_usleep` / `nxsched_cancel` |
+| `eh_host_port_dma.h` | 6 | 我方 SDMMC 是内部 DMA，可映射为空实现（见 AK.3） |
+| `eh_host_port_sdio.h` | 9 | 见 AP.1 |
+| `eh_host_port_config.h` | 2 | 引脚/时钟/位宽（默认 1-bit 400 kHz，可先照抄 IDF 的默认） |
+
+IDF 侧参考实现共 **11 个文件 / 2,257 行**（`port/os/idf/src/`：
+`eh_host_port_{sync,task,queue,gpio,power,sdio,spi,dma,transport_config,transport_defaults,openthread}.c`）。
+→ NuttX 薄移植层按上表**只需覆盖 sync/task/gpio/sdio/config 五块**，约 1,200–1,800 行，
+   SPI/UART/OpenThread 的端口可以先不接（编译期排除）。
+
+#### AP.3 施工顺序（每步都要能单独验收）
+
+1. **骨架 + 空实现**：建 `nuttx/arch/risc-v/src/common/espressif/esp_hosted/`，
+   `Kconfig` 加 `CONFIG_ESPRESSIF_HOSTED_OFFICIAL`（`default n`），
+   `espressif/CMakeLists.txt` 加一行钩子；验收 = **默认配置下产物与现在逐字节等价**、构建 0 error。
+2. **SDIO 端口**：9 个函数落地（复用现有 bring-up + `sdio_io_rw_*`）；
+   验收 = 打开选项后串口出现 `companion enumerated` → FN1 ready。
+3. **sync/task/gpio 端口**：让官方栈的 RX/TX 任务能跑起来；
+   验收 = `INT_RAW`/`PACKET_LEN` 由**官方路径**读出并随真机活动变化（这一步依赖附录 AO 的断电恢复，
+   否则数据阶段不启动）。
+4. **RPC**：caps 握手 + 一次真实 RPC 往返（目标③）。
+5. **netdev**：暴露 `wlan0`，scan / connect / 取 IP（目标④，还需要先定 C6 侧 SSID 怎么配，见 AO）。
+
+#### AP.4 一个必须先决定的分叉（写在施工图之前）
+
+官方栈的 `read_block/write_block` 直接依赖 CMD53 数据阶段；而我们现在能用的数据阶段是
+**CPU 排空 FIFO（PIO）+ 引擎挂起** 的补丁（附录 AK）。所以路线②的端口层里，
+`read_block/write_block` 应当**直接复用我们这套 PIO 实现**（包成 `esp_sdmmc_*` 之上的函数），
+而不是另写一套 DMA 版本——两边共用同一份「唯一能工作的数据路径」，才不会又回到
+"编译通过但跑不通"。

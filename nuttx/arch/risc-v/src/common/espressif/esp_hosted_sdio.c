@@ -580,6 +580,30 @@ int esp_hosted_sdio_initialize(void)
     int      round;
     int      got = 0;
 
+    /* Announce that the host is up BEFORE waiting for anything.
+     *
+     * The companion will not queue a single packet until it is told the host
+     * is ready: esp-hosted's host writes HOST_TO_SLAVE_INTR (SCRATCH 7) to
+     * hand its interrupt mask over, and only then does the slave start raising
+     * NEW_PACKET.
+     *
+     * This call used to sit after the receive loop below. The loop therefore
+     * spent all 400 rounds reading INT_RAW with bit 23 clear -- the companion
+     * had never been told the host was ready -- so no packet ever arrived, the
+     * interface never registered and the log only ever showed an endless
+     * INT_RAW=0. Announcing first is what makes the wait meaningful.
+     */
+
+    {
+      uint8_t mask = 0x01;   /* BIT(ESP_OPEN_DATA_PATH) -- see adapter.h */
+      int w = sdio_io_rw_direct(sdio, true, 1, 0x0008c, mask, NULL);
+      uint8_t rb = 0;
+      int rr = sdio_io_rw_direct(sdio, false, 1, 0x0008c, 0, &rb);
+
+      syslog(LOG_INFO, "%s: host-ready mask %02x written (ret %d), readback %02x (ret %d)\n",
+             HOSTED_TAG, mask, w, rb, rr);
+    }
+
     syslog(LOG_INFO, "%s: starting receive loop (400 rounds)\n", HOSTED_TAG);
 
     for (round = 0; round < 400; round++)
@@ -625,7 +649,6 @@ int esp_hosted_sdio_initialize(void)
 
         if (now != 0 && now != last)
           {
-            uint32_t want = now > 512u ? 512u : now;
             int      rr;
 
             /* Step 3: acknowledge the interrupt before reading. */
@@ -641,9 +664,23 @@ int esp_hosted_sdio_initialize(void)
                 }
             }
 
+            /* Read the way esp-hosted's own host does.
+             *
+             * The reference sets EH_HOST_PORT_SDIO_RX_BLOCK_ONLY_XFER and
+             * always transfers one 512-byte block from
+             * ESP_SLAVE_CMD53_END_ADDR - len_from_slave, i.e. the announced
+             * length positions the window but does NOT set the byte count.
+             *
+             * This used to pass nblocks = 0 with buflen = want, which asks for
+             * a *byte-mode* CMD53 of an arbitrary length. Every such read came
+             * back -110 with the buffer untouched (head=ee ee ee ee): the
+             * slave did not answer a byte-mode window. One block of 512 bytes,
+             * addressed at end-len, is what it does answer.
+             */
+
             memset(rxbuf, 0xee, sizeof(rxbuf));
-            rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - want, true,
-                                     rxbuf, want, 0);
+            rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - now, true,
+                                     rxbuf, 512, 1);
 
             syslog(LOG_INFO,
                    "%s: rxloop[%d] len=%" PRIu32 " ret=%d head=%02x %02x %02x %02x\n",
@@ -823,24 +860,6 @@ int esp_hosted_sdio_initialize(void)
              ((uint32_t)block[2] << 8) | (uint32_t)block[3]);
     }
 
-    /* Tell the companion the host is up.
-     *
-     * The slave will not queue anything until it sees this: esp-hosted's host
-     * writes HOST_TO_SLAVE_INTR (SCRATCH 7) to hand its interrupt mask over,
-     * and only then does the slave start raising NEW_PACKET. Without it
-     * PACKET_LEN stays zero forever, which is what the earlier register dump
-     * showed.
-     */
-
-    {
-      uint8_t mask = 0x01;   /* BIT(ESP_OPEN_DATA_PATH) -- see adapter.h */
-      int w = sdio_io_rw_direct(sdio, true, 1, 0x0008c, mask, NULL);
-      uint8_t rb = 0;
-      int rr = sdio_io_rw_direct(sdio, false, 1, 0x0008c, 0, &rb);
-
-      syslog(LOG_INFO, "%s: host-ready mask %02x written (ret %d), readback %02x (ret %d)\n",
-             HOSTED_TAG, mask, w, rb, rr);
-    }
 
     /* Watch PACKET_LEN for a while after announcing readiness. A companion that
      * has events queued should raise it; a register that stays zero says it

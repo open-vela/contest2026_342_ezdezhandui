@@ -1563,6 +1563,28 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
 
   priv->xfrmask &= ~(SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE);
 
+  /* A data command starts from a reset data path.
+   *
+   * STATUS reports DATA_STATE_MC_BUSY together with FIFO_COUNT = 0 once a data
+   * transfer has failed, and the machine does not return to idle by itself, so
+   * every later data command ends the same way. CTRL.FIFO_RST and CTRL.DMA_RST
+   * are self-clearing, so reset both and wait before handing the command over.
+   */
+
+  if ((cmd & MMCSD_DATAXFR) != 0)
+    {
+      clock_t rstart = clock_systime_ticks();
+
+      sdmmc_ll_reset_fifo(priv->hw);
+      sdmmc_ll_reset_dma(priv->hw);
+
+      while ((!sdmmc_ll_is_fifo_reset_done(priv->hw) ||
+              !sdmmc_ll_is_dma_reset_done(priv->hw)) &&
+             (clock_systime_ticks() - rstart) <= SDMMC_CMDTIMEOUT)
+        {
+        }
+    }
+
   return esp_sdmmc_ciu_sendcmd(hwcmd, arg);
 }
 

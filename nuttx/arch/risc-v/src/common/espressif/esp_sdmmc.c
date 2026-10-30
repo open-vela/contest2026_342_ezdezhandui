@@ -440,6 +440,26 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
   sdmmc_ll_set_command_arg(hw, arg);
   sdmmc_ll_set_command(hw, hwcmd);
 
+  /* Kick the DMA engine NOW, not before the command.
+   *
+   * A poll demand written while the CIU is not transferring is ignored: the
+   * engine stays suspended, never fetches the descriptor list -- its OWN bit in
+   * the descriptor stays set -- and no data moves. Measured exactly that:
+   *
+   *     des0=8000002e   (bit 31 = OWN, still set)
+   *     idsts=00002000  (FSM field = 1, suspended)
+   *
+   * ESP-IDF kicks the engine only once a transfer is in flight: its IDMAC
+   * interrupt refills descriptors and calls sdmmc_host_dma_resume(), which is
+   * nothing but a PLDMND write. Issuing the kick immediately after the command
+   * is the same idea without the interrupt plumbing.
+   */
+
+  if (hwcmd.data_expected != 0)
+    {
+      sdmmc_ll_poll_demand(hw);
+    }
+
   /* Sample the CLK pad while this command is in flight.
    *
    * Sampling it at idle proves nothing: a DesignWare MSHC may legitimately gate
@@ -743,11 +763,15 @@ void esp_sdmmc_dma_state(void)
 
   syslog(LOG_INFO,
          "esp_sdmmc: dma state: des0=%08" PRIx32 " des1=%08" PRIx32
-         " buf=0%08" PRIx32 " ctrl=%08" PRIx32 " status=%08" PRIx32 "\n",
+         " buf=0%08" PRIx32 " ctrl=%08" PRIx32 " status=%08" PRIx32
+         " idsts=%08" PRIx32 " dbaddr=%08" PRIx32 " bmod=%08" PRIx32 "\n",
          g_sdmmc.desc[0].des0, g_sdmmc.desc[0].des1,
          g_sdmmc.desc[0].buffer,
          *(volatile uint32_t *)&hw->ctrl,
-         *(volatile uint32_t *)&hw->status);
+         *(volatile uint32_t *)&hw->status,
+         sdmmc_ll_get_idsts_interrupt_raw(hw),
+         *(volatile uint32_t *)&hw->dbaddr,
+         *(volatile uint32_t *)&hw->bmod);
 }
 
 void esp_sdmmc_route_pins(void)

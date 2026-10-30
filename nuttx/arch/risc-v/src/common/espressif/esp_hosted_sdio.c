@@ -784,16 +784,51 @@ int esp_hosted_sdio_initialize(void)
           {
             int      rr;
 
-            /* Step 3: acknowledge the interrupt before reading. */
+            /* Step 3: acknowledge the interrupt before reading.
+             *
+             * Done as ONE four-byte write, which is what the reference does:
+             * esp-hosted's sdio_clear_intr() writes sizeof(uint32_t) bytes and
+             * its port layer turns anything over one byte into a CMD53. This
+             * driver used four separate CMD52s.
+             *
+             * It doubles as the missing control experiment for the data path:
+             * every CMD53 *read* fails here, including a twenty-byte read of the
+             * register window that the reference performs successfully. If this
+             * CMD53 *write* succeeds, then CMD53 works in the write direction
+             * and only reads are broken; if it fails too, the data path is
+             * broken in both.
+             */
 
             {
               uint8_t cb[4];
-              int c;
+              int     w;
+              int     c;
 
               for (c = 0; c < 4; c++)
                 {
                   cb[c] = (uint8_t)((iraw >> (8 * c)) & 0xffu);
-                  sdio_io_rw_direct(sdio, true, 1, 0x000d4 + c, cb[c], NULL);
+                }
+
+              w = sdio_io_rw_extended(sdio, true, 1, 0x000d4u, true, cb, 4, 0);
+
+              if (round < 4)
+                {
+                  syslog(LOG_INFO,
+                         "%s: INT_CLR as one 4-byte CMD53 write: ret %d\n",
+                         HOSTED_TAG, w);
+                }
+
+              if (w != OK)
+                {
+                  /* Keep the companion acknowledged even if the bulk write is
+                   * not accepted; otherwise its interrupt never clears.
+                   */
+
+                  for (c = 0; c < 4; c++)
+                    {
+                      sdio_io_rw_direct(sdio, true, 1, 0x000d4 + c, cb[c],
+                                        NULL);
+                    }
                 }
             }
 
@@ -820,6 +855,18 @@ int esp_hosted_sdio_initialize(void)
                                      true, rxbuf, ESP_HOSTED_SDIO_BLOCK_SIZE, 1);
 
             /* The packet is the tail of the block, so look there. */
+
+            if (rr != 0 && round < 3)
+              {
+                /* Whether the IDMAC ever touched the descriptor.
+                 *
+                 * des0 bit 31 is OWN: if it is still set the engine never
+                 * consumed the descriptor, which separates "the DMA never ran"
+                 * from "the DMA ran and the transfer still failed".
+                 */
+
+                esp_sdmmc_dma_state();
+              }
 
             {
               uint32_t tail = (now < ESP_HOSTED_SDIO_BLOCK_SIZE) ?

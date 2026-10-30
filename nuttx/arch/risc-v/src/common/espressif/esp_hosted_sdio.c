@@ -293,6 +293,75 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
          "%s: sweep[%u] summary max_ok=%d r1=%d r4=%d r20=%d r60=%d\n",
          HOSTED_TAG, seq, out->max_ok, out->ret1, out->ret4, out->ret20,
          out->ret60);
+
+  /* CMD53 reads of registers whose contents CMD52 already told us.
+   *
+   * The ladder above reads FN1 0x60 with CMD53 and never returns the value
+   * CMD52 reports for the same address (3c 00 c0 03 vs a measured
+   * f4 0a 60 2f, reproducibly, across every boot). Two very different things
+   * produce that, and the values printed here separate them:
+   *
+   *   H1 slave side: the companion serves CMD53 accesses to that address from
+   *      its data stream rather than from the register file -- then every
+   *      CMD53 register read disagrees with CMD52, including these two.
+   *   H2 host side: the FIFO is being read with the wrong discipline -- then
+   *      reads of fixed, known registers (FN0 0x10 = 00 02, the block size
+   *      this driver itself wrote; INT_RAW 0x50 = 00 cc 40 00) come back wrong
+   *      as well.
+   *
+   * Both addresses below hold values that do not change on their own, so a
+   * mismatch cannot be blamed on the companion updating a live register.
+   */
+
+  if (full)
+    {
+      static uint8_t chk[8] __attribute__((aligned(64)));
+      int r;
+
+      memset(chk, 0x5a, sizeof(chk));
+      r = sdio_io_rw_extended(sdio, false, 0, 0x0010u, true, chk, 2, 0);
+      syslog(LOG_INFO,
+             "%s: cmd53check FN0@0x10 2B ret=%d got=%02x %02x want=00 02\n",
+             HOSTED_TAG, r, chk[0], chk[1]);
+
+      memset(chk, 0x5a, sizeof(chk));
+      r = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true, chk, 4, 0);
+      syslog(LOG_INFO,
+             "%s: cmd53check FN1@0x50 4B ret=%d got=%02x %02x %02x %02x "
+             "want=00 cc 40 00\n",
+             HOSTED_TAG, r, chk[0], chk[1], chk[2], chk[3]);
+
+      memset(chk, 0x5a, sizeof(chk));
+      r = sdio_io_rw_extended(sdio, false, 1, 0x00060u, true, chk, 4, 0);
+      syslog(LOG_INFO,
+             "%s: cmd53check FN1@0x60 4B ret=%d got=%02x %02x %02x %02x "
+             "(CMD52 sees 3c 00 c0 03)\n",
+             HOSTED_TAG, r, chk[0], chk[1], chk[2], chk[3]);
+
+      /* A real CMD53 write, in the same window.
+       *
+       * The line in the receive path that reports "INT_CLR as one 4-byte CMD53
+       * write: ret 0" is dead code -- it sets w = 0 and prints it without ever
+       * issuing a transfer -- so "CMD53 writes work" has never actually been
+       * measured on this link. This one is issued for real, to the companion's
+       * host-to-slave interrupt register, which is the write the handshake
+       * already uses (and writing the same mask again is idempotent).
+       *
+       * What to look for: ret = 0 means the data phase ran with data the host
+       * drove, i.e. the transmit direction works. A 4-byte block-mode write of
+       * 0x00 00 00 01 mirrors the handshake byte the CMD52 path writes.
+       */
+
+      {
+        static const uint8_t tx[4] = { 0x01, 0x00, 0x00, 0x00 };
+        int wr = sdio_io_rw_extended(sdio, true, 1, 0x0008cu, true,
+                                     (uint8_t *)tx, 4, 1);
+
+        syslog(LOG_INFO,
+               "%s: cmd53check FN1@0x8C 4B WRITE ret=%d (data 01 00 00 00)\n",
+               HOSTED_TAG, wr);
+      }
+    }
 }
 
 /****************************************************************************

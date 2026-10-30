@@ -564,6 +564,112 @@ int esp_hosted_sdio_initialize(void)
       }
   }
 
+  /* Continuous receive loop.
+   *
+   * Everything above reads exactly one packet, once, at init. The companion
+   * generates events on its own schedule (the WiFi retry loop in the log fires
+   * roughly every 2.4 s), so a single read almost always lands between them.
+   * Poll PACKET_LEN here and read whenever it changes, which is what a real
+   * receive task would do.
+   */
+
+  {
+    static uint8_t rxbuf[1024] __attribute__((aligned(64)));
+    uint32_t last = 0;
+    uint8_t  lb[4];
+    int      round;
+    int      got = 0;
+
+    syslog(LOG_INFO, "%s: starting receive loop (400 rounds)\n", HOSTED_TAG);
+
+    for (round = 0; round < 400; round++)
+      {
+        uint32_t now = 0;
+        uint8_t  ib[4];
+        uint32_t iraw;
+        int k;
+
+        /* Step 1: wait for the companion's "new packet" interrupt, bit 23.
+         *
+         * This is the documented first step of the Sending-FIFO procedure and
+         * the driver skipped it: it read PACKET_LEN and issued CMD53 whether or
+         * not the companion had signalled. Reading INT_RAW as one byte made the
+         * bit invisible, so the skip was never noticed.
+         */
+
+        iraw = 0;
+        for (k = 0; k < 4; k++)
+          {
+            sdio_io_rw_direct(sdio, false, 1, 0x00050 + k, 0, &ib[k]);
+          }
+
+        iraw = (uint32_t)ib[0] | ((uint32_t)ib[1] << 8) |
+               ((uint32_t)ib[2] << 16) | ((uint32_t)ib[3] << 24);
+
+        if ((iraw & (1u << 23)) == 0)
+          {
+            usleep(200 * 1000);   /* not ready; try again next round */
+            continue;
+          }
+
+        /* Step 2: read the queued length. */
+
+        for (k = 0; k < 4; k++)
+          {
+            sdio_io_rw_direct(sdio, false, 1, 0x00060 + k, 0, &lb[k]);
+          }
+
+        now = (uint32_t)lb[0] | ((uint32_t)lb[1] << 8) |
+              ((uint32_t)lb[2] << 16) | ((uint32_t)lb[3] << 24);
+        now &= 0xfffffu;
+
+        if (now != 0 && now != last)
+          {
+            uint32_t want = now > 512u ? 512u : now;
+            int      rr;
+
+            /* Step 3: acknowledge the interrupt before reading. */
+
+            {
+              uint8_t cb[4];
+              int c;
+
+              for (c = 0; c < 4; c++)
+                {
+                  cb[c] = (uint8_t)((iraw >> (8 * c)) & 0xffu);
+                  sdio_io_rw_direct(sdio, true, 1, 0x000d4 + c, cb[c], NULL);
+                }
+            }
+
+            memset(rxbuf, 0xee, sizeof(rxbuf));
+            rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - want, true,
+                                     rxbuf, want, 0);
+
+            syslog(LOG_INFO,
+                   "%s: rxloop[%d] len=%" PRIu32 " ret=%d head=%02x %02x %02x %02x\n",
+                   HOSTED_TAG, round, now, rr,
+                   rxbuf[0], rxbuf[1], rxbuf[2], rxbuf[3]);
+
+            if (rr == 0 && rxbuf[0] != 0xee)
+              {
+                got++;
+                syslog(LOG_ERR, "%s: *** PACKET DATA RECEIVED (round %d) ***\n",
+                       HOSTED_TAG, round);
+              }
+          }
+
+        if (now != 0)
+          {
+            last = now;
+          }
+
+        usleep(200 * 1000);
+      }
+
+    syslog(LOG_INFO, "%s: receive loop done, %d packet(s) with data\n",
+           HOSTED_TAG, got);
+  }
+
   /* Enable high speed on the card.
    *
    * The companion is built with CONFIG_EH_TRANSPORT_CP_SDIO_HIGH_SPEED=y, which
@@ -756,7 +862,30 @@ int esp_hosted_sdio_initialize(void)
           sdio_io_rw_direct(sdio, false, 1, 0x00060, 0, &len_lo);
           sdio_io_rw_direct(sdio, false, 1, 0x00061, 0, &len_hi);
           sdio_io_rw_direct(sdio, false, 1, 0x00062, 0, &len_x);
-          sdio_io_rw_direct(sdio, false, 1, 0x00050, 0, &st);
+          /* INT_RAW is 32 bits and the "new packet" bit is 23.
+           *
+           * Reading only byte 0 (as this did) means bit 23 can never be seen,
+           * so the driver has been issuing CMD53 without ever checking whether
+           * the companion actually had a packet ready -- which is step 1 of the
+           * documented Sending-FIFO procedure.
+           */
+
+          {
+            uint8_t ib[4];
+            uint32_t iraw = 0;
+
+            sdio_io_rw_direct(sdio, false, 1, 0x00050, 0, &ib[0]);
+            sdio_io_rw_direct(sdio, false, 1, 0x00051, 0, &ib[1]);
+            sdio_io_rw_direct(sdio, false, 1, 0x00052, 0, &ib[2]);
+            sdio_io_rw_direct(sdio, false, 1, 0x00053, 0, &ib[3]);
+            iraw = (uint32_t)ib[0] | ((uint32_t)ib[1] << 8) |
+                   ((uint32_t)ib[2] << 16) | ((uint32_t)ib[3] << 24);
+
+            syslog(LOG_INFO,
+                   "%s: INT_RAW=%08" PRIx32 " new_packet(bit23)=%u\n",
+                   HOSTED_TAG, iraw, (unsigned)((iraw >> 23) & 1u));
+            st = ib[0];
+          }
 
           {
             uint8_t stst = 0;

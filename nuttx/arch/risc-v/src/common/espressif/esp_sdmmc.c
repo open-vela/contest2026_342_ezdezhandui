@@ -1033,17 +1033,17 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
       case CLOCK_SD_TRANSFER_1BIT:
       case CLOCK_SD_TRANSFER_4BIT:
 
-        /* Match the one configuration on this board known to deliver data.
+        /* Full rate, matching the working official firmware.
          *
-         * The IDF baseline probe (/tmp/p4sdiohost) runs the link at 400 kHz and
-         * says so in its own comment: sdmmc_card_init leaves the host at the
-         * card's advertised speed and "at that rate this companion stops
-         * answering registers altogether". This driver has been running the
-         * transfer clock at the controller maximum (div = 0) instead, which is
-         * the first thing to rule out for a data phase that never starts.
+         * An earlier round set div = 250 (400 kHz) to mimic a minimal IDF probe,
+         * but that probe is not the reference: the official esp-hosted project
+         * (~/p4official) runs SDIO at 40 MHz over 4 bits, and its own register
+         * dump shows clkdiv=00000000 -- i.e. the card divider bypassed and the
+         * rate coming from the system clock block.  Bringing this back to zero
+         * is what makes the two configurations comparable.
          */
 
-        div = 250;
+        div = 0;
         break;
     }
 
@@ -1673,6 +1673,30 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
              (uint32_t)priv->hw->cmdarg,
              (uint32_t)priv->hw->cdetect.card_detect_n,
              priv->hw->ctrl.val, priv->hw->tmout.val);
+
+      /* Same nine fields the working official firmware prints every 20 ms.
+       *
+       * Measured on the official stack while it is receiving RPC events from
+       * this very companion:
+       *
+       *   ctrl=02000030 clkena=00020002 tmout=3d0900ff cdetect=00000000
+       *   rintsts=00000010 intmask=0002b7cf bmod=00000082 idinten=00000103
+       *   idsts=00000000 clkdiv=00000000
+       *
+       * Two of those differ from what this driver shows at a failed transfer
+       * (rintsts=0 and idsts=00002000, IDMAC FSM suspended), so the dump is
+       * widened to the same set to make the comparison line-by-line.
+       */
+
+      syslog(LOG_INFO,
+             "esp_sdmmc: regs2: ctrl=%08" PRIx32 " clkena=%08" PRIx32
+             " tmout=%08" PRIx32 " cdetect=%08" PRIx32 " rintsts=%08" PRIx32
+             " intmask=%08" PRIx32 " bmod=%08" PRIx32 " idinten=%08" PRIx32
+             " idsts=%08" PRIx32 " clkdiv=%08" PRIx32 "\n",
+             priv->hw->ctrl.val, priv->hw->clkena.val, priv->hw->tmout.val,
+             (uint32_t)priv->hw->cdetect.card_detect_n,
+             priv->hw->rintsts.val, priv->hw->intmask.val, priv->hw->bmod.val,
+             priv->hw->idinten.val, priv->hw->idsts.val, priv->hw->clkdiv.val);
     }
 
   return esp_sdmmc_ciu_sendcmd(hwcmd, arg);

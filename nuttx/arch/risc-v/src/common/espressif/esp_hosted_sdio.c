@@ -598,18 +598,20 @@ int esp_hosted_sdio_initialize(void)
          * says nothing about the configuration now.
          */
 
-        /* Stay on one data line.
+        /* Four data lines, matching the working official firmware.
          *
-         * The IDF baseline probe -- the only host stack on this board that is
-         * known to move data -- configures its slot as 1-bit, and the analyser
-         * work quoted below found one bit carried more traffic than four. The
-         * value read from CCCR is still logged so the configuration is visible.
+         * The official esp-hosted project (~/p4official) runs this link at
+         * 40 MHz over 4 bits (CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH_4=y) and is
+         * the only host stack on this board that has been seen moving data, so
+         * one bit was a mistake introduced while chasing a probe that turned out
+         * not to be the reference.  Restoring it makes the two configurations
+         * comparable.
          */
 
-        ret = OK;
+        ret = sdio_set_wide_bus(sdio);
 
         syslog(LOG_INFO,
-               "%s: card bus width stays 1 bit (CCCR 0x07 was %02x, ret %d)\n",
+               "%s: card bus width requested 4 bit (CCCR 0x07 was %02x, ret %d)\n",
                HOSTED_TAG, busif, ret);
 
         /* Four bits was tried here once DAT1..3 were finally routed to the

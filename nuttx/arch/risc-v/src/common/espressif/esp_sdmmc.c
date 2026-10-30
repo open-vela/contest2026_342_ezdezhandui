@@ -2111,17 +2111,31 @@ static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
 
   if (buflen <= ESP_SDMMC_PIO_MAX)
     {
-      /* Hand the transfer to the CPU: take the CIU out of internal-DMA mode so
-       * the data phase runs on the FIFO alone, and remember where the bytes go.
-       * See the note on the PIO state above.
+      /* Move the data with the CPU, with everything else armed exactly as the
+       * DMA path arms it.
+       *
+       * Both halves of that were measured. Taking the CIU out of internal-DMA
+       * mode (CTRL.use_internal_dma = 0) stops the FIFO filling at all -- the
+       * earlier note in this file already recorded "with DMA disabled neither
+       * RXDR nor TXDR ever appeared" -- while leaving the descriptors unarmed
+       * on top of it makes the data phase never complete (every read came back
+       * -110 with STATUS.DATA_STATE_MC_BUSY still set). With the chain armed as
+       * usual and the engine stuck where it always is, the data phase *does*
+       * complete (DATA_STATE_MC_BUSY = 0) and the received bytes sit in the
+       * FIFO holding the right values.
+       *
+       * So: arm the descriptor chain as before, remember where the bytes go,
+       * and let esp_sdmmc_eventwait() empty the FIFO as soon as the data state
+       * machine says the phase is over. The engine never takes anything.
        */
-
-      sdmmc_ll_enable_dma(priv->hw, false);
 
       g_pio_rxbuf = buffer;
       g_pio_rxlen = buflen;
-
-      return OK;
+    }
+  else
+    {
+      g_pio_rxbuf = NULL;
+      g_pio_rxlen = 0;
     }
 
   sdmmc_ll_enable_dma(priv->hw, true);
@@ -2195,12 +2209,16 @@ static int esp_sdmmc_dmasendsetup(struct sdio_dev_s *dev,
 
   if (buflen <= ESP_SDMMC_PIO_MAX)
     {
-      /* Programmed I/O transmit: the CIU is taken out of internal-DMA mode and
-       * the FIFO is filled from the buffer while the data phase runs (see the
-       * PIO note above).
+      /* Programmed I/O transmit: the same arrangement as the receive path --
+       * the CIU stays in internal-DMA mode, the engine is left unarmed, and the
+       * CPU fills the FIFO in esp_sdmmc_eventwait().
        */
 
-      sdmmc_ll_enable_dma(priv->hw, false);
+      priv->desc[0].des0 = 0;
+      priv->desc[1].des0 = 0;
+      up_clean_dcache((uintptr_t)priv->desc, (uintptr_t)(priv->desc + 2));
+
+      sdmmc_ll_enable_dma(priv->hw, true);
 
       g_pio_txbuf = buffer;
       g_pio_txlen = buflen;
@@ -2484,6 +2502,7 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
     sdmmc_dev_t *hw = priv->hw;
     clock_t      start = clock_systime_ticks();
     int          dwait_report = 0;
+    int          pio_settle = 0;
 
     /* Keep polling until the events the caller asked for are satisfied.
      *
@@ -2512,15 +2531,41 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
           {
             uint32_t sts = *(volatile uint32_t *)&hw->status;
             unsigned bytes = (unsigned)((sts >> 17) & 0x1fff);
+            bool     idle  = ((sts >> 10) & 1u) == 0;
 
-            /* FIFO_COUNT is in bytes, not in 32-bit words -- measured: a
-             * one-byte read leaves 1, a two-byte read 2, and eight bytes that
-             * accumulated across four transfers left 15. Round up to whole
-             * words when taking them off the port, and copy only what the
-             * caller actually asked for.
+            /* Require the state machine to have been idle for a while before
+             * believing the FIFO.
+             *
+             * Reading it the moment DATA_STATE_MC_BUSY first reads 0 handed
+             * back a word that was the same byte repeated (0xf4f4f4f4 for a
+             * four-byte read, 0x0af40af4 for eight), while the same port read
+             * after the transfer had settled holds the bytes that were actually
+             * in the register (0x0000003c, and PACKET_LEN's four bytes). The
+             * FIFO is being published by the CIU at the end of the block, so
+             * give it a couple of milliseconds of quiet first -- the loop polls
+             * every 20 us.
              */
 
-            while (bytes > 0 && g_pio_rxdone < g_pio_rxlen)
+            pio_settle = idle ? pio_settle + 1 : 0;
+            idle       = pio_settle > 100;
+
+            /* Empty the FIFO once the CIU says the data phase is over.
+             *
+             * Reading it *while* the phase runs was measured to hand back a
+             * word that is the same byte repeated (0xf4f4f4f4 for a four-byte
+             * read of FN1 0x60), where the same FIFO read after the transfer
+             * holds the real bytes (0x0000003c for a one-byte read, and the
+             * four bytes of PACKET_LEN for a four-byte one). The CIU publishes
+             * the received block to the FIFO when the block is complete, so the
+             * drain belongs here rather than in the polling path.
+             *
+             * FIFO_COUNT is in bytes, and a transfer of up to one FIFO is
+             * drained in one go -- which covers every transfer this driver
+             * makes; anything larger would need the loop below to run during
+             * the phase as well, which is why the DMA path is kept for it.
+             */
+
+            while (idle && bytes > 0 && g_pio_rxdone < g_pio_rxlen)
               {
                 uint32_t word =
                   *(volatile uint32_t *)((uintptr_t)hw + ESP_SDMMC_FIFO_PORT);
@@ -2531,10 +2576,14 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
                     left = 4;
                   }
 
+                if (left > bytes)
+                  {
+                    left = bytes;
+                  }
+
                 memcpy(g_pio_rxbuf + g_pio_rxdone, &word, left);
                 g_pio_rxdone += left;
-
-                bytes = bytes > 4 ? bytes - 4 : 0;
+                bytes       -= left;
               }
 
             if (g_pio_rxdone >= g_pio_rxlen)

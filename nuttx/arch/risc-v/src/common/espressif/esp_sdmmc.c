@@ -1802,8 +1802,28 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
     uint32_t resp_before = *(volatile uint32_t *)&hw->resp[0];
     bool done = false;
 
+    /* Drop any completion left over from the previous command.
+     *
+     * The ISR records CMDDONE/RESPONSEDONE in xfrmask and nothing cleared them
+     * between commands, so the check below would fire immediately and the
+     * caller would read a stale RESP0.
+     */
+
+    p->xfrmask &= ~(SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE);
+
     for (;;)
       {
+        /* The ISR now runs, and it clears RINTSTS before this loop can see it.
+         *
+         * So check the event mask the ISR fills first: it records that the
+         * command completed even though the hardware bit is already gone.
+         */
+
+        if ((p->xfrmask & (SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE)) != 0)
+          {
+            break;
+          }
+
         if (sdmmc_ll_get_intr_status(hw) & SDMMC_CMD_DONE)
           {
             sdmmc_ll_clear_interrupt(hw, SDMMC_CMD_DONE);

@@ -9968,3 +9968,61 @@ up_enable_irq(irq);
 **=> NuttX 的编号整体比 IDF 大 1，是一致的偏移，`= 23` 完全正确。**
 
 **（用 UART0 做校验是因为 console 正在用它，必然正确。）**
+
+### AA.195 第 214–215 轮：**IRQ 修复已验证生效，但暴露出下一层问题**
+
+#### 修复已验证：ISR 现在真的会触发
+
+**加上 `ESP_SOURCE2IRQ()` 之后，`esp_sdmmc_interrupt()` 开始执行：**
+
+```
+esp_sdmmc: ISR #1
+esp_sdmmc: ISR #2
+...
+esp_sdmmc: ISR #20
+```
+
+**这是决定性的验证 —— 之前的「中断从不触发」确实就是 `up_enable_irq(source)` 用错编号造成的。**
+
+（顺带：把板子从下载模式救回来需要一次**物理按 RESET**，`esptool` 的
+`--after hard_reset` 和 `run` 都没用。）
+
+#### 但枚举现在失败 —— 这是修复带来的下一层问题
+
+```
+probe 1/4 -> -110, retrying
+probe 2/4 -> -110, retrying
+...
+```
+
+**`waitresponse -> OK: 23`，`unchanged(无响应): 16`。**
+
+**根因：过去几轮为了让轮询能工作，我在多处绕开了事件机制。现在 ISR 会工作，两者冲突：**
+
+1. **`waitresponse()` 轮询 `RINTSTS` 的 `CMD_DONE`，而 ISR 已经把它清掉了**
+   → 加了「先检查 `xfrmask`」的补丁
+2. **`xfrmask` 里的 `CMDDONE`/`RESPONSEDONE` 跨命令残留**
+   → 加了「每次等待前清掉这两位」的补丁
+3. **但仍有 16 条命令读到无响应** —— 说明补丁还不够
+
+**=> 正确的做法是把整个命令/数据路径改回**事件驱动**，而不是继续给轮询打补丁。**
+
+#### 当前状态
+
+| 项 | 状态 |
+|---|---|
+| **ISR 是否触发** | ✅ **已修，实测 #1..#20+** |
+| 枚举 | 🔴 失败（`-110` 超时）|
+| 根因 | 轮询补丁与工作正常的 ISR 冲突 |
+
+#### 下一步（明确的重构方向）
+
+**需要把以下三处从轮询改回事件驱动：**
+
+1. `waitresponse()` —— 等 `SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE`
+2. `eventwait()` —— 等 `SDIOWAIT_TRANSFERDONE | TIMEOUT | ERROR`
+3. **利用 ISR 送来的 SDIO 卡中断（DAT1）** —— 这是官方主机做的、而本驱动一直缺的一步
+
+**这是把驱动改回「本来该有的样子」，而不是继续叠加补丁。**
+
+**而这一次有了明确的依据：官方 IDF 固件在同一块板上跑通，且 ISR 已被证明可以工作。**

@@ -719,9 +719,18 @@ int esp_hosted_sdio_initialize(void)
          * what piecewise sampling of a changing window looks like.
          */
 
+        if (round == 0)
         {
           uint8_t regs[20];
           int     r20;
+
+          /* One-shot diagnostic only.
+           *
+           * The reference reads this window with a single CMD53, but on this
+           * host every CMD53 fails, and each attempt costs the full timeout --
+           * so as the steady-state path it starved the loop and the packet read
+           * was never reached. Attempt it once, then use CMD52 below.
+           */
 
           memset(regs, 0, sizeof(regs));
           r20 = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true,
@@ -771,6 +780,32 @@ int esp_hosted_sdio_initialize(void)
               now &= 0xfffffu;
             }
         }
+        else
+        {
+          /* Steady state: read the same registers with CMD52.
+           *
+           * Byte-wise CMD52 is the one access this host performs reliably, and
+           * it is what the loop must use if it is to reach the packet read at
+           * all instead of spending every round in a timing-out CMD53.
+           */
+
+          for (k = 0; k < 4; k++)
+            {
+              sdio_io_rw_direct(sdio, false, 1, 0x00050 + k, 0, &ib[k]);
+            }
+
+          iraw = (uint32_t)ib[0] | ((uint32_t)ib[1] << 8) |
+                 ((uint32_t)ib[2] << 16) | ((uint32_t)ib[3] << 24);
+
+          for (k = 0; k < 4; k++)
+            {
+              sdio_io_rw_direct(sdio, false, 1, 0x00060 + k, 0, &lb[k]);
+            }
+
+          now = (uint32_t)lb[0] | ((uint32_t)lb[1] << 8) |
+                ((uint32_t)lb[2] << 16) | ((uint32_t)lb[3] << 24);
+          now &= 0xfffffu;
+        }
 
         if ((iraw & (1u << 23)) == 0)
           {
@@ -809,7 +844,18 @@ int esp_hosted_sdio_initialize(void)
                   cb[c] = (uint8_t)((iraw >> (8 * c)) & 0xffu);
                 }
 
-              w = sdio_io_rw_extended(sdio, true, 1, 0x000d4u, true, cb, 4, 0);
+              /* EXPERIMENT: no acknowledge before the read.
+               *
+               * The reference clears the interrupt first, but on this host every
+               * packet read fails -- and once the interrupt is cleared the
+               * companion treats the packet as consumed and never sends it
+               * again, so the failed read silently loses it. Skipping the clear
+               * keeps the packet pending and tells us whether the clear itself
+               * is what invalidates the window.
+               */
+
+              w = 0;
+
 
               if (round < 4)
                 {
@@ -834,25 +880,21 @@ int esp_hosted_sdio_initialize(void)
 
             /* Read the whole 512-byte block that ENDS at the window end.
              *
-             * The companion publishes its packet at the END of its CMD53
-             * window: esp-hosted's host derives its address as
-             * ESP_SLAVE_CMD53_END_ADDR - len. Two earlier attempts read that
-             * position directly and both failed, but they failed *differently*:
+             * Exactly what esp-hosted's RX task does:
              *
-             *   byte mode at END-len  -> no answer at all (RINTSTS bit 8, RTO)
-             *   block mode at END-len -> answered, but no data ever arrived
+             *     data_left      = len_from_slave;
+             *     block_read_len = round_up(data_left, ESP_BLOCK_SIZE);
+             *     read_block(END - data_left, pos, block_read_len);
              *
-             * The difference points at block-mode addressing: a block transfer
-             * addresses whole blocks, and END-len is not block aligned. Reading
-             * the block that CONTAINS the packet -- the last block of the
-             * window, whose address is 512-aligned -- and taking the packet
-             * from its tail is what keeps the address legal.
+             * i.e. the address is END minus the announced length -- NOT block
+             * aligned -- and one 512-byte block is transferred. PACKET_LEN
+             * showed 60 here, so this reads 512 bytes from END-60 and the
+             * packet is the tail of what comes back.
              */
 
             memset(rxbuf, 0xee, sizeof(rxbuf));
-            rr = sdio_io_rw_extended(sdio, false, 1,
-                                     0x1f800u - ESP_HOSTED_SDIO_BLOCK_SIZE,
-                                     true, rxbuf, ESP_HOSTED_SDIO_BLOCK_SIZE, 1);
+            rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - now, true,
+                                     rxbuf, ESP_HOSTED_SDIO_BLOCK_SIZE, 1);
 
             /* The packet is the tail of the block, so look there. */
 
@@ -869,8 +911,9 @@ int esp_hosted_sdio_initialize(void)
               }
 
             {
-              uint32_t tail = (now < ESP_HOSTED_SDIO_BLOCK_SIZE) ?
-                              (ESP_HOSTED_SDIO_BLOCK_SIZE - now) : 0u;
+              /* The read starts at END-now, so the packet is at offset 0. */
+
+              uint32_t tail = 0u;
               uint8_t *pkt = &rxbuf[tail];
 
               syslog(LOG_INFO,

@@ -10026,3 +10026,76 @@ probe 2/4 -> -110, retrying
 **这是把驱动改回「本来该有的样子」，而不是继续叠加补丁。**
 
 **而这一次有了明确的依据：官方 IDF 固件在同一块板上跑通，且 ISR 已被证明可以工作。**
+
+### AA.196 与官方 IDF 驱动逐行对比的结论（本轮）
+
+按要求把 ESP-IDF 的 `components/esp_driver_sdmmc`（`sdmmc_host.c`、`sdmmc_transaction.c`）
+与 `components/sdmmc` 同本驱动逐项比对，并把核对结果记录在此。
+
+#### 已核对一致、并通过实测确认的项
+
+命令字全部字段：`cmd_index`、`response_expect`、`response_long`、`check_response_crc`、
+`data_expected`、`rw`、`send_auto_stop`、`send_init`、`card_num`、`use_hold_reg`。
+
+事务顺序：`fill_descriptors -> set_data_transfer_len -> set_block_size -> set_desc_addr
+-> enable_dma(true) -> poll_demand`。
+
+描述符控制位：`OWN`、`LD`、`FS`、`CH`（已改为一律置 CH，不设 `end_of_ring` 与 `DIC`）。
+
+初始化步骤：`enable_bus_clock`、`reset_register`、`reset_controller`、`enable_global_interrupt`。
+
+方向位：`rw` 只在「非读」时置 1（`MMCSD_RDDATAXFR` 与 `MMCSD_WRDATAXFR` 共享 bit10，
+原判据对读也为真，已修）。
+
+#### 本轮修正的一处实质差异：DMA 引擎被每条传输复位
+
+官方只在 `sdmmc_host_init()` 里调用一次 `sdmmc_ll_init_dma()`，此后每次传输从不复位引擎。
+本驱动原先在 `dmarecvsetup` / `dmasendsetup` 里每次都调用（内含 `BMOD.SWR` 软复位）。
+已改为只在初始化时调用一次。实测：`OWN` 位仍为 1、`IDSTS` 的 FSM 仍为 1，引擎仍未取描述符
+——故该差异不是根因，但与参考一致，予以保留。
+
+#### 发现但暂不采纳的一处差异：`wait_complete`
+
+官方 `make_hw_cmd()` 对除 `GO_IDLE_STATE`、`STOP_TRANSMISSION`、电压切换之外的每条命令
+都置 `wait_complete=1`；本驱动从未置位。试加后实测：
+
+```
+esp_sdmmc: previous command still pending after 100 ticks (cmd=a0012174 ...)
+```
+
+即下一条命令等不到前一条完成，直接返回 -EBUSY。这条观测本身是硬证据 ——
+**它证明 CMD53 发出后永远不会完成** —— 但在数据阶段打通前加上它只会把「卡住」变成
+「错误风暴」，故撤回，并在代码注释里写明原因与恢复条件。
+
+#### 一条官方约束（不解释当前现象）
+
+`sdmmc_host_check_buffer_alignment()` 要求传输尺寸是缓存行（P4 为 64 字节）的整数倍，
+即官方只做长度按缓存行对齐的 DMA 传输。本驱动读的 60/360/452 字节都不满足；
+但已试过 512 字节整块（64 与 512 的倍数）同样失败，故该约束不解释当前现象。
+
+#### 官方在数据阶段依赖的事件
+
+`process_events()` 的 `SDMMC_SENDING_DATA` 分支同时等待两个事件：
+IDMAC 完成（`SDMMC_DMA_DONE_MASK`，来自 IDSTS）与 CIU 的 `DATA_OVER`。
+本驱动只等 CIU 的 `DATA_OVER`；但既然 IDMAC 从未启动，两个来源都不会到达。
+
+#### 已排除的假设：卡不在 Transfer State
+
+CMD53 要求卡处于 Transfer State，而 CMD52 在任何状态都可用 —— 这个假设可以同时解释
+「CMD52 通、CMD53 不通」。实测证伪：
+
+```
+CMD3 -> RCA = 0x0001
+CMD7 arg=0x0001 -> resp 0x00001e00
+     R1 状态位 [12:9] = 0xF = 15 = TRAN（Transfer State）
+```
+
+卡确实已被选中并处于 Transfer State。
+
+#### 当前结论
+
+主机侧命令行与官方参考逐项一致；CMD52 全部正常、枚举通过、握手 OK、DAT1 会触发；
+而 CMD53 发出后不完成、数据不进入任何 FIFO（关掉 DMA 走 FIFO 同样没有 RXDR/TXDR）、
+IDMAC 从不取描述符（`OWN`=1、`IDSTS` FSM=1）。
+下一步需要线级观测（示波器看 C6 的 DAT0/DAT1）才能区分「从机未进入可发送状态」
+与「数据线未导通」。

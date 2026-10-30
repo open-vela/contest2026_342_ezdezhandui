@@ -23,7 +23,14 @@ from px import init, call                                     # noqa: E402
 
 RATE   = int(sys.argv[1]) if len(sys.argv) > 1 else 4_000_000
 WINDOW = int(sys.argv[2]) if len(sys.argv) > 2 else 2_000_000
-CH_CLK, CH_CMD = 0, 1
+CH_CLK, CH_CMD = 1, 0
+
+# Channel assignment measured on the board, not assumed: a steady-state capture
+# with the driver polling CMD52 shows ch1 carrying ~30k transitions per 0.3 s at
+# a ~50% duty cycle (a clock) while ch0 stays parked at a constant level, and no
+# 48-bit frame on any other enabled channel decodes with a valid CRC7. The
+# earlier 0,1 order was therefore backwards. See 附录 AG of
+# docs/02_驱动实现/WiFi_SDIO实现.md.
 
 init()
 call("set_sample_config", sampleRate=RATE, sampleLimit=WINDOW, collectMode=0)

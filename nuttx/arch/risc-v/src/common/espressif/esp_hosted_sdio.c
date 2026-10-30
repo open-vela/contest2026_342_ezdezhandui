@@ -681,6 +681,15 @@ int esp_hosted_sdio_initialize(void)
     uint8_t ab_b0 = 0;
     uint8_t ab_b1 = 0;
 
+    /* CMD53 read size sweep results, reprinted every round for the same reason
+     * as the A/B result: a line printed once is gone in a second.
+     */
+
+    int sw_max = -1;
+    int sw_ret4 = 0x7fffffff;
+    int sw_ret20 = 0x7fffffff;
+    int sw_ret60 = 0x7fffffff;
+
     /* Known-value test for FN1 register access.
      *
      * Two of the values read below are fixed independently of this driver:
@@ -751,6 +760,56 @@ int esp_hosted_sdio_initialize(void)
            dg_w1[0], dg_w1[1], dg_w1[2], dg_w1[3],
            dg_w1[4], dg_w1[5], dg_w1[6], dg_w1[7]);
 
+    /* CMD53 read size sweep.
+     *
+     * The IDF baseline reads the same registers this driver does -- FN1 0x60
+     * and 0x44 -- but with four-byte CMD53 byte-mode transfers, and it is the
+     * one host stack on this board known to move data.  Every CMD53 read tried
+     * here so far was 20, 60 or 512 bytes and every one of them stalled.  If
+     * some sizes work and larger ones do not, the fault is in this port's
+     * transfer setup rather than in the link; if none work, it is not the size.
+     */
+
+    {
+      static uint8_t swbuf[64] __attribute__((aligned(64)));
+      static const uint16_t swsize[8] = { 1, 2, 4, 8, 16, 20, 32, 60 };
+      int k;
+
+      for (k = 0; k < 8; k++)
+        {
+          int r;
+
+          memset(swbuf, 0x5a, sizeof(swbuf));
+          r = sdio_io_rw_extended(sdio, false, 1, 0x00060u, true, swbuf,
+                                  (int)swsize[k], 0);
+          syslog(LOG_INFO,
+                 "%s: sweep FN1@0x60 size=%2u ret=%d first=%02x %02x %02x %02x\n",
+                 HOSTED_TAG, (unsigned)swsize[k], r,
+                 swbuf[0], swbuf[1], swbuf[2], swbuf[3]);
+
+          if (r == 0)
+            {
+              sw_max = (int)swsize[k];
+            }
+
+          if (swsize[k] == 4)
+            {
+              sw_ret4 = r;
+            }
+        }
+
+      memset(swbuf, 0x5a, sizeof(swbuf));
+      sw_ret20 = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true, swbuf,
+                                     20, 0);
+
+      memset(swbuf, 0x5a, sizeof(swbuf));
+      sw_ret60 = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - 60u, true,
+                                     swbuf, 60, 0);
+
+      syslog(LOG_INFO, "%s: sweep summary max_ok=%d r4=%d r20=%d r60=%d\n",
+             HOSTED_TAG, sw_max, sw_ret4, sw_ret20, sw_ret60);
+    }
+
     for (round = 0; round < 400; round++)
       {
         uint32_t now = 0;
@@ -783,10 +842,12 @@ int esp_hosted_sdio_initialize(void)
             {
               syslog(LOG_INFO,
                      "%s: rxloop[%d] card-intr=%d ab=%d %02x %02x "
+                     "sw=%d/%d/%d max=%d "
                      "cccr=%02x f0b=%02x%02x f1b=%02x%02x "
                      "w0=%02x%02x%02x%02x/%02x%02x%02x%02x "
                      "w1=%02x%02x%02x%02x/%02x%02x%02x%02x\n",
                      HOSTED_TAG, round, (int)ci, ab_ret, ab_b0, ab_b1,
+                     sw_ret4, sw_ret20, sw_ret60, sw_max,
                      dg_cccr, dg_f0b1, dg_f0b0, dg_fbr1, dg_fbr0,
                      dg_w0[0], dg_w0[1], dg_w0[2], dg_w0[3],
                      dg_w0[4], dg_w0[5], dg_w0[6], dg_w0[7],

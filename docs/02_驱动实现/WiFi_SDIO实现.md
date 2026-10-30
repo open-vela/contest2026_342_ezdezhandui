@@ -10304,3 +10304,37 @@ rxloop[70] card-intr=0 ab=-110 ee ee cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c
 2. **寄存器读方式**：基线用 4 字节 CMD53 读 0x60/0x44；我们因 20 字节 CMD53 失败而退化为 CMD52 逐字节
 3. **对齐缓冲**：基线设了 `SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF`（IDF 对 byte 模式 DMA 的明确要求），我们未设
 4. **CMD53 参数/描述符**：待与 IDF 逐项对照（`arg`、`BYTCNT/BLKSIZ`、IDMAC 描述符 OWN/中断等待）
+
+### 附录 AD —— CMD53 读「尺寸扫描」（2026-10-31）
+
+官方基线用 **4 字节** CMD53 字节模式读 FN1 `0x60/0x44` 且能通；我们在 20/60/512 字节上全败。
+为判断是否与尺寸有关，在 FN1 `0x60`（CMD52 读同一个寄存器是好的）做尺寸扫描：
+
+```
+sweep FN1@0x60 size= 1 ret=-5    first=5a 5a 5a 5a
+sweep FN1@0x60 size= 2 ret=-110  first=5a 5a 5a 5a
+sweep FN1@0x60 size= 4 ret=-110  first=5a 5a 5a 5a
+sweep FN1@0x60 size= 8 ret=-110  first=5a 5a 5a 5a
+sweep FN1@0x60 size=16 ret=-110  first=5a 5a 5a 5a
+sweep FN1@0x60 size=20 ret=-110  …
+sweep FN1@0x60 size=32 ret=-110  …
+sweep FN1@0x60 size=60 ret=-110  …
+sweep payload@0x1F7C4 size=60 ret=-110
+```
+
+- **连 1 字节都读不到**（首字节始终是预填 `0x5a`）→ **尺寸不是原因**
+- `size=1` 走完整数据路径但报 `SDIOWAIT_ERROR`，`size≥2` 报 TIMEOUT：**CMD53 读从不进入数据阶段**
+
+**命令字核对**（HAL 头 `sdmmc_struct.h:379`：`rw` 位 `0: Read from card; 1: Write to card`）：
+
+| 项 | 值 | 判定 |
+|---|---|---|
+| 读命令字 | `0xa0010375` → `cmd=53`、`response_expect=1`、`data_expected(bit9)=1`、`rw(bit10)=0` | ✅ 方向与数据期望位**都正确** |
+| 端口映射 | `esp_sdmmc.c:1579  hwcmd.rw = (cmd & MMCSD_WRXFR) ? 1 : 0;` | ✅ 与 HAL 语义一致 |
+
+→ 命令字不是原因。**剩下四个嫌疑点**（下一轮逐个消）：
+
+1. `esp_sdmmc.c:414` 对**每条**命令都置 `use_hold_reg = 1`（DW/IDF 只在"重发同一条命令、数据已在 FIFO"时置位）
+2. IDMAC 装载顺序：`poll_demand` 在命令之后（IDF 是在传输在飞时由中断补描述符再 resume）
+3. 对齐缓冲：基线设了 `SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF`（IDF 对 byte 模式 DMA 的明确要求）
+4. 寄存器读方式：基线用 4 字节 CMD53，我们退化为 CMD52 —— 若第 1/2/3 项修好后 CMD53 读仍不通，用官方基线的 `.bin` 直接对照波形

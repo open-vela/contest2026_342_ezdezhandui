@@ -10446,3 +10446,42 @@ $OCDROOT/bin/openocd -s $OCDROOT/share/openocd/scripts -f board/esp32p4-builtin.
 
 ⚠️ **直接 `halt` 会失败**（`Examination failed / not examined`）；必须先 `reset halt`，两核才会
 `Examined RISC-V core`，之后回读应为 `0x500e6030: 0000d05d`。
+
+### 附录 AG —— 分析仪通道定位（2026-10-31，目标①波形证据的前置）
+
+**结论先说**：分析仪的**接口、通道使能、采样链路全部可用**，但**探点与通道的对应关系与推断不符**，
+按现有接线看不到 CMD 线，因此"CMD53 读 → D0 起始位"的波形证据**尚未取得**。
+
+#### 工具链（已调通，可复用）
+
+DSH 的 `mcp-pxview` 客户端显示 `server is disconnected`，但服务端活着。用仓库自带
+`tools/test/pxview/px.py`（HTTP MCP，`127.0.0.1:10110/mcp`）直连即可；设备
+`PX_Tool PX-Logic U2 channel 32`（driver `pxlogic`）默认 active，`work_mode=0`（Logic）。
+
+用**原始 JSON-RPC `tools/list`**（`px._post({"method":"tools/list"})`）拿到全部 41 个工具，关键三个：
+
+| 工具 | 参数 | 用途 |
+|---|---|---|
+| `configure_channel` | `channelIndex, enabled, name` | **按通道使能**（默认只开 ch0-3，是其"Failed to read logic samples"的原因） |
+| `get_channels` | `mode` | 32 通道的使能状态 |
+| `get_samples` | `channelIndex, channelType, startSample, endSample` | 取样本（base64 位打包） |
+
+#### 实测数据（板子在跑本驱动）
+
+| 采集 | 结果 |
+|---|---|
+| 稳定态 0.3 s（2 MHz） | `ch1` 29,997 跳变（≈50% 占空比，判定为 **CLK**）；`ch0` 1 跳变（恒高）、`ch2` 1 跳变（恒高）、`ch3` 0 跳变（恒低） |
+| 稳定态 0.2 s，**ch0-ch7 全开** | 仍只有 `ch1` 有活动 |
+| 跨复位 10 s（2 MHz，ch0-ch7 全开） | `CLK edges=17313`，全部集中在窗口前 ~0.35 s；`ch0 / ch2..ch7` **逐一试解 48 位帧（start=0/end=1/CRC7）均为 0 条** |
+
+#### 判定与影响
+
+- `ch1 = CLK` 成立；**CMD 不在 ch0/ch2..ch7 中的任何一条**（或探针已脱开 / 只在另一套编号上）。
+- 这与"你说明的 `ch0=CMD, ch1=CLK, ch2..5=D0..D3`"不一致 → **需确认探点实际接法**（是否 6 根都在、编号是否变了）。
+- 期间还发现仓库工具 `sdio_decode.py` 里 `CH_CLK=0, CH_CMD=1` 与实测（CLK=1）**相反**，属已知缺陷，
+  待通道确认后一并修正。
+
+#### 与目标①的关系
+
+目标①要求的"串口 + 分析仪"双证据中，**串口证据已齐**（附录 AE：官方 IDF 基线同样零字节），
+**波形证据待探点确认**。在不具备波形证据前，剩余判断仍以串口 + 代码对照为准。

@@ -1744,6 +1744,34 @@ static int esp_sdmmc_cancel(struct sdio_dev_s *dev)
  ****************************************************************************/
 
 #if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+/****************************************************************************
+ * Name: esp_sdmmc_dma_wait_idle
+ *
+ * Description:
+ *   Issue the DMA engine's software reset and wait for it to complete.
+ *
+ ****************************************************************************/
+
+static void esp_sdmmc_dma_wait_idle(struct esp_sdmmc_dev_s *priv)
+{
+  clock_t start;
+
+  sdmmc_ll_init_dma(priv->hw);
+
+  start = clock_systime_ticks();
+  while (!sdmmc_ll_is_dma_reset_done(priv->hw))
+    {
+      if (clock_systime_ticks() - start > SDMMC_CMDTIMEOUT)
+        {
+          syslog(LOG_ERR,
+                 "esp_sdmmc: DMA reset did not complete (bmod=%08" PRIx32
+                 " ctrl=%08" PRIx32 ")\n",
+                 priv->hw->bmod.val, priv->hw->ctrl.val);
+          break;
+        }
+    }
+}
+
 static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
                                   size_t buflen)
 {
@@ -1756,9 +1784,31 @@ static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
       return ret;
     }
 
-  sdmmc_ll_init_dma(priv->hw);
+  /* Arm the engine, then WAIT for its software reset to finish.
+   *
+   * sdmmc_ll_init_dma() sets BMOD.SWR, which is self-clearing and completes
+   * asynchronously. Programming the descriptor address while that reset is
+   * still in progress loses the write, and the engine then transfers nothing:
+   * every read came back -110 with DATA_STATE_MC_BUSY still set in STATUS and
+   * the buffer untouched. The driver already waits for this bit in the reset
+   * paths, so waiting here is consistent with how the block is used elsewhere.
+   */
+
+  esp_sdmmc_dma_wait_idle(priv);
+
   sdmmc_ll_set_desc_addr(priv->hw, (uint32_t)(uintptr_t)priv->desc);
   sdmmc_ll_enable_dma(priv->hw, true);
+
+  /* Kick the engine so it fetches the descriptor list.
+   *
+   * PLDMND is the "poll demand" the block offers for exactly this: telling the
+   * internal DMA to go and look at DBADDR. Without a kick the engine can sit
+   * idle while the CIU waits for data that never comes -- STATUS keeps
+   * DATA_STATE_MC_BUSY set, FIFO_COUNT stays zero and the transfer ends in the
+   * data timeout with the buffer untouched.
+   */
+
+  sdmmc_ll_poll_demand(priv->hw);
 
   return OK;
 }
@@ -1775,9 +1825,31 @@ static int esp_sdmmc_dmasendsetup(struct sdio_dev_s *dev,
       return ret;
     }
 
-  sdmmc_ll_init_dma(priv->hw);
+  /* Arm the engine, then WAIT for its software reset to finish.
+   *
+   * sdmmc_ll_init_dma() sets BMOD.SWR, which is self-clearing and completes
+   * asynchronously. Programming the descriptor address while that reset is
+   * still in progress loses the write, and the engine then transfers nothing:
+   * every read came back -110 with DATA_STATE_MC_BUSY still set in STATUS and
+   * the buffer untouched. The driver already waits for this bit in the reset
+   * paths, so waiting here is consistent with how the block is used elsewhere.
+   */
+
+  esp_sdmmc_dma_wait_idle(priv);
+
   sdmmc_ll_set_desc_addr(priv->hw, (uint32_t)(uintptr_t)priv->desc);
   sdmmc_ll_enable_dma(priv->hw, true);
+
+  /* Kick the engine so it fetches the descriptor list.
+   *
+   * PLDMND is the "poll demand" the block offers for exactly this: telling the
+   * internal DMA to go and look at DBADDR. Without a kick the engine can sit
+   * idle while the CIU waits for data that never comes -- STATUS keeps
+   * DATA_STATE_MC_BUSY set, FIFO_COUNT stays zero and the transfer ends in the
+   * data timeout with the buffer untouched.
+   */
+
+  sdmmc_ll_poll_demand(priv->hw);
 
   return OK;
 }

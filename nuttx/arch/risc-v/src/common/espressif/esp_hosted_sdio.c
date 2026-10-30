@@ -678,9 +678,32 @@ int esp_hosted_sdio_initialize(void)
              * addressed at end-len, is what it does answer.
              */
 
+            /* Read exactly the way esp-hosted's own host does.
+             *
+             * sdio_read_fromio() splits by size: whole ESP_BLOCK_SIZE (512)
+             * blocks while the remainder is at least that, then byte mode for
+             * what is left, with the byte count rounded up to a multiple of
+             * four (EH_HOST_PORT_SDIO_RX_LEN_TO_TRANSFER(x) = (x + 3) & ~3).
+             *
+             * The packets here are small -- 60 to roughly 450 bytes -- so the
+             * reference issues a *byte-mode* CMD53 whose count is the padded
+             * length, addressed at END - len. An earlier revision asked for a
+             * single 512-byte block instead, which is the branch reserved for
+             * transfers of a full block or more.
+             */
+
             memset(rxbuf, 0xee, sizeof(rxbuf));
-            rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - now, true,
-                                     rxbuf, 512, 1);
+            {
+              uint32_t xfer = (now + 3u) & ~3u;
+
+              if (xfer == 0 || xfer > sizeof(rxbuf))
+                {
+                  xfer = sizeof(rxbuf);
+                }
+
+              rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - now, true,
+                                       rxbuf, (int)xfer, 0);
+            }
 
             syslog(LOG_INFO,
                    "%s: rxloop[%d] len=%" PRIu32 " ret=%d head=%02x %02x %02x %02x\n",

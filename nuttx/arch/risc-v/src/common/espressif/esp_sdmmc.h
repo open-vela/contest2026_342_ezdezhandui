@@ -187,6 +187,19 @@ void esp_sdmmc_sample_idle(void);
 bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms);
 
 /****************************************************************************
+ * Name: esp_sdmmc_last_error_bits
+ *
+ * Description:
+ *   The RINTSTS error bits seen during the most recent data transfer, as the
+ *   driver's own wait loop recorded them. Zero when the last transfer reported
+ *   none. Reading this from the diagnostic code puts the value in the same line
+ *   as the transfer's result, where it cannot be lost between two log lines.
+ *
+ ****************************************************************************/
+
+uint32_t esp_sdmmc_last_error_bits(void);
+
+/****************************************************************************
  * Name: esp_sdmmc_debug
  *
  * Description:

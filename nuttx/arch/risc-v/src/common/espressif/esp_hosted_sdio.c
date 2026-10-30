@@ -154,6 +154,18 @@
  * would starve the receive loop instead of observing it.
  */
 
+/* One experiment at a time: 0 skips the packet-consuming payload read. */
+
+#ifndef HOSTED_PAYLOAD_READ
+#  define HOSTED_PAYLOAD_READ 0
+#endif
+
+/* One experiment at a time: 0 skips the known-value CMD53 read/write checks. */
+
+#ifndef HOSTED_CMD53CHECK
+#  define HOSTED_CMD53CHECK 0
+#endif
+
 #define HOSTED_SWEEP_PERIOD_MS   5000
 #define HOSTED_SWEEP_FULL_EVERY  6
 
@@ -246,9 +258,10 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
 
       syslog(LOG_INFO,
              "%s: sweep[%u] probe FN1@0x60 size= 1 ret=%d "
-             "first=%02x %02x %02x %02x\n",
+             "first=%02x %02x %02x %02x err=%08" PRIx32 "\n",
              HOSTED_TAG, seq, out->ret1,
-             out->first[0], out->first[1], out->first[2], out->first[3]);
+             out->first[0], out->first[1], out->first[2], out->first[3],
+             esp_sdmmc_last_error_bits());
       return;
     }
 
@@ -260,9 +273,11 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
       r = sdio_io_rw_extended(sdio, false, 1, 0x00060u, true, swbuf,
                               (int)swsize[k], 0);
       syslog(LOG_INFO,
-             "%s: sweep[%u] FN1@0x60 size=%2u ret=%d first=%02x %02x %02x %02x\n",
+             "%s: sweep[%u] FN1@0x60 size=%2u ret=%d first=%02x %02x %02x %02x"
+             " err=%08" PRIx32 "\n",
              HOSTED_TAG, seq, (unsigned)swsize[k], r,
-             swbuf[0], swbuf[1], swbuf[2], swbuf[3]);
+             swbuf[0], swbuf[1], swbuf[2], swbuf[3],
+             esp_sdmmc_last_error_bits());
 
       if (r == 0)
         {
@@ -285,9 +300,17 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
   out->ret20 = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true, swbuf,
                                    20, 0);
 
+  /* The payload read at the end of the window is what consumes a queued
+   * packet at the companion. Kept behind a switch for one experiment: if the
+   * ladder leaves the link healthy when it is skipped, then consuming a packet
+   * without acknowledging it (INT_CLR / TOKEN, which this driver still never
+   * writes for real) is what silences the companion afterwards.
+   */
+
   memset(swbuf, 0x5a, sizeof(swbuf));
-  out->ret60 = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - 60u, true,
-                                   swbuf, 60, 0);
+  out->ret60 = HOSTED_PAYLOAD_READ ?
+               sdio_io_rw_extended(sdio, false, 1, 0x1f800u - 60u, true,
+                                   swbuf, 60, 0) : 0;
 
   syslog(LOG_INFO,
          "%s: sweep[%u] summary max_ok=%d r1=%d r4=%d r20=%d r60=%d\n",
@@ -313,7 +336,7 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
    * mismatch cannot be blamed on the companion updating a live register.
    */
 
-  if (full)
+  if (full && HOSTED_CMD53CHECK)
     {
       static uint8_t chk[8] __attribute__((aligned(64)));
       int r;

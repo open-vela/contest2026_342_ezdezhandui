@@ -329,6 +329,10 @@ static mutex_t g_sdmmc_lock = NXMUTEX_INITIALIZER;
 
 static bool g_widebus;
 
+/* RINTSTS error bits seen by the last data transfer's wait loop. */
+
+static uint32_t g_last_error_bits;
+
 /* Programmed-I/O data path.
  *
  * The controller's internal DMA engine never fetches a descriptor on this
@@ -2483,6 +2487,7 @@ static void esp_sdmmc_waitenable(struct sdio_dev_s *dev,
 
   sdmmc_ll_clear_interrupt(priv->hw, 0xffffffff);
   priv->xfrmask = 0;
+  g_last_error_bits = 0;
 
   /* The controller cannot signal a timeout, so it is never part of the
    * hardware mask; it is produced by the watchdog below.
@@ -2554,6 +2559,23 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
             unsigned bytes = (unsigned)((sts >> 17) & 0x1fff);
             bool     idle  = ((sts >> 10) & 1u) == 0;
 
+            /* Only believe the FIFO once the whole transfer is in it (or the
+             * CIU says the block is over).
+             *
+             * Waiting a fixed couple of milliseconds was not enough: after the
+             * command there is a stretch where the data state machine is idle
+             * because the data phase has not begun yet -- at 50 kHz the command
+             * plus response alone take about two milliseconds -- so the drain
+             * fired early and read a word whose invalid bytes repeat the first
+             * one (measured: a four-byte read of FN1 0x60 returned
+             * f4 f4 f4 f4, and an eight-byte one f4 0a f4 0a, where the bytes
+             * in the FIFO were f4 0a 00 00 ...).
+             *
+             * A transfer of up to one FIFO is completely inside it when the
+             * block is over, so the condition is simply "the count reached the
+             * length that was asked for".
+             */
+
             /* Require the state machine to have been idle for a while before
              * believing the FIFO.
              *
@@ -2568,7 +2590,17 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
              */
 
             pio_settle = idle ? pio_settle + 1 : 0;
-            idle       = pio_settle > 100;
+
+            /* Drain once the CIU says the block is over and has actually
+             * published bytes into the FIFO. Both halves matter: draining
+             * on "the state machine is idle" alone is too early (the data
+             * phase has not begun yet) and the FIFO hands back a word whose
+             * unused bytes repeat the first one -- measured as
+             * f4 f4 f4 f4 for a four-byte read of FN1 0x60 where the
+             * register holds f4 0a 60 2f.
+             */
+
+            idle = (st & SDMMC_DATA_OVER) != 0 && bytes > 0 && idle;
 
             /* Empty the FIFO once the CIU says the data phase is over.
              *
@@ -2759,6 +2791,7 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
                    (unsigned)((st >> 15) & 1), (unsigned)((st >> 16) & 1));
 
             sdmmc_ll_clear_interrupt(hw, st & SDMMC_ALL_ERRORS);
+            g_last_error_bits = st & SDMMC_ALL_ERRORS;
             priv->xfrmask |= SDIOWAIT_ERROR;
           }
 
@@ -3087,6 +3120,20 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
   priv->cardintr = false;
   return true;
 }
+
+/****************************************************************************
+ * Name: esp_sdmmc_last_error_bits
+ *
+ * Description:
+ *   See the header: the error bits of the most recent data transfer.
+ *
+ ****************************************************************************/
+
+uint32_t esp_sdmmc_last_error_bits(void)
+{
+  return g_last_error_bits;
+}
+
 
 /****************************************************************************
  * Name: esp_sdmmc_initialize

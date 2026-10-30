@@ -10485,3 +10485,53 @@ DSH 的 `mcp-pxview` 客户端显示 `server is disconnected`，但服务端活�
 
 目标①要求的"串口 + 分析仪"双证据中，**串口证据已齐**（附录 AE：官方 IDF 基线同样零字节），
 **波形证据待探点确认**。在不具备波形证据前，剩余判断仍以串口 + 代码对照为准。
+
+### 附录 AH —— 路线②预置：NuttX 薄移植层施工图（2026-10-31）
+
+目的：一旦数据通路恢复（C6 侧处置后），把主机侧从"自研协议栈"切到"官方 esp-hosted 主机栈 +
+一层 NuttX 薄移植层"，避免从零开始。本附录是施工图，代码在下一轮按此落地。
+
+#### 目录与职责（低耦合、高内聚）
+
+```
+nuttx/arch/risc-v/src/common/espressif/esp_hosted/     ← 我方代码，只此一处
+├── port/
+│   ├── eh_host_port_nuttx_sdio.c    SDIO 端口层（9 个函数，见下表）
+│   ├── eh_host_port_nuttx_os.c      OS 原语（mutex/queue/task/timer/sleep）
+│   ├── eh_host_port_nuttx_gpio.c    C6_EN 复位脉冲、GPIO 直通
+│   └── eh_host_port_nuttx_cfg.h     引脚/时钟/位宽/槽位（默认 1-bit、400 kHz）
+├── stack/                           官方 host/mcu + common/* + host/features/* 的编译入口
+└── Kconfig / CMakeLists.txt
+```
+
+#### 上游树只留两处钩子
+
+| 文件 | 改动 |
+|---|---|
+| `espressif/CMakeLists.txt` | 一行：`if(CONFIG_ESPRESSIF_HOSTED_OFFICIAL) add_subdirectory(esp_hosted) endif()` |
+| `espressif/Kconfig` | 一个 `config ESPRESSIF_HOSTED_OFFICIAL`（`default n`，help 里写明依赖数据通路可用） |
+
+#### 必须实现的 SDIO 端口契约（官方 `port/os/include/eh_host_port_sdio.h`）
+
+| 函数 | 落地方式（复用已验证代码） |
+|---|---|
+| `eh_host_port_sdio_init / deinit` | 取 `sdio_dev_s` 句柄、`sdio_slot` 配置 |
+| `eh_host_port_sdio_card_init / card_deinit` | 复用 `esp_hosted_sdio.c` 的 bring-up（probe、FN1 使能、块大小、CCCR） |
+| `eh_host_port_sdio_read_reg / write_reg` | `sdio_io_rw_direct`（CMD52，`size==1`）或 `sdio_io_rw_extended`（字节模式） |
+| `eh_host_port_sdio_read_block / write_block` | `sdio_io_rw_extended`（块模式，512B/FBR 一致） |
+| `eh_host_port_sdio_wait_slave_intr` | `esp_sdmmc_wait_card_intr()`（DAT1）+ 超时 |
+
+OS 原语映射：`xSemaphoreCreate*→nxsem_init`、`xQueueCreate→固定深度环形队列 + nxsem`、
+`xTaskCreate→kthread_create`、`esp_timer_*→wdog_*`、`vTaskDelay→nxsched_usleep`、日志→`syslog`。
+
+#### 验收（每步都要真机证据）
+
+1. `--cmake` 构建 0 error；默认 `CONFIG_ESPRESSIF_HOSTED_OFFICIAL=n` 时**产物与现在逐字节等价**
+2. 打开选项后串口出现官方栈日志：`companion enumerated` → FN1 ready → RX/TX 任务启动
+3. `INT_RAW` / `PACKET_LEN` 由官方路径读出且随真机活动变化
+4. 之后才是 RPC（caps 握手）与 `wlan0`
+
+#### 前置条件（当前不满足）
+
+官方栈的 RX/TX **同样依赖 CMD53 传输**（附录 AE 已证：官方 IDF 基线在本板同样零字节），
+因此本路线只在**数据通路恢复后**才有意义；在此之前落地只会得到"编译通过但跑不通"的代码。

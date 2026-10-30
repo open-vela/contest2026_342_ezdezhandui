@@ -10956,3 +10956,49 @@ CPU 只能在命令之后才往 FIFO 里填数据；而 CIU 的写数据阶段�
 - 包读取（`rxloop[…] len=`）本轮仍见 `-110`（60 字节包读），与 AN.3 的尾字问题同源；
 - checks 探针默认关闭（`HOSTED_CMD53CHECK=0`），负载读默认关闭（`HOSTED_PAYLOAD_READ=0`），
   两个开关都写成宏，便于下一轮单独打开做对照。
+
+### 附录 AO —— 板级状态：SDIO 数据通路已「卡死」，需要整板断电（2026-11-01 凌晨）
+
+本轮先试着把写方向做成「命令前装载」（`SDIO_CAPS_DMABEFOREWRITE` + 在 `dmasendsetup()`
+里预填 FIFO）。改完第一次上板：**数据通路从第一段阶梯起就全 `-110`**。为分清是「我的改动」
+还是「板子状态」，做了两次对照：
+
+1. 把 `DMABEFOREWRITE` 撤回（保留预填 helper，只被 wait 循环使用）→ 仍然全 `-110`；
+2. **把驱动退回上一轮那个确实跑通过的提交（`52b3bb8`）重新构建烧录** → **仍然全 `-110`**：
+
+```
+sweep[0] FN1@0x60 size= 1 ret=-110 first=5a 5a 5a 5a err=00000000
+...（1/2/4/8/16/20/32/60 全部 -110）
+```
+
+即**不是软件回归**：同一个二进制、同一块板，几十分钟前 `ret=0`、现在 `-110`。
+
+#### 现场特征（与附录 AE/AF 记录的退化一致）
+
+| 观测 | 值 | 说明 |
+|---|---|---|
+| CMD52 寄存器读 | 正常（`CCCR=32`、`FN1 BLKSIZ=0200`、`INT_RAW=0040cc00`、`PKT_LEN=3c00c003`） | 命令/响应通路是好的 |
+| DAT1 卡中断 | 仍在触发（`card-intr=1`） | 从机还在通告 |
+| CMD53 数据阶段 | 永不启动：`status=0001ad06`（FIFO 计数 0、`mc=1`）、`rintsts=0`、`idsts=00002000`、`err=0` | 卡收到命令但不再驱动数据 |
+| **C6 自己的串口（ttyUSB1）** | `SDIO_SLAVE: Using SDIO interface (TX_MODE=0)`、`datapath mode: SW_AGGR`、`rx_buf_size=15872`、`advertising transfer size 1536`、`Send slave up event`、反复 `TX evt → host` | **从机固件是健康的、还在往主机推事件** |
+
+结论：C6 侧 SDIO slave 正常、主机侧寄存器通路正常，**只有 CMD53 数据阶段不启动**——
+这正是文档里反复出现的退化态（附录 AB/AE/AF：「C6 可能已被此前上千次失败的 CMD53 打挂；
+EN 脉冲不等于上电复位」）。驱动每次启动都会拉低 C6_EN 50 ms（GPIO54），**已经证明它不能
+把这一状态复位掉**。
+
+#### 需要的人工动作（一次即可）
+
+> **拔掉整板主电源（不是只拔 USB 线），等 10 秒以上再上电。**
+
+恢复后要复验的第一件事：`sweep[0] summary` 是否回到 `r1=r4=r20=0`（本轮之前是）。
+
+#### 顺带得到的两条对后续有用的信息
+
+1. **从机通告的传输上限 = 1536 字节**（`advertising transfer size 1536`，`rx_buf_size=15872`），
+   与附录 AA 里 `PACKET_LEN` 能到 2804 的现象要一起看——主机侧读包窗口的缓冲要按这个量级准备。
+2. **C6 的 WiFi 连不上是因为没有可用 AP**：
+   `eh_example_sta: disconnected (reason 201: NO_AP_FOUND — SSID not seen; check the SSID and
+   the band (2.4 vs 5 GHz: ...))`，重试 6 次后 `connect FAILED`。
+   → 走到目标④（scan/connect/取 IP）时，**要么给从机固件配正确的 SSID/频段并重烧 C6
+   （需要你手动烧），要么用主机侧 esp-hosted 的 RPC 去配网**。这条要提前定。

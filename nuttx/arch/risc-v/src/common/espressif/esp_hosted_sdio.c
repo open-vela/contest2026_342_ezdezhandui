@@ -510,6 +510,46 @@ int esp_hosted_sdio_initialize(void)
              HOSTED_TAG, ret);
     }
 
+  /* Also raise the card interrupt MASTER enable.
+   *
+   * NuttX's sdio_enable_interrupt() does
+   *
+   *     read  CCCR 0x04
+   *     write CCCR 0x04 = value | (1 << function)
+   *
+   * i.e. it sets only the per-function bit. Bit 0 of that same register is
+   * IENM, the master interrupt enable, and the SDIO specification requires it
+   * before a card will drive DAT1 at all -- whatever the function bit says.
+   *
+   * This is the most likely reason the companion never signalled: measured over
+   * a whole receive loop, DAT1 read high on every single round (card-intr=0)
+   * while the companion kept queueing packets. Reading it back also documents
+   * what the card actually had.
+   */
+
+  {
+    uint8_t inten = 0;
+
+    ret = sdio_io_rw_direct(sdio, false, 0, SDIO_CCCR_INTEN, 0, &inten);
+    if (ret == OK)
+      {
+        uint8_t want = (uint8_t)(inten | (1u << 1) | 0x01u);
+
+        if (want != inten)
+          {
+            ret = sdio_io_rw_direct(sdio, true, 0, SDIO_CCCR_INTEN, want, NULL);
+          }
+
+        syslog(LOG_INFO,
+               "%s: CCCR 0x04 interrupt enable %02x -> %02x (ret %d)\n",
+               HOSTED_TAG, inten, want, ret);
+      }
+    else
+      {
+        syslog(LOG_WARNING, "%s: cannot read CCCR 0x04: %d\n", HOSTED_TAG, ret);
+      }
+  }
+
   ret = sdio_set_blocksize(sdio, 1, ESP_HOSTED_SDIO_BLOCK_SIZE);
   if (ret < 0)
     {

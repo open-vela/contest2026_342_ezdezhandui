@@ -9864,3 +9864,107 @@ receive loop done, 0 packet(s) with data
 ```
 
 **与板上接线逐一吻合，且 `FUNC = 0` 是 IO_MUX 固定功能 —— 不存在"选错功能"的可能。**
+
+### AA.194 第 213 轮：**找到「中断从不触发」的真正根因 —— IRQ 编号用错了**
+
+#### 背景：官方 IDF 固件在同一块板上完全正常
+
+**烧入 ESP-IDF 官方的 P4+C6 固件（`esp_hosted` + `esp_wifi_remote`，配置为
+`CONFIG_ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD=y`）之后：**
+
+```
+I (2112) eh_init_evt: chip=0x0d (esp32c6) fw=0x0003000a caps=0x01 ext=0x00000010
+I (2420) p4official: esp_wifi_init -> ESP_OK
+I (2421) p4official: *** WIFI INIT OK - link works ***
+I (2461) p4official: esp_wifi_start -> ESP_OK
+I (4910) eh_wifi: rx RPC StaDisconnected ssid="myssid" reason=201 rssi=-128
+```
+
+**=> 同一块板、同一颗 C6，官方固件 WiFi 完全正常。**
+
+**所以我之前「C6 的 SDIO 从机硬件不工作」的结论是**错的** —— 问题在我的 NuttX 驱动里。**
+
+**官方组件的 SDIO 引脚配置也与我们完全一致：**
+```
+SDIO_SLOT_1  CMD=19 CLK=18 D0=14 D1=15 D2=16 D3=17  RESET_SLAVE=54
+```
+
+#### 官方主机与本驱动的关键流程差异
+
+```c
+/* 官方 RX 任务 */
+res = eh_host_port_sdio_wait_slave_intr(...);   /* 等从机 SDIO 中断（DAT1 拉低）*/
+sdio_read_regs(reg_buf);                        /* 一次读 20 字节（INT_RAW..PACKET_LEN）*/
+if (!(BIT(23) & interrupts)) continue;
+len_from_slave = sdio_get_len_from_slave(...);
+read_block(...);
+```
+
+**而本驱动只是轮询 —— 从不等待从机的中断。**
+
+#### 为什么本驱动等不到中断：`up_enable_irq` 用错了编号
+
+**在驱动里加计数器实测：`esp_sdmmc_interrupt()` **从未被调用**（`ISR #` 出现次数 = 0）。**
+
+**对照同类的 `esp_spi_slave.c`（同样是外设中断）：**
+
+```c
+/* esp_spi_slave.c:1227 */
+up_enable_irq(ESP_SOURCE2IRQ(spi_periph_signal[...].irq));
+```
+
+**而本驱动：**
+
+```c
+/* 错误写法 */
+irq = SDIO_HOST_INTR_SOURCE;      /* = 23，这是中断**源**编号 */
+up_enable_irq(irq);               /* 把源编号当 IRQ 用了 */
+```
+
+**`irq.h` 的映射是：**
+
+```c
+#define ESP_SOURCE2IRQ(id)  ((id) + ESP_IRQ_FIRSTPERIPH)
+#define ESP_IRQ2SOURCE(irq) ((irq) - ESP_IRQ_FIRSTPERIPH)
+```
+
+**=> 中断被启用到了 `23` 号 IRQ，而正确的 IRQ 是 `23 + ESP_IRQ_FIRSTPERIPH` ——
+完全错位，处理器永远不会被调用。**
+
+**这一条连锁解释了本会话里反复出现的现象：**
+
+1. `esp_sdmmc_interrupt()` 从不执行 → `eventwait()` 收不到事件（缺陷 #4）
+2. → 所有等待改成轮询
+3. → **从机的 SDIO 中断（DAT1 拉低）也永远收不到**
+4. → 主机在错误的时机读数据
+5. → 数据阶段失败
+
+**而早期观测到的「DAT1 一直是低电平」，正是从机在发中断信号。**
+
+#### 已修复（待上机验证）
+
+```c
+irq = ESP_SOURCE2IRQ(SDIO_HOST_INTR_SOURCE);
+up_enable_irq(irq);
+```
+
+**构建通过；**但上机验证被阻塞：擦除并重烧 NuttX 之后，板子停在 ROM 下载模式
+（`boot:0x7 (DOWNLOAD)` / `waiting for download`），`esptool --after hard_reset` 与
+`run` 都未能让它从 flash 启动。**需要一次物理复位（按 RESET 键或拔插 USB）**。
+
+#### 顺带更正一处我自己算错的结论
+
+**本轮中途我曾据 regex 匹配得出「NuttX 的 `SDIO_HOST_INTR_SOURCE = 23` 比 IDF 的 25 少 2」，
+并判定为 bug。用**已知工作**的中断源交叉验证后推翻：**
+
+| 中断源 | IDF | NuttX | 差值 |
+|---|---|---|---|
+| USB_SERIAL_JTAG | 21 | 22 | +1 |
+| **SDIO_HOST** | **22** | **23** | **+1** |
+| DW_GDMA | 23 | 24 | +1 |
+| SPI2 | 24 | 25 | +1 |
+| UART0 | 30 | 31 | +1 |
+
+**=> NuttX 的编号整体比 IDF 大 1，是一致的偏移，`= 23` 完全正确。**
+
+**（用 UART0 做校验是因为 console 正在用它，必然正确。）**

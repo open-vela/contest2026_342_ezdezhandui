@@ -1428,7 +1428,16 @@ static int esp_sdmmc_attach(struct sdio_dev_s *dev)
       return priv->cpuint;
     }
 
-  irq = SDIO_HOST_INTR_SOURCE;
+  /* Enable the *IRQ*, not the peripheral source number.
+   *
+   * irq.h maps the two with ESP_SOURCE2IRQ(id) == id + ESP_IRQ_FIRSTPERIPH.
+   * This used to call up_enable_irq(SDIO_HOST_INTR_SOURCE) -- the raw source
+   * number -- so the line was enabled on an unrelated IRQ and this handler was
+   * never entered. That is why every wait in this driver was later rewritten to
+   * poll, and why the companion's SDIO interrupt (DAT1) was never seen.
+   */
+
+  irq = ESP_SOURCE2IRQ(SDIO_HOST_INTR_SOURCE);
   up_enable_irq(irq);
 
   /* Errors stay unmasked even when nobody is waiting on them, so a failure
@@ -2113,6 +2122,23 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
 
   UNUSED(irq);
   UNUSED(context);
+
+  /* Count how often the handler actually runs.
+   *
+   * The driver was written around the belief that this never fires, so it
+   * polls instead. That belief has never been measured -- and the SDIO card
+   * interrupt (the companion pulling DAT1 low) only arrives here.
+   */
+
+  {
+    static volatile uint32_t isr_count;
+
+    isr_count++;
+    if (isr_count <= 5 || (isr_count % 20) == 0)
+      {
+        syslog(LOG_INFO, "esp_sdmmc: ISR #%" PRIu32 "\n", isr_count);
+      }
+  }
 
   status = sdmmc_ll_get_intr_status(priv->hw);
   sdmmc_ll_clear_interrupt(priv->hw, status);

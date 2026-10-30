@@ -1573,6 +1573,21 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
 
   priv->xfrmask &= ~(SDIOWAIT_CMDDONE | SDIOWAIT_RESPONSEDONE);
 
+  /* Re-arm both timeouts before every command.
+   *
+   * TMOUT carries the response timeout and the data timeout in one register,
+   * and both were programmed only once, in esp_sdmmc_initialize(). blocksetup()
+   * already re-arms the data half for exactly this reason; the response half
+   * was left alone. A response timeout that has been cleared makes the CIU
+   * report RTO the moment a command is issued -- and the observed pattern is
+   * precisely that of a short timeout: fast CMD52 exchanges complete, while
+   * CMD53 (which the companion needs longer to answer) comes back as
+   * "ISR raw status=00000100" (bit 8, RTO).
+   */
+
+  sdmmc_ll_set_response_timeout(priv->hw, 0xffffff);
+  sdmmc_ll_set_data_timeout(priv->hw, 0xffffff);
+
   /* A data command starts from a reset data path.
    *
    * STATUS reports DATA_STATE_MC_BUSY together with FIFO_COUNT = 0 once a data
@@ -1596,15 +1611,21 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
 
       /* Measure rather than assume.
        *
-       * BLKSIZ and BYTCNT are what the CIU uses to decide how many bytes to
-       * move, and CTRL says whether the internal DMA is armed. Reasoning about
-       * them has been wrong before in this driver, so print them.
+       * BLKSIZ and BYTCNT decide how many bytes the CIU moves and CTRL says
+       * whether the internal DMA is armed. CMDARG is what actually reaches the
+       * card, and CDETECT is the card-detect state -- ESP-IDF refuses to issue
+       * a command at all when the card is not detected, so it is worth knowing
+       * what this controller reports.
        */
 
       syslog(LOG_INFO,
              "esp_sdmmc: data cmd regs: blksiz=%08" PRIx32 " bytcnt=%08" PRIx32
-             " ctrl=%08" PRIx32 "\n",
-             priv->hw->blksiz.val, priv->hw->bytcnt.val, priv->hw->ctrl.val);
+             " cmdarg=%08" PRIx32 " cdetect=%08" PRIx32 " ctrl=%08" PRIx32
+             " tmout=%08" PRIx32 "\n",
+             priv->hw->blksiz.val, priv->hw->bytcnt.val,
+             (uint32_t)priv->hw->cmdarg,
+             (uint32_t)priv->hw->cdetect.card_detect_n,
+             priv->hw->ctrl.val, priv->hw->tmout.val);
     }
 
   return esp_sdmmc_ciu_sendcmd(hwcmd, arg);

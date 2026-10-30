@@ -580,14 +580,29 @@ int esp_hosted_sdio_initialize(void)
 
     if (rr == OK)
       {
-        uint8_t want = busif & ~SDIO_CCCR_BUS_IF_WIDTH_MASK;
+        /* Four bits, matching the reference host.
+         *
+         * This is now the only configuration difference left against the
+         * esp-hosted host that demonstrably works on this board, and the
+         * failure it would explain is exactly the one being chased: a card on
+         * four data lines against a host driving one answers commands normally
+         * (CMD is a single wire either way) and delivers nothing during a data
+         * phase. Measurement backs that up -- the command is answered
+         * (eventwait reports CMDDONE|RESPONSEDONE) while STATUS shows
+         * DATA_BUSY = 0 and FIFO_COUNT = 0, i.e. the card never drives a data
+         * line at all.
+         *
+         * Four bits was attempted before, but that was before the card
+         * interrupt master enable was fixed and before the "host is up"
+         * handshake was moved ahead of the receive loop, so the result then
+         * says nothing about the configuration now.
+         */
 
-        want |= SDIO_CCCR_BUS_IF_1_BIT;
+        ret = sdio_set_wide_bus(sdio);
 
-        ret = sdio_io_rw_direct(sdio, true, 0, SDIO_CCCR_BUS_IF, want, NULL);
-
-        syslog(LOG_INFO, "%s: card bus width set to 1 bit (read %02x, wrote %02x, ret %d)\n",
-               HOSTED_TAG, busif, want, ret);
+        syslog(LOG_INFO,
+               "%s: card bus width requested 4 bit (CCCR 0x07 was %02x, ret %d)\n",
+               HOSTED_TAG, busif, ret);
 
         /* Four bits was tried here once DAT1..3 were finally routed to the
          * controller (they never were before, so the earlier attempts at four
@@ -732,58 +747,47 @@ int esp_hosted_sdio_initialize(void)
                 }
             }
 
-            /* Read the way esp-hosted's own host does.
+            /* Read the whole 512-byte block that ENDS at the window end.
              *
-             * The reference sets EH_HOST_PORT_SDIO_RX_BLOCK_ONLY_XFER and
-             * always transfers one 512-byte block from
-             * ESP_SLAVE_CMD53_END_ADDR - len_from_slave, i.e. the announced
-             * length positions the window but does NOT set the byte count.
+             * The companion publishes its packet at the END of its CMD53
+             * window: esp-hosted's host derives its address as
+             * ESP_SLAVE_CMD53_END_ADDR - len. Two earlier attempts read that
+             * position directly and both failed, but they failed *differently*:
              *
-             * This used to pass nblocks = 0 with buflen = want, which asks for
-             * a *byte-mode* CMD53 of an arbitrary length. Every such read came
-             * back -110 with the buffer untouched (head=ee ee ee ee): the
-             * slave did not answer a byte-mode window. One block of 512 bytes,
-             * addressed at end-len, is what it does answer.
-             */
-
-            /* Read exactly the way esp-hosted's own host does.
+             *   byte mode at END-len  -> no answer at all (RINTSTS bit 8, RTO)
+             *   block mode at END-len -> answered, but no data ever arrived
              *
-             * sdio_read_fromio() splits by size: whole ESP_BLOCK_SIZE (512)
-             * blocks while the remainder is at least that, then byte mode for
-             * what is left, with the byte count rounded up to a multiple of
-             * four (EH_HOST_PORT_SDIO_RX_LEN_TO_TRANSFER(x) = (x + 3) & ~3).
-             *
-             * The packets here are small -- 60 to roughly 450 bytes -- so the
-             * reference issues a *byte-mode* CMD53 whose count is the padded
-             * length, addressed at END - len. An earlier revision asked for a
-             * single 512-byte block instead, which is the branch reserved for
-             * transfers of a full block or more.
+             * The difference points at block-mode addressing: a block transfer
+             * addresses whole blocks, and END-len is not block aligned. Reading
+             * the block that CONTAINS the packet -- the last block of the
+             * window, whose address is 512-aligned -- and taking the packet
+             * from its tail is what keeps the address legal.
              */
 
             memset(rxbuf, 0xee, sizeof(rxbuf));
+            rr = sdio_io_rw_extended(sdio, false, 1,
+                                     0x1f800u - ESP_HOSTED_SDIO_BLOCK_SIZE,
+                                     true, rxbuf, ESP_HOSTED_SDIO_BLOCK_SIZE, 1);
+
+            /* The packet is the tail of the block, so look there. */
+
             {
-              uint32_t xfer = (now + 3u) & ~3u;
+              uint32_t tail = (now < ESP_HOSTED_SDIO_BLOCK_SIZE) ?
+                              (ESP_HOSTED_SDIO_BLOCK_SIZE - now) : 0u;
+              uint8_t *pkt = &rxbuf[tail];
 
-              if (xfer == 0 || xfer > sizeof(rxbuf))
+              syslog(LOG_INFO,
+                     "%s: rxloop[%d] len=%" PRIu32 " ret=%d tail=%02x %02x %02x %02x\n",
+                     HOSTED_TAG, round, now, rr,
+                     pkt[0], pkt[1], pkt[2], pkt[3]);
+
+              if (rr == 0 && pkt[0] != 0xee)
                 {
-                  xfer = sizeof(rxbuf);
+                  got++;
+                  syslog(LOG_ERR, "%s: *** PACKET DATA RECEIVED (round %d) ***\n",
+                         HOSTED_TAG, round);
                 }
-
-              rr = sdio_io_rw_extended(sdio, false, 1, 0x1f800u - now, true,
-                                       rxbuf, (int)xfer, 0);
             }
-
-            syslog(LOG_INFO,
-                   "%s: rxloop[%d] len=%" PRIu32 " ret=%d head=%02x %02x %02x %02x\n",
-                   HOSTED_TAG, round, now, rr,
-                   rxbuf[0], rxbuf[1], rxbuf[2], rxbuf[3]);
-
-            if (rr == 0 && rxbuf[0] != 0xee)
-              {
-                got++;
-                syslog(LOG_ERR, "%s: *** PACKET DATA RECEIVED (round %d) ***\n",
-                       HOSTED_TAG, round);
-              }
           }
 
         if (now != 0)

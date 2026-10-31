@@ -11111,3 +11111,36 @@ IDF 侧参考实现共 **11 个文件 / 2,257 行**（`port/os/idf/src/`：
 - 建议：先整板断电恢复 → 用**路线 B**把 RPC 打通（目标③）→ 再决定 wlan0（目标④）是接 NuttX netdev 还是继续桥 esp_netif。
 
 > 这一条要用户拍板：目标②是照字面走 A（周期最长），还是按 B（只搬传输+协议，网络侧用 NuttX 原生）执行。
+
+### 附录 AR —— 路线定案 + JTAG 软复位**不能**恢复 C6 数据通路（2026-11-01 中午）
+
+#### AR.1 用户定案：目标②走**路线 B**
+
+即：只搬官方栈的**传输 + 协议**部分（`host/eh_host_core` + transport + `common/` 帧/RPC），
+**跳过** `esp_netif` / `lwip` / `esp_wifi_remote`（合计 ~3.8 万行），网络侧接 NuttX 原生
+netdev/协议栈；IDF API 补丁层不整体搬运（附录 AQ 的三条路线里 B 为选定）。
+
+#### AR.2 JTAG 软复位实测：恢复不了 C6 的数据通路
+
+按建议先用 USB-JTAG 软复位（不是断电）：
+
+```
+openocd ... -f board/esp32p4-builtin.cfg -c "init" -c "reset halt" -c "reset run" -c "shutdown"
+```
+
+- P4 侧：正常（复位后板子继续跑，`CMD52` 寄存器读正常、DAT1 卡中断仍在）；
+- 期间还触发了已知的 `PSRAM_CORE_CLK_EN` 假死，用附录 AF 的一行恢复命令修回
+  （`mww 0x500E6030 0x0000D05D` → 回读 `0000d05d` ✓，随后正常启动）；
+- **但 C6 的 CMD53 数据阶段仍然不启动**：`sweep[0]` 依旧 1/2/4/8/16/20/32/60 全 `-110`。
+
+原因很直接：**JTAG 复位的是 P4（主机），不是 C6（从机）**。C6 的 SDIO slave 数据通路
+卡住之后，驱动每次启动拉低 C6_EN 50 ms 也没能把它带回可服务状态（附录 AO 的结论仍然成立）。
+
+> → 仍然需要**整板主电源断开 10 秒以上**（不是 USB 线、也不是 JTAG 复位）。
+> 恢复后第一件事仍是 `sweep[0] summary` 回到 `r1=r4=r20=0` 的验收。
+
+#### AR.3 附带记录：串口会话换过一次
+
+期间 Tabby 重启（串口会话 id 变了），`tools/engineering/tabby_mcp.py` 需要
+`rm -f /tmp/.tabby_mcp_sid` 后重新 `init` 才能继续读串口——这一步已写进操作习惯，
+以免把「读不到串口」误判成板子挂了。

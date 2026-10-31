@@ -1600,6 +1600,16 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
   sdmmc_hw_cmd_t hwcmd;
   uint32_t cmdidx;
+  static int traces;
+
+  if (traces < 20)
+    {
+      syslog(LOG_INFO,
+             "esp_sdmmc: sendcmd cmd=%02u arg=%08x ctrl=%08x status=%08x\n",
+             (unsigned)((cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT),
+             (unsigned)arg, priv->hw->ctrl.val, priv->hw->status.val);
+      traces++;
+    }
 
   memset(&hwcmd, 0, sizeof(hwcmd));
 

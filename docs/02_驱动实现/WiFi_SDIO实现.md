@@ -13084,3 +13084,39 @@ CMD53 frames: 8  counts: 1, 2, 4, 8, 16, 20, 32, 60      ← 正是梯子的尺�
 
 下一步：在 `esp_sdmmc_sendcmd()` 的**入口**打印（命令号 + 当时的 `ctrl/status/rintsts`），
 确认它到底进没进 `sendcmd`；若没进，就再往上一层（`sdio_io_rw_extended` 内部）看。
+
+#### BW.17 `sendcmd` 入口打印：**传输层那次读连 `sendcmd` 都没进**
+
+在 `esp_sdmmc_sendcmd()` **入口**加了封顶打印（命令号 + `ctrl`/`status`）。单次启动的完整序列：
+
+```
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=00000030 status=0001f906
+esp_sdmmc: sendcmd cmd=05 arg=00000300 ctrl=00000030 status=0001f906
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=00000030 status=0001f906
+esp_sdmmc: sendcmd cmd=07 arg=00010000 ctrl=00000030 status=00001906
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=00000030 status=00003906
+… 9 条 CMD52（函数使能/块大小/位宽）
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: Open data path at slave
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+（此后没有任何 sendcmd）
+```
+
+结合 BW.16 的波形（那条读**没有任何总线帧**），可以确定：
+
+**传输层那次读连 `sendcmd` 都没有进入。**
+
+而 `sendcmd` 之前的驱动入口只有 `esp_sdmmc_dmarecvsetup()`（以及非 DMA 的 `recvsetup` 桩），
+这两个本轮也都加了打印、同样没有出现。也就是说卡点在**更前面**：NuttX 的
+`sdio_io_rw_extended()` 内部、真正调用驱动 ops 之前的那段（`sdio_lock()` 拿设备锁、
+或设备状态检查）。
+
+#### BW.18 指向：设备锁被"一个没完成的传输"占着
+
+NuttX 的 SDIO 层用**设备级互斥量**（`sdio_lock()`）串行化所有 SDIO 请求。如果**某个先前的传输
+永远不完成**，它就会一直占着这把锁，后续所有请求（包括传输层这次读）都会卡在拿锁这一步——
+这正好解释了："连 sendcmd 都没进、总线上也没有帧"。
+
+下一步（很具体）：在 NuttX `sdio.c` 的 `sdio_io_rw_extended()` 入口/拿锁之后各加一个临时打印
+（该文件在 `nuttx/drivers/mmcsd/sdio.c`，属上游树，改动只作诊断、用完即回退），
+确认到底是"卡在拿锁"还是"过了锁但卡在别处"。

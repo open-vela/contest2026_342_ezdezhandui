@@ -185,6 +185,10 @@
 #  define CONFIG_ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS 200
 #endif
 
+#ifndef CONFIG_ESPRESSIF_HOSTED_SDIO_EN_RESET_MS
+#  define CONFIG_ESPRESSIF_HOSTED_SDIO_EN_RESET_MS 500
+#endif
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -494,16 +498,23 @@ int esp_hosted_sdio_initialize(void)
        * captured from the host.)
        */
 
-      esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
-      nxsig_usleep(50000);
-
-      /* Pulse the companion for this run so its boot log can be captured at the
-       * same time as the host enumerates.
+      /* Reset the companion through its enable line.
+       *
+       * GPIO54 is the C6's reset on this board, and holding it low is the only
+       * way to reset the companion from the P4 -- a JTAG or soft reset of the
+       * P4 leaves the C6 running (measured; see appendix AR).
+       *
+       * The two 50 ms pulses this replaces were a bring-up pulse, not a reset:
+       * a companion whose SDIO slave has wedged needs a low period the chip
+       * actually sees.  The hold is therefore one named, configurable delay.
        */
 
       esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
-      nxsig_usleep(50000);
+      nxsig_usleep(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_RESET_MS * 1000);
       esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
+      syslog(LOG_INFO, "%s: companion reset: GPIO%d held low %d ms\n",
+             HOSTED_TAG, CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO,
+             CONFIG_ESPRESSIF_HOSTED_SDIO_EN_RESET_MS);
       syslog(LOG_INFO,
              "%s: companion enable held high (GPIO%d), settling %d ms\n",
              HOSTED_TAG, CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO,

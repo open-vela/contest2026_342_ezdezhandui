@@ -11256,3 +11256,65 @@ NuttX 这边要么在 CMake 层给出同名变量映射，要么在端口目录�
 - 板子：仍在退化态（`sweep[0]` 全 `-110`），需要**整板断电**才能做真机验收；
 - 下一轮（不需要板子）：① 补 `semphr.h`（NuttX 原语、独立句柄类型）；② 用同名 CMake 变量把
   `eh_host_mcu_transport` + `common/*` 接进构建；③ 以 POSIX 端口为底写 sync/task/queue 端口。
+
+### 附录 AU —— 按「P4 用 USB-JTAG、C6 用 GPIO54」复位后的判决（2026-11-01）
+
+目标里补充了复位方式：**P4 用 USB-JTAG 软复位、C6 用 P4 的 GPIO54**。本轮按这个执行，
+并把 GPIO54 从「上电脉冲」改成**真正的复位**。
+
+#### AU.1 代码：GPIO54 复位（500 ms 低电平，可配）
+
+原来的两段 50 ms 脉冲只是"上电脉冲"，不是复位。现改为：
+
+```c
+esp_gpiowrite(EN_GPIO, false);                    /* GPIO54 = C6 reset */
+nxsig_usleep(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_RESET_MS * 1000);   /* 默认 500 ms */
+esp_gpiowrite(EN_GPIO, true);
+```
+并加了 `CONFIG_ESPRESSIF_HOSTED_SDIO_EN_RESET_MS`（默认 500，范围 1–10000）。
+串口确认执行：`companion reset: GPIO54 held low 500 ms`。
+
+**GPIO54 确实复位了 C6**：C6 自己的串口在复位后打印
+
+```
+ESP-ROM:esp32c6-20220919
+rst:0x1 (POWERON),boot:0xc (SPI_FAST_FLASH_BOOT)
+```
+
+即从机芯片真的重启了（POWERON 复位）。
+
+#### AU.2 但数据通路仍然不启动——这次有**线上证据**说清是哪一侧
+
+P4 用 USB-JTAG 复位、C6 用 GPIO54 复位后，用分析仪（1 MHz × 32 M）抓整段启动，
+对**失败的那笔 CMD53 读**做原始解码（`frames.py`，CRC7 校验）：
+
+```
+17.1312 s  CMD53 cmd READ blk=0 fn=1 addr=0x00060 count=1 op=1 arg=0x1400c001
+17.1324 s  CMD53 rsp READ                                  arg=0x00001000   ← 从机合法 R5
+命令后 24 个时钟（D3D2D1D0 十六进制）：F F F F F F F F F F D D D D D D D D D D D D D D
+```
+
+- `F` = 四条数据线全高（空闲）；`D` = `1101`，即**只有 DAT1 为低**；
+- **没有起始位（没有"四条全低一拍"）、没有数据、没有 CRC** —— 从机**根本没有驱动数据阶段**；
+- 之前统计里 DAT0/2/3 的那点跳变，就是 DAT1 中断电平的边沿，不是数据。
+
+→ 这次是**从机侧**：卡应答了命令（R5 正常），但不驱动读数据。
+
+#### AU.3 判决与需要的人工动作
+
+| 复位方式 | P4 | C6 | 数据通路 |
+|---|---|---|---|
+| esptool 复位 | ✅ | 未动 | ❌ |
+| USB-JTAG 复位（本次） | ✅ | 未动 | ❌ |
+| GPIO54 500 ms 复位（本次） | — | ✅ 真的重启了（`rst:0x1 POWERON`） | ❌ |
+
+GPIO54 能让 C6 芯片重启，但**重启后它的 SDIO slave 数据阶段依然不驱动**。
+合理解释只剩「复位按钮级别的复位不够」：EN 引脚复位重启的是芯片逻辑，
+而 SDIO 从机接口相关的供电/电平（LDO、pad 电源域）没有真正断电，
+一旦卡在那个状态，只有**整板主电源断电**才能清掉。
+
+> **仍然需要：拔掉整板主电源、等 10 秒以上再上电。**
+> 这不是"再试一次软复位"的问题——三种软复位方式都已经实测过，其中 GPIO54 还确认了芯片真的重启。
+
+恢复后的验收顺序不变：① `sweep[0] summary` 回到 `r1=r4=r20=0`；
+② 读方向连续多笔稳定；③ 再谈写方向与 CMD53 路线。

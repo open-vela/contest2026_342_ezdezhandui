@@ -2260,6 +2260,21 @@ config ESPRESSIF_HOSTED_SDIO_EN_DELAY_MS
 		The companion has to boot its own firmware before it can enumerate
 		as an SDIO card, so probing immediately would find nothing.
 
+config ESPRESSIF_HOSTED_SDIO_EN_RESET_MS
+	int "Companion reset hold time (ms)"
+	depends on ESPRESSIF_HOSTED_SDIO
+	default 500
+	range 1 10000
+	---help---
+		GPIO54 is the companion's reset line on this board.  The pin is held
+		low for this many milliseconds at bring-up and then released, which is
+		the only way to reset the C6 from the P4 -- a JTAG or CPU reset of the
+		P4 leaves the companion running (docs appendix AR).
+
+		The 50 ms pulses used before were a bring-up pulse rather than a
+		reset; 500 ms is long enough for the companion to see it and short
+		enough not to dominate boot (the settle delay that follows is separate).
+
 config ESPRESSIF_HOSTED_SDIO_SLOT
 	int "SDIO slot used by the companion radio"
 	default 1

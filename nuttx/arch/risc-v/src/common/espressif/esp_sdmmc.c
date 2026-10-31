@@ -2338,6 +2338,25 @@ static int esp_sdmmc_dmasendsetup(struct sdio_dev_s *dev,
 static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 {
   sdio_eventset_t wkupevent;
+  static int waits;
+  struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
+
+  /* Trace the command whose response is being waited for.
+   *
+   * The hang happens before any data setup runs (appendix BW.4), so the
+   * question is which command is being waited on and what the controller shows
+   * while it waits.  Capped, so the console stays readable.
+   */
+
+  if (waits < 24)
+    {
+      syslog(LOG_INFO,
+             "esp_sdmmc: waitresponse enter cmd=%02u rintsts=%08" PRIx32
+             " ctrl=%08" PRIx32 " status=%08" PRIx32 "\n",
+             (unsigned)((cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT),
+             priv->hw->rintsts.val, priv->hw->ctrl.val, priv->hw->status.val);
+      waits++;
+    }
 
   /* Commands with no response phase must return immediately.
    *

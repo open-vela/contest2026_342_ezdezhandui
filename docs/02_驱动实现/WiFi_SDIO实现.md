@@ -12861,3 +12861,22 @@ eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
 - 同一个命令在 bring-up 线程里能完成（梯子）、在栈起来之后不能——所以差异在**控制器命令状态**；
 - 下一步：在 `esp_sdmmc_sendcmd()` 里加打印（命令号、`rintsts`、`ctrl/status`），
   看清"命令发出去没有、响应位有没有置起、被谁清掉"。
+
+#### BW.6 `waitresponse` 已经进得去，只是等不到
+
+在 `esp_sdmmc_waitresponse()` 入口加了封顶打印（命令号 + `rintsts`/`ctrl`/`status`）。实测：
+
+```
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: waitresponse enter cmd=00 rintsts=00000...  esp_sdmmc: ISR #1
+```
+
+两点观察：
+
+1. **`waitresponse` 被进入**——所以命令确实发出去了，且随后**有中断**（`ISR #1`）；
+2. 打印里的 `cmd=00` 与本该发起的 CMD53 不符（提取方式与 `sendcmd` 里对 `cmd` 的解释可能不一致，
+   或第一个等待的是另一条命令）——这一点需要更多打印才能确定；
+3. 那行还被串口噪声截断（高波特率下多行交错），后续需要更短的打印或更大的缓冲。
+
+下一步：把打印拆成"进入/退出"两行、只打关键三位（命令号、`rintsts`、是否有 RESPONSEDONE），
+并确认"响应位到底有没有置起、被谁清掉"——这是最后一块拼图。

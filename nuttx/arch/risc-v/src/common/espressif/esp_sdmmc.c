@@ -1816,7 +1816,19 @@ static void esp_sdmmc_blocksetup(struct sdio_dev_s *dev,
   priv->nblocks   = nblocks;
 
   sdmmc_ll_set_block_size(priv->hw, blocklen);
-  sdmmc_ll_set_data_transfer_len(priv->hw, blocklen * nblocks);
+
+  /* Byte mode asks for byte count, not blocks.
+   *
+   * When NuttX issues a CMD53 in byte mode it calls this with nblocks = 0, and
+   * "blocklen * 0" programmed BYTCNT as zero -- so the controller expected a
+   * zero-byte transfer and never completed one.  Measured: the transport's
+   * first register read (INT_RAW..PACKET_LEN, 20 bytes, byte mode) entered
+   * eh_host_port_sdio_read_reg() and never returned, while the block-mode reads
+   * of the bring-up sweep worked.
+   */
+
+  sdmmc_ll_set_data_transfer_len(priv->hw,
+                                 blocklen * (nblocks != 0 ? nblocks : 1));
 
   /* Re-arm the data timeout for every transfer.
    *
@@ -2841,6 +2853,24 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
          * waited for the data phase and reported success with nothing
          * transferred. The wait mask says what actually has to be satisfied.
          */
+
+        /* A CPU-moved transfer completes when the data state machine goes idle
+         * with the bytes in the FIFO -- the same reasoning as the drain below,
+         * and the reason a byte-mode CMD53 read used to hang: its completion
+         * event comes from DATA_OVER, which a PIO transfer never raises
+         * (measured: eh_host_port_sdio_read_reg() entered and never returned).
+         */
+
+        if (g_pio_rxbuf != NULL && (priv->waitmask & SDIOWAIT_TRANSFERDONE) != 0)
+          {
+            uint32_t psts = *(volatile uint32_t *)&hw->status;
+            unsigned pbytes = (unsigned)((psts >> 17) & 0x1fff);
+
+            if (((psts >> 10) & 1u) == 0 && pbytes > 0)
+              {
+                priv->xfrmask |= SDIOWAIT_TRANSFERDONE;
+              }
+          }
 
         if ((priv->xfrmask & priv->waitmask) != 0)
           {

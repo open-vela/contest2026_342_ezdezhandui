@@ -12588,3 +12588,60 @@ if (sdio_read_regs(reg_buf)) { ... }   // 这一步会调我们的 read_reg
 **总线锁被别人持有**，最可能是某条 TX/RX 任务正卡在传输里（我们的 `write_block`/`read_block`）
 没返回。下一步就把"谁持着 sdio_bus_lock"查出来：在端口的 mutex 包装（POSIX 端口那个）上加
 持锁者/等待者的打印即可定位。
+
+### 附录 BV —— 一路挖到「寄存器地址没做掩码」：四个真 bug（2026-11-01）
+
+本轮从"传输层卡在总线锁"一路追到端口层，逐个修掉四个真 bug。每一个都有真机打印佐证。
+
+#### BV.1 byte 模式的传输长度写成了 0
+
+```c
+sdmmc_ll_set_data_transfer_len(priv->hw, blocklen * nblocks);
+```
+
+NuttX 发**字节模式** CMD53 时传 `nblocks = 0` → `BYTCNT = blocklen * 0 = 0`，控制器认为
+"要传 0 字节"，于是永不完成。实测症状：`eh_host_port_sdio_read_reg()`（读 INT_RAW..PACKET_LEN，
+20 字节、字节模式）**进入后不返回**，而 bring-up 里**块模式**的读全部正常。
+修法：`blocklen * (nblocks != 0 ? nblocks : 1)`。
+
+#### BV.2 CPU 搬运的传输没有完成事件
+
+`eventwait()` 的完成事件来自 `DATA_OVER`——那是内部 DMA 路径的位，CPU 搬运时不会来（与附录 BU 的
+排空判据同源）。修法：PIO 传输里"数据状态机空闲 + FIFO 有字节"即视为 `SDIOWAIT_TRANSFERDONE`。
+
+#### BV.3 端口自己的互斥量是死锁点
+
+端口在四个传输函数里各有一把 `c->lock`，而**传输层本来就用 `SDIO_DRV_LOCK` 把每次访问串行化了**
+——这把锁不保护任何东西，却成了死锁点：实测 `read_reg` 进入后**连锁都没拿到**（一个卡住的传输
+一直握着它）。修法：删掉端口这层锁（注释写明理由），串行化交给传输层那把。
+
+#### BV.4 寄存器地址**没做掩码** ← 最关键
+
+厂商端口里有一行：
+
+```c
+/* Need to apply address mask when reading/writing slave registers */
+reg &= ESP_ADDRESS_MASK;        // 0x3FF
+```
+
+我们的端口**没有这一行**。传输层传进来的是从机的**绝对地址**（如 `0x3ff55050`），
+SDIO function 只解码低位——于是读回来的是一串**同一个垃圾字节**：
+
+```
+eh_host_port_sdio: read_reg addr=0x3ff55050 size=20 ret=0 val=1c 1c 1c 1c
+```
+
+补上掩码后，同一条读变成正确的 `Intr: 00000000`（见 BV.5）。
+
+配套：多字节寄存器读写改成**逐字节 CMD52**（字节模式的 CMD53 在本板不完成，而 CMD52 与块模式都正常）。
+
+#### BV.5 本轮真机最终状态
+
+```
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000          ← 地址正确后读到的 INT_RAW：从机当前没有待处理中断
+```
+
+即：**寄存器读写通道（含多字节）已经打通且值正确**，但传输层轮询到的 INT_RAW 是 0，
+所以 caps 交换仍未开始——从机在"打开数据通路"之后没有报告任何待处理事件。
+下一步就是查这一点：从机的 INT_RAW 为什么是 0（是它还在等主机的 caps 写入，还是我们读的窗口/功能号不对）。

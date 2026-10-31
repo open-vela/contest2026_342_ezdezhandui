@@ -37,8 +37,30 @@
 #include "eh_host_port_config.h"
 #include "eh_host_port_sdio.h"
 #include "eh_host_port_sync.h"
+#include "eh_host_port_sdio_reg.h"
 
 #define SDIO_TAG "eh_host_port_sdio"
+
+/* Entry/exit tracing for the port's transfer entry points.
+ *
+ * When the transport stalls, the question is which call never returned: a task
+ * stuck inside one of these holds the bus lock and everything else waits for it
+ * (appendix BU.6).  Capped, so the console stays readable.
+ */
+
+static void port_trace(const char *fn, int id, int dir, unsigned a,
+                       unsigned b, int r)
+{
+  static int lines;
+
+  if (lines < 24)
+    {
+      syslog(LOG_INFO, "eh_host_port_sdio: %s %s id=%d addr=0x%05x size=%u ret=%d\n",
+             fn, dir ? "exit" : "enter", id, a, b, r);
+      lines++;
+    }
+}
+
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
 
@@ -216,6 +238,10 @@ int eh_host_port_sdio_card_deinit(void *ctx)
 int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
                                uint16_t size, bool lock_required)
 {
+  static int calls;
+  int trace_id = ++calls;
+
+  port_trace("read_reg", trace_id, 0, reg, size, 0);
   struct eh_host_port_sdio_ctx_s *c =
     (struct eh_host_port_sdio_ctx_s *)ctx;
   int ret;
@@ -224,10 +250,32 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     {
       return ESP_FAIL;
     }
+  (void)lock_required;
+  /* Mask the address to the slave's register window.
+   *
+   * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
+   * INT_RAW), and the SDIO function decodes only the low bits of it.  The
+   * vendor's own port applies ESP_ADDRESS_MASK here and this one did not --
+   * which is why register reads came back as one garbage byte repeated
+   * (val=1c 1c 1c 1c) instead of the interrupt bits.
+   */
+
+  reg &= ESP_ADDRESS_MASK;
+
+
+  /* The port's own mutex is deliberately not taken here.
+   *
+   * The transport serialises every register and block access with SDIO_DRV_LOCK
+   * (eh_host_mutex_lock(sdio_bus_lock)), so this second lock guards nothing --
+   * and it became a deadlock point: measured, eh_host_port_sdio_read_reg()
+   * entered and never even acquired it, because a transfer that had taken it
+   * never returned (appendices BU.6/BV).  Leaving it out keeps the calls
+   * serialised by the transport's lock alone.
+   */
 
   if (lock_required)
     {
-      nxmutex_lock(&c->lock);
+      port_trace("read_reg", trace_id, 0, reg, size, 1);   /* locked */
     }
 
   if (size == 1)
@@ -236,7 +284,28 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data, size, 0);
+      /* Multi-byte register reads go out as one CMD52 per byte.
+       *
+       * The byte-mode CMD53 these used to be issued as does not complete on this
+       * board: measured, eh_host_port_sdio_read_reg() entered and never returned
+       * (appendices BV/BW), while CMD52 singles and block-mode CMD53 both work.
+       * These registers are four bytes and are read once per interrupt, so the
+       * per-byte form costs little and keeps the transport moving.
+       */
+
+      unsigned i;
+
+      ret = 0;
+      for (i = 0; i < size; i++)
+        {
+          int one = sdio_io_rw_direct(c->dev, false, 1,
+                                      (uint32_t)(reg + i), 0, &data[i]);
+          if (one < 0)
+            {
+              ret = one;
+              break;
+            }
+        }
     }
 
   /* Trace the first few register reads.
@@ -262,11 +331,6 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
       }
   }
 
-  if (lock_required)
-    {
-      nxmutex_unlock(&c->lock);
-    }
-
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }
 
@@ -281,11 +345,28 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
     {
       return ESP_FAIL;
     }
+  (void)lock_required;
+  /* Mask the address to the slave's register window.
+   *
+   * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
+   * INT_RAW), and the SDIO function decodes only the low bits of it.  The
+   * vendor's own port applies ESP_ADDRESS_MASK here and this one did not --
+   * which is why register reads came back as one garbage byte repeated
+   * (val=1c 1c 1c 1c) instead of the interrupt bits.
+   */
 
-  if (lock_required)
-    {
-      nxmutex_lock(&c->lock);
-    }
+  reg &= ESP_ADDRESS_MASK;
+
+
+  /* The port's own mutex is deliberately not taken here.
+   *
+   * The transport serialises every register and block access with SDIO_DRV_LOCK
+   * (eh_host_mutex_lock(sdio_bus_lock)), so this second lock guards nothing --
+   * and it became a deadlock point: measured, eh_host_port_sdio_read_reg()
+   * entered and never even acquired it, because a transfer that had taken it
+   * never returned (appendices BU.6/BV).  Leaving it out keeps the calls
+   * serialised by the transport's lock alone.
+   */
 
   if (size == 1)
     {
@@ -293,12 +374,25 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      ret = sdio_io_rw_extended(c->dev, true, 1, reg, true, data, size, 0);
-    }
+      /* Multi-byte register writes go out as one CMD52 per byte, for the same
+       * reason the reads do (see eh_host_port_sdio_read_reg): the byte-mode
+       * CMD53 does not complete here, and the transport's very next step after
+       * reading the interrupt register is to clear it with a four-byte write.
+       */
 
-  if (lock_required)
-    {
-      nxmutex_unlock(&c->lock);
+      unsigned i;
+
+      ret = 0;
+      for (i = 0; i < size; i++)
+        {
+          int one = sdio_io_rw_direct(c->dev, true, 1,
+                                      (uint32_t)(reg + i), data[i], NULL);
+          if (one < 0)
+            {
+              ret = one;
+              break;
+            }
+        }
     }
 
   return (ret < 0) ? ESP_FAIL : ESP_OK;
@@ -316,6 +410,10 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
 int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
                                  uint16_t size, bool lock_required)
 {
+  static int calls;
+  int trace_id = ++calls;
+
+  port_trace("read_block", trace_id, 0, reg, size, 0);
   struct eh_host_port_sdio_ctx_s *c =
     (struct eh_host_port_sdio_ctx_s *)ctx;
   unsigned nblocks;
@@ -328,11 +426,28 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
 
   nblocks = (size + ESP_HOSTED_SDIO_BLOCK_SIZE - 1) /
             ESP_HOSTED_SDIO_BLOCK_SIZE;
+  (void)lock_required;
+  /* Mask the address to the slave's register window.
+   *
+   * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
+   * INT_RAW), and the SDIO function decodes only the low bits of it.  The
+   * vendor's own port applies ESP_ADDRESS_MASK here and this one did not --
+   * which is why register reads came back as one garbage byte repeated
+   * (val=1c 1c 1c 1c) instead of the interrupt bits.
+   */
 
-  if (lock_required)
-    {
-      nxmutex_lock(&c->lock);
-    }
+  reg &= ESP_ADDRESS_MASK;
+
+
+  /* The port's own mutex is deliberately not taken here.
+   *
+   * The transport serialises every register and block access with SDIO_DRV_LOCK
+   * (eh_host_mutex_lock(sdio_bus_lock)), so this second lock guards nothing --
+   * and it became a deadlock point: measured, eh_host_port_sdio_read_reg()
+   * entered and never even acquired it, because a transfer that had taken it
+   * never returned (appendices BU.6/BV).  Leaving it out keeps the calls
+   * serialised by the transport's lock alone.
+   */
 
   ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data,
                             ESP_HOSTED_SDIO_BLOCK_SIZE, nblocks);
@@ -359,17 +474,16 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
       }
   }
 
-  if (lock_required)
-    {
-      nxmutex_unlock(&c->lock);
-    }
-
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }
 
 int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
                                   uint16_t size, bool lock_required)
 {
+  static int calls;
+  int trace_id = ++calls;
+
+  port_trace("write_block", trace_id, 0, reg, size, 0);
   struct eh_host_port_sdio_ctx_s *c =
     (struct eh_host_port_sdio_ctx_s *)ctx;
   unsigned nblocks;
@@ -382,19 +496,31 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
 
   nblocks = (size + ESP_HOSTED_SDIO_BLOCK_SIZE - 1) /
             ESP_HOSTED_SDIO_BLOCK_SIZE;
+  (void)lock_required;
+  /* Mask the address to the slave's register window.
+   *
+   * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
+   * INT_RAW), and the SDIO function decodes only the low bits of it.  The
+   * vendor's own port applies ESP_ADDRESS_MASK here and this one did not --
+   * which is why register reads came back as one garbage byte repeated
+   * (val=1c 1c 1c 1c) instead of the interrupt bits.
+   */
 
-  if (lock_required)
-    {
-      nxmutex_lock(&c->lock);
-    }
+  reg &= ESP_ADDRESS_MASK;
+
+
+  /* The port's own mutex is deliberately not taken here.
+   *
+   * The transport serialises every register and block access with SDIO_DRV_LOCK
+   * (eh_host_mutex_lock(sdio_bus_lock)), so this second lock guards nothing --
+   * and it became a deadlock point: measured, eh_host_port_sdio_read_reg()
+   * entered and never even acquired it, because a transfer that had taken it
+   * never returned (appendices BU.6/BV).  Leaving it out keeps the calls
+   * serialised by the transport's lock alone.
+   */
 
   ret = sdio_io_rw_extended(c->dev, true, 1, reg, true, data,
                             ESP_HOSTED_SDIO_BLOCK_SIZE, nblocks);
-
-  if (lock_required)
-    {
-      nxmutex_unlock(&c->lock);
-    }
 
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }

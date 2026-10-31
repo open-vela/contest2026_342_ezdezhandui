@@ -13,6 +13,7 @@
 
 #include <nuttx/config.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -21,7 +22,24 @@
 extern "C" {
 #endif
 
-typedef int64_t esp_timer_handle_t;
+typedef struct esp_timer_s *esp_timer_handle_t;
+
+typedef void (*esp_timer_cb_t)(void *arg);
+
+typedef enum
+{
+  ESP_TIMER_TASK = 0,
+  ESP_TIMER_ISR,
+} esp_timer_dispatch_t;
+
+typedef struct
+{
+  esp_timer_cb_t       callback;
+  void                *arg;
+  esp_timer_dispatch_t dispatch_method;
+  const char          *name;
+  bool                 skip_unhandled_events;
+} esp_timer_create_args_t;
 
 static inline int64_t esp_timer_get_time(void)
 {
@@ -33,6 +51,13 @@ static inline int64_t esp_timer_get_time(void)
   extern uint32_t clock_systime_ticks(void);
   return (int64_t)clock_systime_ticks() * 1000;
 }
+
+esp_err_t esp_timer_create(const esp_timer_create_args_t *args,
+                           esp_timer_handle_t *handle);
+esp_err_t esp_timer_start_once(esp_timer_handle_t handle, uint64_t timeout_us);
+esp_err_t esp_timer_start_periodic(esp_timer_handle_t handle, uint64_t period_us);
+esp_err_t esp_timer_stop(esp_timer_handle_t handle);
+esp_err_t esp_timer_delete(esp_timer_handle_t handle);
 
 #ifdef __cplusplus
 }

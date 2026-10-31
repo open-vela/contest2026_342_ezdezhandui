@@ -11521,3 +11521,59 @@ NuttX 侧的调用点（初始化任务）。这一步之后，"选项打开"就
 3. 无论哪条，`esp_timer` 的 stub 都要补全。
 
 > 板子侧不变：真机验收仍然卡在**整板断电**（附录 AU），与这里的编译工作无关。
+
+### 附录 AZ —— 路线 B 第 7 步：core + 基础 RPC + system **17/17 编过**，protobuf-c 自带（2026-11-01）
+
+#### AZ.1 补进来的两个东西
+
+1. **`common/serializers/third_party/`（官方栈自带的 protobuf-c）** —— 上一轮把 v2 序列化代码
+   （`gen_v2.h`）搬进来后卡在 `protobuf-c/protobuf-c.h`。追下去发现官方栈**自己就 vendor 了
+   protobuf-c**（`common/serializers/third_party/msg_codec/protobuf-c/`，10 个 .c / 992 KB），
+   不需要外部拉库。已一并入仓。
+2. **`host/mcu/eh_host_mcu_vserial`** + 选择 `CONFIG_ESP_HOSTED_HOST_VSERIAL_MCU(_READY)=1`：
+   `eh_host_core.c` 里有 `#error "no vserial flavour selected"`，核心要求选 MCU 侧的虚拟串口 flavour。
+
+#### AZ.2 补齐的 shim 细节
+
+| 缺什么 | 补法 |
+|---|---|
+| `ESP_EVENT_DECLARE_BASE` / `ESP_EVENT_DEFINE_BASE` | 加进 `esp_event.h`（`extern esp_event_base_t const id` / `= #id`） |
+| `esp_timer` 句柄与生命周期 | `esp_timer_create/start_once/start_periodic/stop/delete`（`src/esp_timer_nuttx.c`，回调不投递，注释写明何时该换成 NuttX wdog） |
+| `wifi_interface_t` / `wifi_mode_t` | 加进 `esp_wifi_types.h`（数值与 IDF 一致） |
+| v2 扩展（`eh_host_feat_rpc_ext_v2`） | **从构建里排除**（代码保留）：目标③只要 caps 握手 + 一次 RPC 往返，基础 RPC 就够 |
+
+#### AZ.3 覆盖度（真实构建 flags，逐个语法编译）
+
+```
+host/eh_host_core/src/*.c（7）
+host/features/eh_host_feat_rpc/src/*.c（5）
+host/features/eh_host_feat_system/src/*.c（7）
+→ 共 19 个（其中 2 个是 v2_* 文件，已排除）
+→ OK=17  FAIL=0
+```
+
+#### AZ.4 整栈构建验收（本轮完成）
+
+```
+$ ./build.sh <board> --cmake -j8      # CONFIG_ESPRESSIF_HOSTED_OFFICIAL=y，干净构建
+#### build completed successfully (10:07 (mm:ss)) ####   0 error
+$ ls -l .../libeh_hosted_nuttx.a
+284,166 B        # 42 个目标文件
+```
+
+42 个目标文件 = 端口 5（SDIO/事件/MAC/timer/stubs）+ 官方栈 37
+（transport 10 + core 7 + RPC 5 + system 7 + vserial 1 + protobuf-c 1 + 其余）。
+
+过程中修掉的两个真问题：
+
+1. **`ESP_EVENT_DECLARE_BASE`/`ESP_EVENT_DEFINE_BASE` 必须放在 `esp_event_base.h`**：
+   栈里 `eh_host_core_event_bases.c` 只 include 这个头；放在 `esp_event.h` 里时那两行
+   变成"隐式函数调用"，符号没定义，链接前就报
+   `'ESP_HOSTED_EVENT' aliased to undefined symbol 'EH_HOST_EVENT'`。
+2. **`eh_host_core.c` 无条件 include `eh_host_feat_rpc_ext_v2.h`**：v2 的**源码**可以不编，
+   但它的 **include 目录必须留着**，否则核心编不过。
+
+#### AZ.5 与板子的关系（不变）
+
+这些全是**不需要板子**的编译层面工作；真机验收（`companion enumerated` → FN1 ready → RPC）仍然
+卡在附录 AU 的**整板断电**。复位方式已经按目标约定实现：P4 用 USB-JTAG、C6 用 GPIO54（500 ms）。

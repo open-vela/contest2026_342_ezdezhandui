@@ -16,6 +16,13 @@ extern "C" {
 
 typedef const char *esp_event_base_t;
 
+/* ESP-IDF puts these next to the type, and the stack's event-bases translation
+ * unit includes only this header -- so they have to live here too.
+ */
+
+#define ESP_EVENT_DECLARE_BASE(id)     extern esp_event_base_t const id
+#define ESP_EVENT_DEFINE_BASE(id)      esp_event_base_t const id = #id
+
 #ifdef __cplusplus
 }
 #endif

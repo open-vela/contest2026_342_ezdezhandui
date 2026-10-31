@@ -25,6 +25,14 @@ extern "C" {
 #endif
 
 typedef void *esp_event_handler_instance_t;
+
+/* Base declaration/definition macros.  The stack declares its event base with
+ * ESP_EVENT_DECLARE_BASE() in a header and defines it once in a source file;
+ * both spell out to the same tag pointer on NuttX.
+ */
+
+#define ESP_EVENT_DECLARE_BASE(id)     extern esp_event_base_t const id
+#define ESP_EVENT_DEFINE_BASE(id)      esp_event_base_t const id = #id
 typedef void (*esp_event_handler_t)(void *arg, esp_event_base_t base,
                                     int32_t id, void *data);
 

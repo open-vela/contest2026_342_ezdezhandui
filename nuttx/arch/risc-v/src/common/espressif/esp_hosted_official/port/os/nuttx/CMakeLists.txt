@@ -26,14 +26,16 @@ file(GLOB EH_HOSTED_STACK_SRCS
   ${EH_HOSTED_DIR}/host/eh_host_core/src/*.c
   ${EH_HOSTED_DIR}/host/eh_host_autoinit/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/src/*.c
-  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc_ext_v2/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/src/*.c
+  ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/src/*.c
+  ${EH_HOSTED_DIR}/common/serializers/third_party/msg_codec/protobuf-c/protobuf-c/*.c
 )
 
 set(EH_HOSTED_SRCS
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_event_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_mac_nuttx.c
+  ${EH_HOSTED_NUTTX_DIR}/src/esp_timer_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/port_stubs.c
   ${EH_HOSTED_STACK_SRCS}
 )
@@ -59,13 +61,16 @@ target_include_directories(eh_hosted_nuttx PRIVATE
   ${EH_HOSTED_DIR}/host/eh_host_config/include
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_transport/include
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_transport/src
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc_ext_v2/include
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/include
   ${EH_HOSTED_DIR}/host/compat/include
   ${EH_HOSTED_DIR}/host/eh_host_core/include
   ${EH_HOSTED_DIR}/host/eh_host_autoinit/include
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/include
-  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc_ext_v2/include
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/include
+  ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/include
+  ${EH_HOSTED_DIR}/common/serializers/eh_proto_v2/include
+  ${EH_HOSTED_DIR}/common/serializers/third_party/msg_codec/protobuf-c
 )
 
 # Configuration of the official stack, in the symbols its own
@@ -87,6 +92,8 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
   EH_HOST_HOST_USES_STATIC_NETIF=0
   CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=1
   CONFIG_ESP_HOSTED_USE_MEMPOOL=1
+  CONFIG_ESP_HOSTED_HOST_VSERIAL_MCU=1
+  CONFIG_ESP_HOSTED_HOST_VSERIAL_MCU_READY=1
 )
 
 # The stack expects the master config to be force-included (its own build does

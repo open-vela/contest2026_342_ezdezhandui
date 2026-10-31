@@ -13512,6 +13512,51 @@ esp_sdmmc: regs2: ... clkena=00000000 ...
 两条待办：① 时钟更改必须**决不把卡时钟留在关闭状态**（失败时回滚/重开），且不应在传输进行中发起；
 ② 查清那次 `failed to read registers` 本身（是 4 字节寄存器读在 IDMAC 路径上的形状问题）。
 
+#### BY.8 第 66 轮：从机已经走完 open-data-path，卡在主机侧"数据状态机不回空闲"
+
+**从机（C6）自己的日志证明握手走到了最后一步**（`logs/20261101-041451_fifoth-clock` 同一次运行）：
+
+```
+I (15766) ehcp_core: event_handler: ESP_OPEN_DATA_PATH
+I (15766) ehcp_core: Open Data Path
+I (15766) ehcp_core: Open Data Path: giving host_reset_sem
+I (15769) ehcp_core: host_reset_task: host_reset_sem taken, preparing slave-up TLV
+I (15776) ehcp_core: Send slave up event
+I (15780) SDIO_SLAVE: advertising transfer size 1536
+```
+
+即：从机收下 `ESP_OPEN_DATA_PATH`，排好了 **slave-up TLV**（caps 握手的第一个报文），
+并通告 1536 字节传输上限。**接下来只要主机把这个报文读走，caps 握手就开始了。**
+
+本轮两处修复（都已真机验证）：
+
+| # | 位置 | 问题 | 修法 |
+|---|---|---|---|
+| 1 | `esp_sdmmc_reset()` | 控制器复位把 `FIFOTH` 恢复成默认 `rx_wmark=511`，小传输永远填不满水位 → IDMAC 不被问、描述符 OWN 挂着、数据阶段不动 | 复位结尾把 `rx_wmark/tx_wmark` 置 0（与 `esp_sdmmc_reset_data_path()` 一致） |
+| 2 | `esp_sdmmc_clock()` | 时钟序列第一步是**关**卡时钟，而提交那一步在 CIU 忙时完不成 → 卡时钟被留在关闭（`clkena=0`），总线"死掉" | 函数结尾检查 `clkena`，非 `CLOCK_SDIO_DISABLED` 时补一次"重开 + 提交"（日志会打印 `card clock was left off ... re-enabling`） |
+
+修复后的现状（同一次运行）：
+
+- 交接、`Card init success, TRANSPORT_RX_ACTIVE`、`Open data path at slave` 全部稳定复现；
+- `clkena=0` 只在时钟更改处短暂出现并被立刻恢复（不再永久死亡）；
+- 仍卡在：**一次 4 字节寄存器读（`CMD53 arg=0x1400a004`，读 `0x50`）的数据阶段不动**——
+
+```
+esp_sdmmc: issue CMD53 arg=0x1400a004 (cmd_word=a0010375)
+esp_sdmmc: dwait[1..8] status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45
+eh_sdio: failed to read registers
+```
+
+读法：`mc=1` 表示**数据状态机在命令发出前就已经不是空闲**（前一次传输没有让它回到 idle），
+`idsts FSM=1 (DMA_SUSPEND)` + `des0 OWN=1` 表示描述符挂着但没人搬，`fifo=0` 表示一个字节都没到。
+`FIFOTH=0` 已经是对的，所以下一轮要查的是"**为什么数据状态机停在 busy**"，
+以及是否需要在数据等待里加一层"超时即复位数据通路并重试一次"的兜底。
+
+建议的下一步取证：用分析仪抓**那一条** `CMD53 arg=0x1400a004` 前后 50 ms，看
+①命令/响应有没有正常结束；②DAT0 上从机有没有发那 4 个字节；③是否有一条被吃掉的数据阶段
+（`decoded.txt` 里 CMD53 段目前解不出来，这也是要先补的：见 BZ.4 备注）。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

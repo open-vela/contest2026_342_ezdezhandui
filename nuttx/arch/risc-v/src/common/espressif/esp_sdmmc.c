@@ -1350,6 +1350,33 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
         }
     }
 
+  /* Never return with the card clock off unless that was what was asked for.
+   *
+   * The sequence above starts by disabling the card clock, and the commit that
+   * re-enables it can fail while the CIU is busy -- a clock change that arrives
+   * in the middle of a transfer is a command like any other and does not
+   * complete.  Measured: clkena fell to 00000000 during the transport's
+   * transfers (the trace pointed at the stack's card_init retry, which asks for
+   * CLOCK_IDMODE again), and from then on every CMD53 stalled with
+   * "fifo=0 data_state_mc_busy=1" -- the bus was dead, not slow (appendix
+   * BY.8).
+   *
+   * Putting the clock back costs one register write and keeps a failed clock
+   * change from killing the link.  For CLOCK_SDIO_DISABLED the caller wants the
+   * clock off, so nothing is done there.
+   */
+
+  if (rate != CLOCK_SDIO_DISABLED && hw->clkena.val == 0)
+    {
+      syslog(LOG_WARNING,
+             "%s: card clock was left off by a clock change (ctrl=%08" PRIx32
+             " cmd=%08" PRIx32 "), re-enabling it\n", "esp_sdmmc",
+             hw->ctrl.val, *(volatile uint32_t *)&hw->cmd);
+
+      sdmmc_ll_enable_card_clock(hw, priv->slot, true);
+      esp_sdmmc_clk_update(hw, priv->slot, "clock restored");
+    }
+
   mcinfo("slot=%u rate=%d div=%" PRIu32 "\n", priv->slot, (int)rate, div);
 }
 
@@ -1450,6 +1477,27 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev)
 
   sdmmc_ll_set_response_timeout(hw, 0xffffff);
   sdmmc_ll_set_data_timeout(hw, 0xffffff);
+
+  /* Bring the FIFO thresholds back to something a transfer can reach.
+   *
+   * The controller reset above restores FIFOTH to its hardware default,
+   * rx_wmark = 511 bytes, and with it the IDMAC is only asked to fetch the
+   * descriptor once the FIFO has passed that mark -- which no register read on
+   * this link ever does.  The descriptor then sits armed and the DMA state
+   * machine in DMA_SUSPEND forever: measured in the transport,
+   * "dwait status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c",
+   * i.e. data_state_mc_busy with an empty FIFO, followed by -ETIMEDOUT on a
+   * four-byte register read and "eh_sdio: failed to read registers"
+   * (appendix BY.8).
+   *
+   * esp_sdmmc_reset_data_path() programs this per transfer, but every controller
+   * reset -- and the clock path performs one -- throws it away again, so it is
+   * programmed here too: a reset must not leave the data path unable to move
+   * the first byte.
+   */
+
+  hw->fifoth.rx_wmark = 0;
+  hw->fifoth.tx_wmark = 0;
 
   /* Put the interrupt mask back the way attach() left it.
    *

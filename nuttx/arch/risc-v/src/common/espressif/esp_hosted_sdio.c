@@ -248,6 +248,7 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
                                     unsigned int seq, bool full,
                                     FAR struct hosted_sweep_s *out)
 {
+  static bool swintr_done;
   static uint8_t swbuf[64] __attribute__((aligned(64)));
   static const uint16_t swsize[8] = { 1, 2, 4, 8, 16, 20, 32, 60 };
   int k;
@@ -297,6 +298,28 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
       if (swsize[k] == 4)
         {
           out->ret4 = r;
+        }
+
+      /* Read INT_RAW through the same proven path, once per sweep.
+       *
+       * The port reads it as a byte-mode transfer of the whole INT_RAW..
+       * PACKET_LEN window and reports 0x000C0000 (bits 18/19), while this
+       * ladder's block-mode reads are the ones that return PACKET_LEN correctly
+       * -- so reading 0x50 here says whether the two paths disagree about the
+       * same register (appendices BV.7/BW).
+       */
+
+      if (swsize[k] == 4 && !swintr_done)
+        {
+          uint8_t ib[4];
+
+          memset(ib, 0, sizeof(ib));
+          int ir = sdio_io_rw_extended(sdio, false, 1, 0x00050u, true, ib,
+                                       (int)sizeof(ib), 0);
+          syslog(LOG_INFO,
+                 "%s: sweep[%u] FN1@0x50 INT_RAW ret=%d bytes=%02x %02x %02x %02x\n",
+                 HOSTED_TAG, seq, ir, ib[0], ib[1], ib[2], ib[3]);
+          swintr_done = true;
         }
     }
 

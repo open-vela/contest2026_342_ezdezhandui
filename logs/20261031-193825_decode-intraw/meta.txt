@@ -1,0 +1,7 @@
+stamp: 20261031-193825
+reset: True
+seconds: 50
+analyzer: capture started (50 s at 1 MHz)
+openocd rc=0 ['shutdown command invoked']
+console: Tabby session 7873fd30-2a04-497a-ad2e-9c79dc3f89ff
+decode: 43 frames decoded

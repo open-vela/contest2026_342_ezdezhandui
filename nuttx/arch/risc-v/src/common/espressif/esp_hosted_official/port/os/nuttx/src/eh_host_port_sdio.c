@@ -284,13 +284,13 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      /* Byte-mode CMD53, now that both reasons it used to hang are fixed: the
-       * transfer length was programmed as blocklen * 0 (appendix BV.1) and the
-       * slave address was not masked (BV.4).  Reading the whole INT_RAW..
-       * PACKET_LEN window in one transfer is also what the transport expects --
-       * per-byte CMD52 reads answered zero for INT_RAW while PACKET_LEN held a
-       * real length, which suggests the window wants a single incrementing
-       * transfer.
+      /* One byte-mode transfer for the whole window.
+       *
+       * Four-byte chunks were tried and hang (the completion trace never
+       * returns), even though the bring-up ladder reads the same register as
+       * four bytes successfully -- the difference between the two contexts is
+       * the next thing to chase, and until it is understood a transfer that
+       * returns is worth more than one that does not.
        */
 
       ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data, size, 0);

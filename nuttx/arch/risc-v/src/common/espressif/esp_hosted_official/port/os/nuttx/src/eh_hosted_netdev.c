@@ -185,6 +185,17 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
   FAR struct iwreq *iwr = (FAR struct iwreq *)arg;
   esp_err_t ret;
 
+  /* Say what arrived before deciding anything.
+   *
+   * ENOTTY from a wireless command has two very different meanings -- this
+   * handler was never reached (the netdev's d_ioctl is unset) or the command
+   * number did not match a case here -- and one line settles which (appendix
+   * BY.18).
+   */
+
+  syslog(LOG_INFO, "%s: ioctl cmd=0x%04x (SIOCSIWSCAN=0x%04x)\n",
+         NETDEV_TAG, (unsigned)cmd, (unsigned)SIOCSIWSCAN);
+
   switch (cmd)
     {
       case SIOCSIWSCAN:

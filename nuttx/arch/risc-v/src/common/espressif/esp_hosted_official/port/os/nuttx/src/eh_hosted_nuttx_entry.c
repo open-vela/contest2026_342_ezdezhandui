@@ -216,9 +216,21 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
     wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_err_t          werr;
 
-    werr = eh_host_wifi_init(&init_cfg);
-    syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
-           "%s: RPC wifi_init -> %d\n", ENTRY_TAG, werr);
+    /* Do NOT re-initialize the companion's Wi-Fi here.
+     *
+     * Measured: Req_WifiInit makes the companion re-run its Wi-Fi init ("WiFi
+     * init config changed, reinitializing" on its console), which stops the
+     * radio its own application had already started.  Every later call then
+     * answers ESP_ERR_WIFI_NOT_STARTED (0x3002) -- scan included -- and the
+     * Req_WifiStart that would fix it is a synchronous call the companion never
+     * answers (appendix BY.18).  The radio is already initialized and started by
+     * the slave application, so the host only sets the mode.
+     */
+
+    syslog(LOG_INFO, "%s: leaving the companion's Wi-Fi initialized/started "
+           "(no RPC wifi_init)\n", ENTRY_TAG);
+    (void)init_cfg;
+    werr = ESP_OK;
 
     if (werr == ESP_OK)
       {
@@ -269,8 +281,27 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
           {
             rc = ioctl(fd, SIOCSIWSCAN, (unsigned long)(uintptr_t)&iwr);
             syslog(rc == 0 ? LOG_INFO : LOG_ERR,
-                   "%s: SIOCSIWSCAN(wlan0) -> %d\n", ENTRY_TAG, rc);
+                   "%s: SIOCSIWSCAN(wlan0) -> %d (errno=%d)\n",
+                   ENTRY_TAG, rc, errno);
             close(fd);
+
+            /* If the netdev path refused it, ask the stack directly.
+             *
+             * The two failures look identical from the ioctl's return value but
+             * have nothing in common: a rejection here is NuttX's netdev layer
+             * (ENOTTY/ENODEV/ENETDOWN), while a non-zero return below is the
+             * esp-hosted RPC itself.  One line each, so the next run says which
+             * one it is (appendix BY.18).
+             */
+
+            if (rc != 0)
+              {
+                esp_err_t dir = eh_host_wifi_scan_start(NULL, true);
+
+                syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
+                       "%s: direct eh_host_wifi_scan_start -> %d\n",
+                       ENTRY_TAG, dir);
+              }
           }
       }
   }

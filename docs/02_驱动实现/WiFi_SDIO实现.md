@@ -13851,6 +13851,31 @@ eh_hosted_nuttx: SIOCSIWSCAN(wlan0) -> -1
 / 同步发送）。下一轮第一件事：把这个本地错误打出来（`eh_host_wifi_scan_start` 的返回值 +
 控制命令池状态），判据是**从机串口出现 scan 相关日志**。
 
+#### BY.18 第 75 轮：`ENOTTY` 是**结构性的**（这棵 NuttX 没有 wireless ioctl 派发）；从机回的是 `WIFI_MODE`
+
+本轮把 `SIOCSIWSCAN` 失败的两种可能一次分开：
+
+```
+eh_hosted_nuttx: SIOCSIWSCAN(wlan0) -> -1 (errno=25)          ← 25 = ENOTTY
+eh_hosted_nuttx: direct eh_host_wifi_scan_start -> 12294      ← 0x3006 = ESP_ERR_WIFI_MODE
+```
+
+1. **`ENOTTY` 不是我们的 ioctl 处理函数返回的**：`eh_hosted_netdev.c` 的 `default:` 才会回
+   `-ENOTTY`，而"处理函数入口"那行日志（`ioctl cmd=0x…`）根本没打印 → **NuttX 没把命令派发下来**。
+   查上游：`net/netdev/netdev_ioctl.c` 里 **确实没有 `SIOCSIWSCAN` 的任何分支**
+   （`CONFIG_NETDEV_WIRELESS_IOCTL` 打开后也只有 `SIOCGIWNAME` 等几个通用命令）。
+   ⇒ **这棵 NuttX 的 netdev 层不承载 wireless scan ioctl**，`wlan0` 这条路走不通不是配置问题，
+   也不是我们的 handler 问题。
+2. **从机对 scan 的回答是 `ESP_ERR_WIFI_MODE`（0x3006）**：请求这次**真的发到从机了**
+   （回包带回的是从机的 status），它认为当前 Wi-Fi 模式不对——而主机这边 `set_mode(STA)` 明明回过 0。
+   下一轮要么在 scan 前再发一次 `set_mode(STA)` 并**回读**（`eh_host_wifi_get_mode`），
+   要么查明从机侧为什么把模式判成非 STA（它自己的示例应用也在动模式）。
+
+**结论（对目标④的影响）**：`wlan0` 的**控制面**在本树里只能通过"板级命令/自测"调用官方栈 API
+（或另做一个小 app 走 `eh_host_wifi_*`），不能靠 `SIOCSIWSCAN`。数据面（netdev 收发）不受影响。
+下一步：把 scan 的调用点从 ioctl 改成**板级命令**（或保留 entry 自测），并把从机的 MODE 问题解决，
+即可拿到 scan 结果；随后 connect / 取 IP。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

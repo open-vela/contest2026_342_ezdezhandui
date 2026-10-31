@@ -1,0 +1,402 @@
+[esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***
+[esp32p4] [INF] [boot] chip revision: v3.2
+[esp32p4] [INF] [boot] efuse block revision: v1.2
+[esp32p4] [INF] [boot.esp32p4] SPI Speed      : 80MHz
+[esp32p4] [INF] [boot.esp32p4] SPI Mode       : DIO
+[esp32p4] [INF] [boot.esp32p4] SPI Flash Size : 4MB
+[esp32p4] [INF] [boot] Enabling RNG early entropy source...
+[esp32p4] [INF] Image index: 0, Swap type: none
+[esp32p4] [INF] Disabling RNG early entropy source...
+[esp32p4] [INF] br_image_off = 0x20000
+[esp32p4] [INF] ih_hdr_size = 0x20
+[esp32p4] [INF] Loading image 0 - slot 0 from flash, area id: 1
+[esp32p4] [INF] DRAM segment: start=0x20000, size=0x0, vaddr=0x4ff00000
+[esp32p4] [INF] IRAM segment: start=0x20080, size=0xb928, vaddr=0x4ff40000
+[esp32p4] [INF] LP_IRAM segment: paddr=0002b9a8h, vaddr=30100024h, size=00088h (   136) load
+[esp32p4] [INF] Mapped IROM: vaddr=0x40000000 paddr=0x30000 len=0x120000
+[esp32p4] [INF] start=0x4ff48620
+I (11594) hex_psram: vendor id    : 0x0d (AP)
+I (11594) hex_psram: Latency      : 0x01 (Fixed)
+I (11594) hex_psram: DriveStr.    : 0x00 (25 Ohm)
+I (11595) hex_psram: dev id       : 0x03 (generation 4)
+I (11600) hex_psram: density      : 0x07 (256 Mbit)
+I (11605) hex_psram: good-die     : 0x06 (Pass)
+I (11609) hex_psram: SRF          : 0x02 (Slow Refresh)
+I (11614) hex_psram: BurstType    : 0x00 ( Wrap)
+I (11618) hex_psram: BurstLen     : 0x03 (2048 Byte)
+I (11623) hex_psram: BitMode      : 0x01 (X16 Mode)
+I (11628) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)
+I (11633) hex_psram: DriveStrength: 0x00 (1/1)
+I (11637) MSPI Timing: Enter psram timing tuning
+I (11797) esp_psram: Found 32MB PSRAM device
+ABCDES8311: speaker PA enabled (GPIO53)
+ES8311 ready: I2S0 (MCLK=13 BCLK=12 WS=10 DOUT=9 DIN=11), I2C0 addr 0x18 -> /dev/audio/pcm0
+esp_hosted_sdio: companion reset: GPIO54 held low 500 ms
+esp_hosted_sdio: companion enable held high (GPIO54), settling 1000 ms
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: verid=5342270a status=00000106 cdetect=00000000 clkena=00000002
+esp_hosted_sdio: ctrl=00000030 bmod=00000000 rintsts=00000000 clkdiv=0000fa00
+esp_hosted_sdio: CIU reset bit clear -- CIU is running (bit0 of ctrl: 0)
+esp_hosted_sdio: clkrst sys=0e057038 peri01=01800601 peri02=388e6e00 ref2=00000115
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_hosted_sdio: probe 1/4 -> -5, retrying
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)
+esp_hosted_sdio: CCCR 0x04 interrupt enable 02 -> 03 (ret 0)
+esp_hosted_sdio: card bus width requested 4 bit (CCCR 0x07 was 42, ret 0)
+esp_hosted_sdio: host-ready mask 01 written (ret 0), readback 00 (ret 0)
+esp_hosted_sdio: leaving the card clock at the identification rate for the official stack
+esp_sdmmc: ISR error raw=00000104 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_hosted_sdio: controller reset + clock reprogrammed, now resetting the companion (500 ms low, then 10 s to come up)
+MIPI PHY LDO ch3 @ 2500mV enabled
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+Backlight disabled on GPIO26 (J1->J6 jumper required)
+LCD power/reset path ready (EK79007eh_hosted_nuttx): 
+starting official esp-hosted host stack
+SC2336 chip ID: 0xcb3a
+eh_hosted_nuttx: D1 test: as input+pullup -> 1
+Camera registered on /dev/video0
+MIPI-DSI host registered (2 lanes @ 900 Mbps)
+Configuring DPI 1024x600 @ 52 MHz...
+EK79007 panel init...
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+eh_hosted_nuttx: D1 test: driven high -> readback 0 (1 = nothing else pulls it low)
+eh_hosted_nuttx: D1 toggle 0 -> wrote 0, read 0
+EK79007: panel initialized (2 lanes, 900 Mbps/lane)
+Starting DSI video...
+DSI-DMA[before-arm] fb=0x48000040 lli=0x4ff6b740 nc=0x8ff6b740 isr=0 rst=0 chen0=00000000 ist=00000000 cist=00000000 sar=00000000 dar=00000000 bts=00000000 ctl=00001200 llp=00000000 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[after-arm] fb=0x48000040 lli=0x4ff6b740 nc=0x8ff6b740 isr=0 rst=1 chen0=00000002 ist=00000000 cist=00000000 sar=48000240 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[t200ms] fb=0x48000040 lli=0x4ff6b740 nc=0x8ff6b740 isr=14 rst=15 chen0=00000002 ist=00000000 cist=00000000 sar=48077200 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+Backlight enabled on GPIO26 (J1->J6 jumper required)
+/dev/fb0 ready 1024x600 RGB565 @ 0x48000040 (1228800 bytes)
+/dev/fb0 registered (EK79007)
+I2C0 @400000 Hz: ACK from 0x18
+I2C0 @400000 Hz: ACK from 0x30
+I2C0 @400000 Hz: ACK from 0x5d
+I2C0 @400000 Hz: scan done, 3 device(s)
+I2C0 @100000 Hz: ACK from 0x18
+I2C0 @100000 Hz: ACK from 0x30
+I2C0 @100000 Hz: ACK from 0x5d
+I2C0 @100000 Hz: scan done, 3 device(s)
+GT911: raw ID at 0x5d = 39 31 31 00
+GT911: product ID "911" at 0x5d
+GT911: cfg x_max=1024 y_max=600 touch_num=5 (panel is 1024x600)
+GT911: no INT line routed; running in polling mode
+GT911 touchscreen registered at /dev/input0 (0x5d)
+eh_hosted_nuttx: D1 toggle 1 -> wrote 1, read 0
+DNS nameserver set to 192.168.1.1
+eh_hosted_nuttx: D1 toggle 2 -> wrote 0, read 0
+eh_hosted_nuttx: D1 test: restored -> 1
+eh_hosted_nuttx: transport config: sdio tx_q=20 rx_q=20 width=4 clk=40000 kHz
+eh_mcu_transport: transport_init: probing bus backend
+eh_sdio: transport[host]: SDIO 4-bit 40000 kHz CLK=-1 CMD=-1 D0=-1 D1=-1 D2=-1 D3=-1 RESET=0
+eh_sdio: SDIO clock freq set to [40000]KHz, Max possible (on PCB) is 50000KHz
+eh_sdio: sdio bus init done
+eh_mcu_transport: transport_init: bus backend ueh_sdiop: 
+seh_host_feat_rpcd:i oe_vdta_trae_gtios_trexr_:b umfs_gt_aisdk= 7s6t9a rctbe=d0x
+400428a0 ctx=0
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+eh_host_port_sdio: SDIO probe succeeded on try 2
+eh_host_port_sdio: CCCR 0x02 IOEx before: 00
+eh_host_port_sdio: CCCR 0x02 IOEx after: 02
+eh_host_port_sdio: CCCR 0x03 IO_RDY=02 after 1 try/tries
+eh_host_port_sdio: CCCR 0x04 INT_ENABLE before: 00
+eh_host_port_sdio: CCCR 0x04 INT_ENABLE after: 03 (want 03)
+eh_host_port_sdio: FN0 block size read back 512 (ret 0)
+eh_host_port_sdio: FN1 block size read back 512 (ret 0)
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512, CLK io_-1 CMD io_-1 D0..D3 -1,-1,-1,-1
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: SDIO Host operating in STREAMING MODE
+eh_sdio: Open data path at slave
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdioeh_host_port_sdio::  Sstlaarvtei nign tSeDrIrOu pptr o(cheists  #r1x) t
+aeh_sdios:k -
+-- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 40 cc 00 (bit23=1)
+eh_sdio: Intr: 00CC4000
+eh_sdio: len_from_slave: 60
+eh_sdio: buf 0 size: 512
+eh_host_port_sdio: read_block enter id=1 addr=0x1f7c4 size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7c4 (masked would be 0x3c4) size=512 ret=0 bytes=05 00 30 00 0c 00 00 00 00 00 00 33 22 2e 12 01
+eh_sdioeh_sdio::  -b-u-s _Wraxi:t  iffotry pSeD:I5O 
+ieh_init_evtn:t rs l-a-v-e 
+chip id: 0x0d (esp32c6)
+eh_init_evt: capabilities: 0x01
+eh_init_evt: Features supported are:
+eh_init_evt: [3C * WLAN over SDIO
+eh_init_evt: slave rx queue size: 20
+eh_init_evt: slave tx queue size: 20
+eh_init_evt: coprocessor firmware: 0x0003000a
+eh_init_evt: extended capabilities: 0x00000010
+eh_init_evt: Extended Features supported:
+eh_init_evt: [3C * WLAN
+eh_init_evt: SDIO buf-config: e2h mode=0 bufsz=15872B, h2e mode=0 bufsz=15872B
+eh_init_evt: coprocessor transport size: 1536
+eh_init_evt: RPC version negotiated: V2
+eh_init_evt: esp-hosted fw versions: host=3.0.10 coprocessor=3.0.10 (match)
+eh_init_evt: SDIO SW_AGGR negotiated (e2h=15872B h2e=15872B)
+eh_init_evt: SDIO mode: slave=streaming host=streaming
+eh_init_evt: chip=0x0d (esp32c6) fw=0x0003000a caps=0x01 ext=0x00000010
+eh_host_port_sdio: read_reg enter id=2 addr=0x3ff55044 size=4 ret=0
+eh_host_port_sdio: write_block enter id=1 addr=0x1f7e0 size=512 ret=0
+eh_hosted_nuttx: companion connected, transport ready
+eh_hosted_netdev: wlan0 registered (STA channel bound)
+eh_host_port_sdio: read_reg enter id=3 addr=0x3ff55044 size=4 ret=0
+eh_host_port_sdio: write_block enter id=2 addr=0x1f7ac size=512 ret=0
+eh_host_port_sdio: slave interrupt (hit #2)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=4 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 f8 cc 00 (bit23=1)
+eh_sdio: Intr: 00CCF800
+eh_sdio: len_from_slave: 32
+eh_sdio: buf 1 size: 512
+eh_host_port_sdio: read_block enter id=2 addr=0x1f7e0 size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7e0 (masked would be 0x3e0) size=512 ret=0 bytes=03 00 14 00 0c 00 00 00 0c 00 00 00 01 06 00 52
+eh_sdioeh_sdio::  -b-u-s _Wraxi:t  iffotry pSeD:I3O 
+intr ---
+eh_rpc_ll: rx: kind=evt id=769 (ESPInit) uid=0
+eh_rpc_ll: evt id=769 (ESPInit) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=769 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=769 -> cb[0]=0x400428a0 ctx=0
+eh_host_port_sdio: slave interrupt (hit #3)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=5 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 70 cc 00 (bit23=1)
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 36
+eh_host_port_sdio: read_block enter id=3 addr=0x1f7dc size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7dc (masked would be 0x3dc) size=512 ret=0 bytes=03 00 16 00 0c 00 00 00 0d 00 00 00 01 06 00 52
+eh_sdioeh_sdio::  -b-u-s _Wraxi:t  iffotry pSeD:I3O 
+intr ---
+eh_host_port_sdio: slave interrupt (hit #4)
+eh_sdio: --- SDIO intr received --eh_rpc_ll-: 
+rexh:_ hkoisntd_=prespo ritd_=s5d3i4o :( WifiInitread_reg)  enteru iidd==16 
+addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 70 cc 00 (bit23=1)
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 36
+eh_host_port_sdio: read_block enter id=4 addr=0x1f7dc size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7dc (masked would be 0x3dc) size=512 ret=0 bytes=03 00 16 00 0c 00 00 00 0e 00 00 00 01 06 00 52
+eh_sdioeh_hosted_nuttxeh_sdio:::   -Rb-Pu-Cs  _Wwraixif:ti  _ififontriy tpS eD-:I>3O  0
+ineh_rpc_ll
+t:r e rh-x_-:h- oks
+itn_dp=oevtr ti_ds=d7i7o3:  (read_regWifiEventNoArgs )enter  uiidd==70 a
+deh_rpc_lld:r =e0vxt3 fifd5=5707434  (sWifiEventNoArgsi)z es=t4a truest==00
+
+eh_host_feat_rpce:h _ehvots_td_ipsopratt_cshd:i om:s gwrite_block_ ienterd =i7d7=33  saudbdsrc=r0ixb1efr7sd=c0 s
+ieh_host_feat_rpcz:e =e5v1t2_ driestp=a0tc
+h: msg_id=773 had no subscribers
+eh_host_port_sdio: slave interrupt (hit #5)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=8 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 f0 cc 00 (bit23=1)
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_host_port_sdio: read_block enter id=5 addr=0x1f7dc size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7dc (masked would be 0x3dc) size=512 ret=0 bytes=03 00 16 00 0c 00 00 00 0f 00 00 00 01 06 00 52
+eh_sdioeh_sdio::  -b-u-s _Wraxi:t  iffotry pSeD:I3O 
+intr ---
+eh_rpc_ll: rx: kind=resp id=516 (SetWifiMode) uid=2
+eh_hosted_nuttx: RPC wifi_set_mode(STA) -> 0
+eh_hosted_nuttx: skipping RPC wifi_start (the slave app already started the radio)
+eh_hosted_nuttx: SIOCSIWSCAN(wlan0) -> -1 (errno=25)
+eh_host_port_sdio: write_block enter id=4 addr=0x1f7dc size=512 ret=0
+eh_host_port_sdio: slave interrupt (hit #6)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=9 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 f0 cc 00 (bit23=1)
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: read_block enter id=6 addr=0x1f7d8 size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7d8 (masked would be 0x3d8) size=512 ret=0 bytes=03 00 19 00 0c 00 00 00 10 00 00 00 01 06 00 52
+eh_sdioeh_sdio::  -b-u-s _Wraxi:t  iffotry pSeD:I3O 
+intr ---
+eh_rpc_ll: rx: kind=resp id=542 (WifiScanStart) uid=3
+eh_hosted_nuttx: direct eh_host_wifi_scan_start -> 12290
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#1)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=10 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 70 4c 00 (bit23=0)
+eh_sdio: Intr: 004C7000
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#2)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=11 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 00 00 00 (bit23=0)
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+
+NuttShell (NSH)
+nsh> eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#3)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=12 addr=0x3ff55050 size=20 ret=0
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#4)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=13 addr=0x3ff55050 size=20 ret=0
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#5)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=14 addr=0x3ff55050 size=20 ret=0
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#6)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#7)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#8)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---

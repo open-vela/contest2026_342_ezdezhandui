@@ -13151,3 +13151,39 @@ esp_sdmmc: issue CMD53 arg=0x1400a004 (cmd_word=a0010375)
    `sendcmd` 里（每次命令前打一次，封顶）即可；
 2. 若寄存器完全一致，则差异在**时序/中断**：卡在 `waitresponse()` 上说明
    `CMD_DONE` 没被置起或没被看见；把 `intmask` 在两次调用时的值打出来即可判定。
+
+#### BW.21 修正 BW.17：那是打印封顶造成的假象；命令确实进了 `sendcmd`
+
+把 `sendcmd` 入口打印的封顶从 20 提到 **200** 之后，同一次启动的完整序列：
+
+```
+（bring-up 的 CMD53，全部成功）
+esp_sdmmc: sendcmd cmd=53 arg=1400c001 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: sendcmd cmd=53 arg=1400c002 …
+… arg=1400c004 / 1400c008 / 1400c010 / 1400c014 / 1400c020 / 1400c03c / 1400a004 / 1400a014 / 1c000001
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: Open data path at slave
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: data cmd regs: blksiz=00000004 bytcnt=00000004 cmdarg=90011801 …
+esp_sdmmc: issue CMD53 arg=0x1400a004 (cmd_word=a0010375)
+（之后没有完成）
+```
+
+`data cmd regs` 与 `issue CMD53` **都是 `sendcmd` 内部打印的**，所以：
+
+- **传输层那次读确实进了 `sendcmd`**（BW.17 的"连 sendcmd 都没进"是打印封顶造成的假象，此处修正）；
+- 它发出的 CMD53（`arg=0x1400a004`：fn1 / addr 0x50 / count 4 / byte 模式 / 读 / 递增）
+  与 bring-up 成功那次**参数逐位相同**；
+- 命令被写入控制器（`issue CMD53` 之后），然后**永不完成**。
+
+于是嫌疑收敛到"**同样的命令、同样的寄存器初值，为什么栈启动后就不完成**"——
+两者唯一可见的差别是 bring-up 之后**总线上多了卡中断的断言（DAT1）**，
+以及 `intmask` 里 SDIO 中断位被反复武装/屏蔽。
+
+#### BW.22 下一步（直接可做）
+
+把 `intmask` 在**两条 CMD53 前后各打印一次**（含 SDIO 中断位），并对比 `rintsts`：
+如果栈启动后 `intmask` 里 SDIO 中断位是**置起**状态（我们每 20 ms 武装一次），
+那么它可能在命令期间不断打断 CIU 的命令状态机——这就解释了"命令写进去但不完成"。
+验证方法：把 `wait_slave_intr` 的**武装**改成"只在 wait 里武装、且命令期间不武装"，
+或直接把该位从 `intmask` 里彻底去掉（改回纯引脚/状态轮询）。

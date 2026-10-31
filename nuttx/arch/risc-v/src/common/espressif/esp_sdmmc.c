@@ -1602,12 +1602,14 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
   uint32_t cmdidx;
   static int traces;
 
-  if (traces < 20)
+  if (traces < 200)
     {
       syslog(LOG_INFO,
-             "esp_sdmmc: sendcmd cmd=%02u arg=%08x ctrl=%08x status=%08x\n",
+             "esp_sdmmc: sendcmd cmd=%02u arg=%08x ctrl=%08x status=%08x"
+             " bmod=%08x intmask=%08x tmout=%08x\n",
              (unsigned)((cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT),
-             (unsigned)arg, priv->hw->ctrl.val, priv->hw->status.val);
+             (unsigned)arg, priv->hw->ctrl.val, priv->hw->status.val,
+             priv->hw->bmod.val, priv->hw->intmask.val, priv->hw->tmout.val);
       traces++;
     }
 

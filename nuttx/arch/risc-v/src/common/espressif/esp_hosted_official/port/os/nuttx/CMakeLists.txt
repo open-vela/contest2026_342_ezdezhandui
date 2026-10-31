@@ -82,6 +82,7 @@ target_include_directories(eh_hosted_nuttx PRIVATE
 # Configuration of the official stack, in the symbols its own
 # eh_host_port_master_config.h reads (board wiring from appendices AK/AN).
 target_compile_definitions(eh_hosted_nuttx PRIVATE
+  CONFIG_ESP_HOSTED_HOST_CORE=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_MCU_READY=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO_READY=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=1
@@ -101,6 +102,8 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
   CONFIG_ESP_HOSTED_HOST_VSERIAL_MCU=1
   CONFIG_ESP_HOSTED_HOST_VSERIAL_MCU_READY=1
   CONFIG_ESP_HOSTED_HOST_CP_BRINGUP_ON_TIMEOUT_REATTEMPT=1
+  CONFIG_ESP_HOSTED_HOST_CP_BRINGUP_REATTEMPT_MAX=3
+  CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=1
 )
 
 # The stack expects the master config to be force-included (its own build does

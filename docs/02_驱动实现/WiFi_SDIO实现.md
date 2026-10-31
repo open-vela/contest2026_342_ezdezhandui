@@ -11620,3 +11620,53 @@ port/os/nuttx/src/{esp_event,esp_mac,esp_timer}_nuttx.c（我们）← 三个 ID
 - 选项打开：**编译阶段 0 error**（49 个目标文件 / 316 KB 库：端口 5 + POSIX 7 + 官方栈 37）；
 - 链接阶段还差 BA.3 的三个开关；
 - 默认配置（选项关闭）不受影响（板级调用点整段在 `#ifdef` 内，Kconfig 新符号带默认值）。
+
+### 附录 BB —— 链接阶段的三个开关：找到根因（2026-11-01）
+
+附录 BA.3 留了三个开关，本轮把它们的**根因**都定位了。
+
+#### BB.1 `No CP_BRINGUP_ON_TIMEOUT_* arm is set` —— 根因是少一个总开关
+
+这个错误看起来是"选一个超时策略"，实际上整段配置都在官方 master config 的
+`#ifdef CONFIG_ESP_HOSTED_HOST_CORE` 里面：
+
+```c
+#ifdef CONFIG_ESP_HOSTED_HOST_CORE
+  #ifdef CONFIG_ESP_HOSTED_HOST_CP_BRINGUP_ON_TIMEOUT_REATTEMPT
+    #define EH_HOST_PORT_CP_BRINGUP_ON_TIMEOUT_REATTEMPT 1
+  ...
+```
+
+我们只给了策略宏、**没给 `CONFIG_ESP_HOSTED_HOST_CORE`**，于是整段被跳过、策略宏恒为 0。
+
+修法（已加进编译定义）：
+
+```
+CONFIG_ESP_HOSTED_HOST_CORE=1
+CONFIG_ESP_HOSTED_HOST_CP_BRINGUP_ON_TIMEOUT_REATTEMPT=1
+CONFIG_ESP_HOSTED_HOST_CP_BRINGUP_REATTEMPT_MAX=3
+CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=1
+```
+
+#### BB.2 `__emutls_get_address` —— `_Thread_local` 需要 TLS
+
+栈里只有一处：`eh_host_feat_rpc_evt.c` 的 `static _Thread_local int tl_dispatch_depth;`。
+本板 `CONFIG_TLS_NELEM=0`，所以编译器走 emutls 运行时（NuttX 不提供）→ 链接失败。
+
+修法二选一（下一轮定）：
+- 打开 `CONFIG_TLS` 并把 `TLS_NELEM` 设为 ≥1（代价很小，但会改默认 defconfig）；
+- 或给 `eh_host_feat_rpc_evt.c` 用编译定义把 `_Thread_local` 变成空（改动 vendored 文件，不推荐）。
+
+#### BB.3 `pthread_condattr_*` —— 不是缺实现，是构建顺序
+
+`nuttx/libs/libc/pthread/pthread_condattr_init.c` 等文件确实在 `libc/pthread/CMakeLists.txt`
+里（`if(NOT CONFIG_DISABLE_PTHREAD)` 内），默认配置也没禁用 pthread。上一轮链接报未定义
+更可能是**同一构建目录里混了不同配置的产物**（该目录前后经历过 open/关闭官方选项两次配置）。
+
+→ 下一轮用**干净构建**验证：如果干净构建下仍报，再查 libc 是否被 `CONFIG_LIBC_*` 裁掉。
+
+#### BB.4 本轮状态
+
+- 已把 BB.1 的四个宏加进 `port/os/nuttx/CMakeLists.txt`；
+- 干净构建（选项打开）已重新跑起来验证（它会重新 clone MCUboot 的 mbedtls 子模块，耗时较久）；
+- 板子侧不变：真机验收仍卡整板断电（附录 AU）。

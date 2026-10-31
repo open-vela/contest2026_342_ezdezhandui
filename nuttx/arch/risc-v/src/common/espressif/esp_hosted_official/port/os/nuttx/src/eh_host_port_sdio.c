@@ -284,28 +284,16 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      /* Multi-byte register reads go out as one CMD52 per byte.
-       *
-       * The byte-mode CMD53 these used to be issued as does not complete on this
-       * board: measured, eh_host_port_sdio_read_reg() entered and never returned
-       * (appendices BV/BW), while CMD52 singles and block-mode CMD53 both work.
-       * These registers are four bytes and are read once per interrupt, so the
-       * per-byte form costs little and keeps the transport moving.
+      /* Byte-mode CMD53, now that both reasons it used to hang are fixed: the
+       * transfer length was programmed as blocklen * 0 (appendix BV.1) and the
+       * slave address was not masked (BV.4).  Reading the whole INT_RAW..
+       * PACKET_LEN window in one transfer is also what the transport expects --
+       * per-byte CMD52 reads answered zero for INT_RAW while PACKET_LEN held a
+       * real length, which suggests the window wants a single incrementing
+       * transfer.
        */
 
-      unsigned i;
-
-      ret = 0;
-      for (i = 0; i < size; i++)
-        {
-          int one = sdio_io_rw_direct(c->dev, false, 1,
-                                      (uint32_t)(reg + i), 0, &data[i]);
-          if (one < 0)
-            {
-              ret = one;
-              break;
-            }
-        }
+      ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data, size, 0);
     }
 
   /* Trace the first few register reads.

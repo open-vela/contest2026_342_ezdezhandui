@@ -3290,14 +3290,16 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
    * raise the CIU interrupt.
    */
 
-  /* Let the controller raise the card interrupt again.
+  /* The SDIO interrupt source is left masked.
    *
-   * The ISR masks this source after each assertion (see there), so it has to be
-   * re-armed before waiting -- otherwise the status bit is never latched and the
-   * wait can only ever time out.
+   * Arming it here (so the status bit would latch) was the previous design, and
+   * it is the prime suspect for the one failure left: the transport's CMD53 is
+   * written to the controller and never completes, while the identical command
+   * completes before the stack starts -- the visible difference being that the
+   * card interrupt is asserted on the bus by then and this source keeps being
+   * armed around every transfer (appendix BW.22).  Waiting therefore relies on
+   * the controller's status bits and the poll interval alone.
    */
-
-  priv->hw->intmask.val |= SDMMC_SDIO_INTR;
 
   /* Ask the controller first.
    *

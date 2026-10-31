@@ -13759,6 +13759,34 @@ eh_hosted_nuttx: RPC wifi_start -> 0
    `--- Wait for SDIO intr ---`，约 10 行/秒，把 NSH 的输入输出冲掉了；
 2. 再做 `connect` 与取 IP。
 
+#### BY.15 第 72 轮：scan 之前先撞上**卡中断风暴**
+
+为了让「scan」从一个真实调用点发出，本轮做了三件事：把 `wapi` 命令行加进配置（结果没注册进
+builtin 表，改用更直接的办法）、把空闲轮询片从 100 ms 放宽到 2000 ms、并在 `eh_hosted_nuttx_entry`
+里加了一段**走 netdev ioctl 路径**的自测（socket + `SIOCSIWSCAN` on `wlan0`，与普通应用完全一样）。
+
+真机结果暴露了一个新的、更基础的问题：
+
+```
+eh_hosted_nuttx: RPC wifi_init -> 0
+eh_hosted_nuttx: RPC wifi_set_mode(STA) -> 0
+...（此后再无 wifi_start / SIOCSIWSCAN 的日志）
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---        ← 每秒多次，INT_RAW 恒为 0
+```
+
+即：`wait_slave_intr` 是被**中断**唤醒的（不是超时兜底），但醒来后 `INT_RAW = 0` ——
+**从机在持续拉 DAT1 而主机没有可读的东西**。这种"空中断风暴"把总线锁和串口都占满了，
+`wifi_start` 之后的流程因此走不动（日志也印证了：片被放宽到 2 s，但这条路径根本不走超时）。
+
+判读与下一步（下一轮第一件事）：
+- 风暴点已定位到"从机断言中断、主机清不掉/无内容可清"：检查 `INT_CLR` 的**四个字节是否都写到了**
+  （我们的 `write_reg` 是逐字节 CMD52，端口里 `ESP_ADDRESS_MASK` 已只作用于寄存器读）以及
+  从机侧 `SLCHOST` 的哪些中断位（`new_packet` 之外还有 throttle/flow-control 位）需要一并清；
+- 风暴止住之前，`scan/connect` 没有意义。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

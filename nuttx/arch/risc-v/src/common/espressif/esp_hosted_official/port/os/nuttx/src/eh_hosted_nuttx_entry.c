@@ -22,6 +22,10 @@
 #include <syslog.h>
 
 #include <nuttx/kthread.h>
+#include <nuttx/wireless/wireless.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
 #include <nuttx/signal.h>
 
 #include "esp_gpio.h"
@@ -228,6 +232,38 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
         werr = eh_host_wifi_start();
         syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
                "%s: RPC wifi_start -> %d\n", ENTRY_TAG, werr);
+      }
+
+    /* One scan through the netdev's own ioctl path (goal stage 4).
+     *
+     * This is exactly what a NuttX application does -- a socket plus
+     * SIOCSIWSCAN on "wlan0" -- so a passing run proves the whole chain:
+     * wlan0's netdev ioctl -> esp-hosted RPC -> the scanner on the companion ->
+     * results back into the interface's table.  It needs no shell command in the
+     * image, which is why it is here rather than in an app.
+     */
+
+    if (werr == ESP_OK)
+      {
+        struct iwreq iwr;
+        int          fd;
+        int          rc;
+
+        memset(&iwr, 0, sizeof(iwr));
+        strlcpy(iwr.ifr_name, "wlan0", IFNAMSIZ);
+
+        fd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd < 0)
+          {
+            syslog(LOG_ERR, "%s: scan: no socket: %d\n", ENTRY_TAG, errno);
+          }
+        else
+          {
+            rc = ioctl(fd, SIOCSIWSCAN, (unsigned long)(uintptr_t)&iwr);
+            syslog(rc == 0 ? LOG_INFO : LOG_ERR,
+                   "%s: SIOCSIWSCAN(wlan0) -> %d\n", ENTRY_TAG, rc);
+            close(fd);
+          }
       }
   }
 

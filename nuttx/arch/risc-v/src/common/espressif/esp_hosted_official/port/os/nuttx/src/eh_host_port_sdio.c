@@ -1174,7 +1174,15 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
  * enough for the caps handshake, slow enough not to spin the CPU).
  */
 
-#define EH_SDIO_INTR_POLL_MS 100
+/* Slice for the "wait forever" case.  The stack logs one line per wake-up, so
+ * this is also the console's idle noise rate: at 100 ms the transport printed
+ * ten lines a second while there was nothing to do, which drowned the NSH
+ * prompt (appendix BY.15).  The card interrupt is what actually wakes the
+ * wait when a packet arrives, so a slow fallback costs nothing but a late
+ * poll when the interrupt itself was missed.
+ */
+
+#define EH_SDIO_INTR_POLL_MS 2000
 
 /****************************************************************************
  * Name: eh_host_port_sdio_wait_slave_intr

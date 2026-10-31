@@ -11749,3 +11749,50 @@ $ md5sum nuttx.bin   # 与默认构建不同
 真机验收：烧这版（选项打开）→ 看串口是否出现 `eh_hosted_nuttx: starting official esp-hosted host stack`
 → `companion connected, transport ready`。
 **但这需要先整板断电恢复数据通路**（附录 AU），目前 `sweep[0]` 仍全 `-110`。
+
+### 附录 BE —— 路线 B 第 10 步：**官方栈在真机上跑起来了**（2026-11-01）
+
+烧进「选项打开」的镜像（md5 `73e8c477…`），按约定复位（P4 用 USB-JTAG；C6 由固件自己拉 GPIO54）。
+串口实测（`387ddc9a-…` 会话）：
+
+```
+[esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_hosted_sdio: companion reset: GPIO54 held low 500 ms
+esp_hosted_sdio: companion enable held high (GPIO54), settling 1000 ms
+...
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)
+esp_sdmmc: CMD52 resp 00001040 -> 00001042 CHANGED        ← CCCR 0x07 设为 4-bit
+esp_hosted_sdio: TOKEN after read  = 00031000 (buffers 3) ← 从机 token 正常
+...
+eh_sdio: --- SDIO intr received ---                        ← 官方栈的传输层日志
+eh_sdio: wait_slave_intr error: -1
+eh_sdio: --- Wait for SDIO intr ---
+```
+
+**结论（真机证据）**：
+
+1. 官方 esp-hosted 主机栈**已经在 NuttX 上运行**：它的传输层在调我们的端口函数
+   （`eh_host_port_sdio_wait_slave_intr`），日志前缀是官方自己的 `eh_sdio:`；
+2. 它跑到 **caps 握手等待从机中断**这一步：`wait_slave_intr` 返回 -1（DAT1 始终不拉低），
+   于是原地重试；
+3. 这与本文件前面（附录 AU/AY）的硬件判决**完全一致**：从机数据阶段不驱动、
+   所以既不会回 caps 响应、也不会拉 DAT1。也就是说，**软件链路已经就绪，卡在同一个硬件退化态**。
+
+#### BE.1 本轮配套修改
+
+诊断梯子在选项打开时**只跑 2 轮**（原来 400 轮、要几分钟），否则官方栈要等它跑完才被启动：
+
+```c
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+    const int max_rounds = 2;
+#else
+    const int max_rounds = 400;
+#endif
+```
+
+#### BE.2 下一步（等断电恢复后的第一件事）
+
+断电恢复后重烧本镜像，预期串口继续往前走到 caps 握手成功与 RPC 往返（目标③）；
+若 `wait_slave_intr` 仍返回 -1，则回头查 `esp_sdmmc_wait_card_intr()` 的 D1 电平判断
+（它先读引脚、再等中断，与 ESP-IDF `sdmmc_host_io_int_wait` 同构）。

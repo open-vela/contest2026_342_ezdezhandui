@@ -1039,7 +1039,22 @@ int esp_hosted_sdio_initialize(void)
 
     sweep_next = clock_systime_ticks() + MSEC2TICK(HOSTED_SWEEP_PERIOD_MS);
 
-    for (round = 0; round < 400; round++)
+    /* How long the bring-up diagnostics run.
+     *
+     * The sweep ladder and the receive loop below characterise the link; they
+     * take minutes and drive the card's data path themselves.  When the
+     * official esp-hosted stack is selected they are cut short, because the
+     * board starts that stack as soon as this function returns and the stack
+     * has to own the transport from then on.
+     */
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+    const int max_rounds = 2;
+#else
+    const int max_rounds = 400;
+#endif
+
+    for (round = 0; round < max_rounds; round++)
       {
         uint32_t now = 0;
         uint8_t  ib[4];

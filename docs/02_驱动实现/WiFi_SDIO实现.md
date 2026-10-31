@@ -13431,6 +13431,42 @@ clock-update 内部命令都不完成）。下一轮要判的两条：
 已经排除的一条：端口 `eh_host_port_sdio_init()` 里的第二次 `esp_sdmmc_initialize(slot)`
 **不会**重新初始化控制器——该函数开头就是 `if (priv->initialized) return &priv->dev;`。
 
+#### BY.6 交接卡死查清了：是"总线/时钟状态"，不是从机坏
+
+按"单变量"逐个试（每次都是 建→烧→复位→抓串口），日志把因果链写得很清楚：
+
+| 试法 | 结果 |
+|---|---|
+| 只加端口 `SDIO_RESET()`（控制器复位，不补时钟） | 仍卡（`rintsts=0`、命令无响应） |
+| 只加"交接前复位从机"（6 s / 10 s 等待） | 仍卡（CMD5 无响应） |
+| bring-up 末尾的 `SDIO_CLOCK(CLOCK_SD_TRANSFER_1BIT)` 关掉 | 仍卡 |
+| **控制器 `SDIO_RESET()` + 紧接着 `SDIO_CLOCK(CLOCK_IDMODE)` + 从机复位 + 10 s 等待** | **从机恢复应答**：`CMD05 resp a0ffff00`、`rintsts=00000004` ✔ |
+
+导火索也找到了：bring-up 末尾那次升频
+
+```
+esp_sdmmc: clock update (clock disabled): DID NOT COMPLETE (wrote=a0212000 read=a0212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command did NOT complete ... -- falling back to a controller reset
+esp_sdmmc: clock-update command completed (cmd=20212000)
+esp_hosted_sdio: data clock switched to the 25 MHz default speed
+```
+
+——升频路径**先把时钟关掉、再靠"控制器复位兜底"把命令救回来，但时钟没有跟着恢复**；此后再发任何命令，
+卡都收不到时钟（"命令发出去了、就是不完"、`rintsts` 恒 0、连控制器内部的 update_clk 命令也完不成）。
+这正是附录 BW.17–BW.24 一直在追的那个现象的解释。
+
+**当前状态（本轮结束）**：交接后从机已能应答（CMD5 有响应、`RINTSTS` 有 `CMD_DONE`），
+但驱动在 `waitresponse` 的轮询里**没认这个完成**：
+
+```
+esp_sdmmc: CMD05 resp a0ffff00 -> a0ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: no command completion (rintsts=00000004 resp0=a0ffff00)   ← 硬件明明完成了
+esp_sdmmc: waitresponse -> -ETIMEDOUT
+```
+
+下一轮从这里接着做：`esp_sdmmc.c` 的 `waitresponse` 轮询分支（`waitmask=00`、`CMD_DONE` 被读到又没被认、
+以及 `xfrmask` 与轮询两条完成路径的关系）——把它修对，枚举即可继续走到 `card_fn_init`。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

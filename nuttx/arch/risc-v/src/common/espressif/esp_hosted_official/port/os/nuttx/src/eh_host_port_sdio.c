@@ -246,6 +246,16 @@ void *eh_host_port_sdio_init(void)
       return NULL;
     }
 
+  /* The controller is left exactly as the bring-up left it.
+   *
+   * SDIO_RESET() was tried here, mirroring the official port's sdmmc_host_init()
+   * + sdmmc_host_init_slot(), and it made things worse: the reset clears the CIU
+   * but the driver's clock path is what re-programs the card clock afterwards,
+   * and that path can end with the clock disabled -- after which the companion
+   * answers nothing at all (every command completes with RINTSTS = 0).  Leaving
+   * the controller alone keeps a clock that is known to work.
+   */
+
   return &g_sdio_ctx;
 }
 
@@ -303,9 +313,41 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
       }
     else
       {
+        int tries;
+
         SDIO_CLOCK(c->dev, CLOCK_IDMODE);
-        ret = sdio_probe(c->dev);
-        if (ret < 0)
+
+        /* Give the companion time to come up.
+         *
+         * A card that has just been released from reset does not answer CMD5
+         * immediately: measured, the stack's own card_init retries land about
+         * 200 ms apart and all six of them fall inside that window, while the
+         * bring-up's boot-time probe (four tries, 500 ms apart) always finds
+         * it.  Retry here for the same reason, so the port does not depend on
+         * the caller's retry cadence -- eight tries, half a second apart.
+         */
+
+        ret = -1;
+
+        for (tries = 0; tries < 8; tries++)
+          {
+            ret = sdio_probe(c->dev);
+            if (ret == OK)
+              {
+                if (tries > 0)
+                  {
+                    syslog(LOG_INFO,
+                           "%s: SDIO probe succeeded on try %d\n",
+                           TAG, tries + 1);
+                  }
+
+                break;
+              }
+
+            nxsig_usleep(500 * 1000);
+          }
+
+        if (ret != OK)
           {
             syslog(LOG_ERR, "%s: sdio_probe failed: %d\n", TAG, ret);
             return ESP_FAIL;
@@ -483,12 +525,15 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
         }
     }
 
-  /* Back to the transfer clock.  A no-op when the bring-up already raised it
-   * (it uses the same rate) and the right thing after a probe that had to run
-   * at the identification clock (see the enumeration above).
+  /* The card clock is left exactly as the bring-up set it.
+   *
+   * Raising it here was tried and is what broke the hand-over: the driver's
+   * transfer-clock path ends with the clock disabled (see the note in
+   * esp_hosted_sdio.c), after which the companion answers nothing at all.
+   * Running the link at the identification rate costs throughput, not
+   * correctness -- the caps handshake and an RPC round trip fit in a few
+   * hundred bytes.
    */
-
-  SDIO_CLOCK(c->dev, CLOCK_SD_TRANSFER_1BIT);
 
   c->ready = true;
 

@@ -2086,6 +2086,7 @@ int esp_hosted_sdio_initialize(void)
     }
   }
 
+#ifndef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
   /* Raise the card clock for data transfers.
    *
    * The identification clock is capped at 400 kHz by the SD specification, but
@@ -2093,6 +2094,14 @@ int esp_hosted_sdio_initialize(void)
    * default speed. Every data attempt so far ran at 100 kHz, which is the
    * slowest end of the range, and a slow clock is the one variable that has
    * only ever been tried in one direction.
+   *
+   * NOT done when the official stack is selected: measured, this switch leaves
+   * the card clock disabled -- the log shows the clock-update command failing,
+   * the driver's "falling back to a controller reset" recovering the command
+   * but not the clock, and from then on no card answers anything (every command
+   * completes with RINTSTS = 0 and no response; appendices BY.5(3)/BW.24).
+   * The stack gets the identification clock instead, which is the rate at which
+   * this link has always worked.
    */
 
   {
@@ -2101,6 +2110,45 @@ int esp_hosted_sdio_initialize(void)
     syslog(LOG_INFO, "%s: data clock switched to the 25 MHz default speed\n",
            HOSTED_TAG);
   }
+#else
+  syslog(LOG_INFO, "%s: leaving the card clock at the identification rate for "
+         "the official stack\n", HOSTED_TAG);
+#endif
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+  /* Hand the transport a companion that has been reset, on a bus that has been
+   * put back to the identification state.
+   *
+   * Everything above moves data -- the address sweep, the clean-window TX write
+   * and the payload read -- and afterwards the companion answers nothing: not
+   * the transport's first CMD52, not even CMD5, and resetting the companion
+   * alone does not help either (measured: ten seconds of settle and then eight
+   * probe retries half a second apart, all unanswered).  "Command issued, no
+   * response, RINTSTS = 0" is what a bus looks like when the host is still
+   * driving lines it should have released, so the controller is reset first and
+   * the card clock is programmed again afterwards -- the reset does not restore
+   * the clock by itself.
+   *
+   * The companion reset then clears whatever the data transfers left in its own
+   * SDIO slave, and the settle gives its firmware time to bring that slave back
+   * up.  The stack is written to enumerate a fresh card (card_fn_init() starts
+   * with a full sdmmc_card_init()), so this is the state it wants handed over.
+   */
+
+  SDIO_RESET(sdio);
+  SDIO_CLOCK(sdio, CLOCK_IDMODE);
+
+  if (CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO >= 0)
+    {
+      syslog(LOG_INFO, "%s: controller reset + clock reprogrammed, now resetting "
+             "the companion (500 ms low, then 10 s to come up)\n", HOSTED_TAG);
+
+      esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, false);
+      nxsig_usleep(500 * 1000);
+      esp_gpiowrite(CONFIG_ESPRESSIF_HOSTED_SDIO_EN_GPIO, true);
+      nxsig_usleep(10000 * 1000);
+    }
+#endif
 
   g_hosted_state   = ESP_HOSTED_SDIO_ENUMERATED;
   g_hosted_errcode = 0;

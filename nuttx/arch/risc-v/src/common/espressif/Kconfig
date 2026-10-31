@@ -2228,6 +2228,16 @@ config ESPRESSIF_HOSTED_OFFICIAL
 		state that has to be recovered (a full power cycle of the board,
 		not a JTAG reset) before the link can move payload again.
 
+config ESPRESSIF_HOSTED_OFFICIAL_PRIO
+	int "Official esp-hosted stack thread priority"
+	depends on ESPRESSIF_HOSTED_OFFICIAL
+	default 100
+
+config ESPRESSIF_HOSTED_OFFICIAL_STACKSIZE
+	int "Official esp-hosted stack thread stack size"
+	depends on ESPRESSIF_HOSTED_OFFICIAL
+	default 4096
+
 config ESPRESSIF_HOSTED_SDIO_EN_GPIO
 	int "Companion module enable GPIO (-1 = no enable line)"
 	default 54

@@ -86,6 +86,9 @@
 #ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
 #  include "espressif/esp_hosted_sdio.h"
 #endif
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+#  include "esp_hosted_official/port/os/nuttx/include/eh_hosted_nuttx.h"
+#endif
 
 #ifdef CONFIG_ESPRESSIF_SPI
 #  include "espressif/esp_spi.h"
@@ -406,6 +409,23 @@ int esp_bringup(void)
              "Companion-radio SDIO transport not available (%d); "
              "WiFi is unavailable, ethernet is unaffected\n", ret);
     }
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+  /* The official esp-hosted host stack runs on top of that link.  It is
+   * started from its own thread because its init blocks while it handshakes
+   * with the companion, and the boot must not wait for that.
+   */
+
+  if (ret >= 0)
+    {
+      ret = esp_hosted_official_start();
+      if (ret < 0)
+        {
+          syslog(LOG_ERR,
+                 "Official esp-hosted stack did not start (%d)\n", ret);
+        }
+    }
+#endif
 #endif
 
 #if defined(CONFIG_I2C_DRIVER)

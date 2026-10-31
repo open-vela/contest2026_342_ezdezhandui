@@ -11577,3 +11577,46 @@ $ ls -l .../libeh_hosted_nuttx.a
 
 这些全是**不需要板子**的编译层面工作；真机验收（`companion enumerated` → FN1 ready → RPC）仍然
 卡在附录 AU 的**整板断电**。复位方式已经按目标约定实现：P4 用 USB-JTAG、C6 用 GPIO54（500 ms）。
+
+### 附录 BA —— 路线 B 第 8 步：**POSIX 端口可直接编在 NuttX 上**；栈已挂到 bring-up（2026-11-01）
+
+#### BA.1 最大的降险：OS 端口层不用重写
+
+官方栈的 `port/os/posix/src/`（`eh_host_port_{sync,task,queue,gpio,power,event_group,dma}.c`）
+用真实构建 flags 逐个编译：**7/7 全部 OK**，一行没改。
+
+它用的 OS 依赖（`pthread_mutex_*`、`pthread_cond_*`、`sem_*`、`pthread_create`、
+`clock_nanosleep`、`sched_*`、`signal`）**NuttX 都有**。所以路线 B 的"薄移植层"实际是：
+
+```
+port/os/posix/src/*.c（官方，直接编）        ← OS 原语
+port/os/nuttx/src/eh_host_port_sdio.c（我们）← SDIO 传输（9 个函数）
+port/os/nuttx/src/{esp_event,esp_mac,esp_timer}_nuttx.c（我们）← 三个 IDF shim 的实现
+```
+
+#### BA.2 栈已经挂到 bring-up 上
+
+新增 `port/os/nuttx/src/eh_hosted_nuttx_entry.c`：
+
+- `esp_hosted_official_start()` 起一个内核线程（`CONFIG_ESPRESSIF_HOSTED_OFFICIAL_PRIO/STACKSIZE`，默认 100/4096），
+  线程里跑 `eh_host_init(NULL)` → `eh_host_connect_to_slave()`（caps 握手 = 目标③的第一步）；
+- 板级 `esp32p4_bringup.c` 在 `esp_hosted_sdio_initialize()` 成功之后调用它（`#ifdef` 保护，
+  选项关闭时完全不编）。
+
+这样选项打开时**栈会被真正引用**（不再被 `--gc-sections` 裁掉），链路和握手都会在启动时执行。
+
+#### BA.3 链接阶段还差的几个配置开关（下一步，一次就能清完）
+
+打开选项构建到链接时暴露出来：
+
+| 报错 | 需要的配置 |
+|---|---|
+| `No CP_BRINGUP_ON_TIMEOUT_* arm is set` | 选一个策略：`CONFIG_ESP_HOSTED_HOST_CP_BRINGUP_ON_TIMEOUT_REATTEMPT=1`（+ `_REATTEMPT_MAX`）——已加进编译定义，但该 TU 仍未看到，需再确认 CMake 变量是否作用于 core/mcu 子目录 |
+| `undefined reference to __emutls_get_address` | 栈里有 `static _Thread_local int tl_dispatch_depth;`（`eh_host_feat_rpc_evt.c`）→ 需要 `CONFIG_TLS=y` + `TLS_NELEM>0`，或改用任务局部存储 |
+| `undefined reference to pthread_condattr_init/_setclock/_destroy` | NuttX 头里有声明，但实现被配置项挡住 → 打开对应的 pthread 配置 |
+
+#### BA.4 验收
+
+- 选项打开：**编译阶段 0 error**（49 个目标文件 / 316 KB 库：端口 5 + POSIX 7 + 官方栈 37）；
+- 链接阶段还差 BA.3 的三个开关；
+- 默认配置（选项关闭）不受影响（板级调用点整段在 `#ifdef` 内，Kconfig 新符号带默认值）。

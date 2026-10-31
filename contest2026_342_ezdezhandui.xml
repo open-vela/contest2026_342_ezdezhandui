@@ -363,6 +363,7 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/include/eh_host_port_wifi.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/include/eh_host_port_wifi.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/include/eh_host_transport_config.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/include/eh_host_transport_config.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/CMakeLists.txt"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/eh_hosted_nuttx.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/eh_hosted_nuttx.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/esp_check.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/esp_check.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/esp_err.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/esp_err.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/esp_event.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/esp_event.h"/>
@@ -379,6 +380,7 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/freertos/task.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/freertos/task.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/sdkconfig.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/include/sdkconfig.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/eh_host_port_sdio.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/eh_host_port_sdio.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/eh_hosted_nuttx_entry.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/eh_hosted_nuttx_entry.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_event_nuttx.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_event_nuttx.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_mac_nuttx.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_mac_nuttx.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_timer_nuttx.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_timer_nuttx.c"/>

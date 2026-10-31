@@ -13787,6 +13787,41 @@ eh_sdio: --- SDIO intr received ---        ← 每秒多次，INT_RAW 恒为 0
   从机侧 `SLCHOST` 的哪些中断位（`new_packet` 之外还有 throttle/flow-control 位）需要一并清；
 - 风暴止住之前，`scan/connect` 没有意义。
 
+#### BY.16 第 73 轮：风暴止住了（10 Hz → 0.4 Hz），RPC 事件通道很丰富；新卡点是从机自己在刷事件
+
+**风暴根因**：`esp_sdmmc_wait_card_intr()` 依次做两件事——用 `sdmmc_ll_get_intr_status()`
+（**MINTSTS，被屏蔽**，永远 0）判状态；再退回 `esp_gpioread(d1_pin) == 0` 判"有中断"。
+而 DAT1 的 pad 在槽的引脚经 GPIO 矩阵交给 SDMMC 之后**不再反映线上电平**（附录 BS.3 已实测），
+于是这个函数**每次调用都返回"有中断"**，而 `INT_RAW` 是空的 → 传输层空转、总线锁与串口被占满。
+
+修法（`esp_sdmmc.c`）：**等的时候武装 `SDMMC_SDIO_INTR`**（CIU 只有源被使能时才锁存状态，
+附录 BS.2），**读原始 `RINTSTS`**，取到就**写 1 清除**；删掉不可靠的读 pin 兜底。
+
+真机效果：180 s 内 `Wait for SDIO intr` 从 ~1800 行降到 **71 行**（≈0.4 行/秒），
+且这些唤醒**几乎都对应从机真实的事件**——RPC 事件通道现在很丰富：
+
+```
+eh_rpc_ll: rx: kind=evt id=773 (WifiEventNoArgs) uid=0
+eh_sdio: len_from_slave: 300
+eh_host_port_sdio: read_block addr=0x1f6d4 (masked would be 0x2d4) size=512 ret=0
+                   bytes=03 00 1d 01 0c 00 00 00 13 00 00 00 01 06 00 52
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) status=-1
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) status=0
+```
+
+**新卡点**：`eh_host_wifi_start()` 的响应一直没回来（`kind=resp` 只看到 `SetWifiMode` 一条），
+而同期从机在持续推送自己的事件（`WifiEventNoArgs`、`DhcpDnsStatus`、`StaDisconnected`，
+每 ~2.4 s 两个报文）。判读：**当前烧在 C6 上的从机固件是"自己连 AP"的示例应用**
+（`eh_example_sta` + `ehcp_nw_split`，附录 BZ.3 已记录），它的连接重试把事件队列刷满，
+主机的 payload 读取（CMD52 逐字节，300 字节约需数百毫秒）追不上，
+`wifi_start` 的响应因此排在事件后面迟迟不到。
+
+下一轮的两个方向（按优先级）：
+1. **换从机固件**：烧 `network_adapter`（纯 RPC 从机、不自带 station 应用）——这正是目标④
+   "主机侧 scan/connect" 所需要的从机形态；示例应用那版会一直对着不存在的 SSID 重连；
+2. 若换固件前想在当前形态下推进：把主机的 payload 读取提速（回到 CMD53 并把数据通路修对），
+   或者临时把从机示例的重试关掉（需要重新构建从机固件，成本与 1 相当）。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

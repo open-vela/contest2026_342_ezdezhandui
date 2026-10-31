@@ -3621,14 +3621,23 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
    * interrupt mask, which is exactly the "card is asking" signal wanted here.
    */
 
-  if ((sdmmc_ll_get_intr_status(priv->hw) & SDMMC_SDIO_INTR) != 0)
-    {
-      priv->cardintr = false;
-      return true;
-    }
+  /* Arm the source, then look at the RAW status bit.
+   *
+   * The CIU only latches the SDIO status while the source is enabled (measured,
+   * appendix BS.2), and the masked view (sdmmc_ll_get_intr_status) hides it even
+   * then.  The pin fallback that used to stand in for this is the interrupt
+   * storm of appendix BY.15: once the slot's pads are routed through the GPIO
+   * matrix the DAT1 pad belongs to the SDMMC peripheral, esp_gpioread() reads it
+   * as 0, and this function then answered "interrupted" on every call while
+   * INT_RAW was empty -- the transport spun, the bus lock stayed busy and the
+   * console was drowned.
+   */
 
-  if (esp_gpioread(priv->d1_pin) == 0)
+  sdmmc_ll_enable_interrupt(priv->hw, SDMMC_SDIO_INTR, true);
+
+  if ((*(volatile uint32_t *)&priv->hw->rintsts & SDMMC_SDIO_INTR) != 0)
     {
+      sdmmc_ll_clear_interrupt(priv->hw, SDMMC_SDIO_INTR);
       priv->cardintr = false;
       return true;
     }
@@ -3638,8 +3647,9 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
   start = clock_systime_ticks();
   while (!priv->cardintr)
     {
-      if ((sdmmc_ll_get_intr_status(priv->hw) & SDMMC_SDIO_INTR) != 0)
+      if ((*(volatile uint32_t *)&priv->hw->rintsts & SDMMC_SDIO_INTR) != 0)
         {
+          sdmmc_ll_clear_interrupt(priv->hw, SDMMC_SDIO_INTR);
           priv->cardintr = false;
           return true;
         }

@@ -1,0 +1,133 @@
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0xc (SW_CPU_RESET),boot:0xf (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff22b6c
+Core1 Saved PC:0x4000189e
+SPI mode:DIO, clock div:1
+load:0x4ffb60d0,len:0x14d4
+load:0x4ffac2c0,len:0xfd0
+load:0x4ffaefc0,len:0x3628
+entry 0x4ffac2ca
+I (33) boot: ESP-IDF 3ea97e75 2nd stage bootloader
+I (33) boot: compile time Oct 31 2026 23:01:34
+I (34) boot: chip revision: v3.2
+I (34) boot.esp32p4: SPI Speed      : 80MHz
+I (37) boot.esp32p4: SPI Mode       : DIO
+I (41) boot.esp32p4: SPI Flash Size : 16MB
+I (45) boot: Partition Table:
+I (47) boot: ## Label            Usage          Type ST Offset   Length
+I (54) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (60) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (67) boot:  2 factory          factory app      00 00 00010000 00100000
+I (74) esp_image: segment 0: paddr=00010020 vaddr=40030020 size=0ccc8h ( 52424) map
+I (88) esp_image: segment 1: paddr=0001ccf0 vaddr=30100000 size=001d4h (   468) load
+I (89) esp_image: segment 2: paddr=0001cecc vaddr=301001e0 size=00048h (    72) load
+I (96) esp_image: segment 3: paddr=0001cf1c vaddr=4ff20000 size=030fch ( 12540) load
+I (105) esp_image: segment 4: paddr=00020020 vaddr=40000020 size=20394h (131988) map
+I (128) esp_image: segment 5: paddr=000403bc vaddr=4ff230fc size=0cb50h ( 52048) load
+I (138) esp_image: segment 6: paddr=0004cf14 vaddr=4ff2fc80 size=02164h (  8548) load
+I (143) boot: Loaded app from partition at offset 0x10000
+I (152) cpu_start: Multicore app
+I (162) cpu_start: GPIO 38 and 37 are used as console UART I/O pins
+I (162) cpu_start: Pro cpu start user code
+I (162) cpu_start: cpu freq: 400000000 Hz
+I (164) app_init: Application information:
+I (168) app_init: Project name:     p4sdiohost
+I (172) app_init: App version:      0c22c7f-dirty
+I (176) app_init: Compile time:     Nov  1 2026 02:10:18
+I (181) app_init: ELF file SHA256:  f83dd2a25...
+I (186) app_init: ESP-IDF:          3ea97e75
+I (190) efuse_init: Min chip rev:     v3.1
+I (194) efuse_init: Max chip rev:     v3.99 
+I (198) efuse_init: Chip rev:         v3.2
+I (201) heap_init: Initializing. RAM available for dynamic allocation:
+I (208) heap_init: At 4FF33A70 len 00087550 (541 KiB): RETENT_RAM
+I (213) heap_init: At 4FFBAFC0 len 00004BF0 (18 KiB): RAM
+I (219) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (224) heap_init: At 30100228 len 00001DD8 (7 KiB): SPM
+I (230) spi_flash: detected chip: gd
+I (232) spi_flash: flash io: dio
+I (235) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (242) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (248) main_task: Started on CPU0
+I (279) main_task: Calling app_main()
+I (1879) p4sdio: companion released (GPIO54), settling done
+I (1879) p4sdio: host init ...
+I (1913) p4sdio: sdmmc_card_init -> ESP_OK (0)
+I (1914) p4sdio: card: name= real_freq=400 kHz
+I (1915) p4sdio: before fn_init: rev=0x32(r0) IOEx=0x00(r0) IO_RDY=0x02(r0) INT_ENA=0x00(r0) BUS_WIDTH=0x42(r0)
+I (1921) p4sdio: CCCR 0x02 IOEx before: 0x00
+I (1925) p4sdio: CCCR 0x02 IOEx write 0x02 -> ESP_OK (card echoed 0x02)
+I (1931) p4sdio: CCCR 0x02 IOEx after: 0x02
+I (1935) p4sdio: CCCR 0x03 IO_RDY try 0: 0x02
+I (1939) p4sdio: CCCR 0x04 INT_ENABLE before: 0x00
+I (1944) p4sdio: CCCR 0x04 INT_ENABLE after: 0x03 (want 0x03)
+I (1950) p4sdio: FN0 block size: wrote 512, read back 512 (err ESP_OK)
+I (1956) p4sdio: FN1 block size: wrote 512, read back 512 (err ESP_OK)
+I (1962) p4sdio: CCCR 0x07 BUS_WIDTH: 0x42 (bit1 = 4-bit)
+I (1966) p4sdio: card_fn_init -> ESP_OK
+I (1970) p4sdio: set_card_clk(40000 kHz) -> ESP_OK
+I (2025) p4sdio: FN1 INT_RAW at 40 MHz: 0x00084000 (ESP_OK) -- FN1 answers at 40 MHz
+I (2025) p4sdio: sdmmc_io_enable_int -> ESP_OK
+I (2025) p4sdio: HOST_TO_SLAVE_INTR <- 0x01 (ESP_OPEN_DATA_PATH) -> ESP_OK
+I (2043) p4sdio: [0] wait_int=ESP_OK after 11 ms | INT_RAW=0x00cc4000(ESP_OK) new_packet=1 | LEN=0x03c0003c(ESP_OK) len=60 | TOKEN=0x00021000(ESP_OK)
+I (2045) p4sdio:     INT_ST=0x00800000 (ESP_OK)
+I (2049) p4sdio:     payload: block mode 512 B @0x1f7c4 (masked would be 0x3c4) -> ESP_OK
+I (2057) p4sdio:     payload: 05 00 30 00 0c 00 00 00 00 00 00 33 22 2e 12 01
+I (2064) p4sdio:     *** DATA ARRIVED ***
+I (2068) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (2072) p4sdio:     LEN after drain: 0x03c0003c len=60 (ESP_OK)
+I (3726) p4sdio: [1] wait_int=ESP_OK after 1348 ms | INT_RAW=0x00cc7800(ESP_OK) new_packet=1 | LEN=0x16800168(ESP_OK) len=360 | TOKEN=0x00021000(ESP_OK)
+I (3728) p4sdio:     INT_ST=0x00800000 (ESP_OK)
+I (3732) p4sdio:     payload: byte mode 360 B @0x1f698 (masked would be 0x298) -> ESP_OK
+I (3740) p4sdio:     payload: 03 00 1d 01 0c 00 00 00 02 00 00 00 01 06 00 52
+I (3747) p4sdio:     *** DATA ARRIVED ***
+I (3751) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (3755) p4sdio:     LEN after drain: 0x1c4001c4 len=452 (ESP_OK)
+I (6061) p4sdio: [2] wait_int=ESP_ERR_TIMEOUT after 2000 ms | INT_RAW=0x004c7800(ESP_OK) new_packet=0 | LEN=0x1c4001c4(ESP_OK) len=452 | TOKEN=0x00021000(ESP_OK)
+I (6064) p4sdio:     INT_ST=0x00000000 (ESP_OK)
+I (6068) p4sdio:     payload: block mode 512 B @0x1f63c (masked would be 0x23c) -> ESP_OK
+I (6076) p4sdio:     payload: 03 00 50 00 0c 00 00 00 03 00 00 00 01 06 00 52
+I (6083) p4sdio:     *** DATA ARRIVED ***
+I (6086) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (6091) p4sdio:     LEN after drain: 0x1c4001c4 len=452 (ESP_OK)
+I (6397) p4sdio: [3] wait_int=ESP_OK after 0 ms | INT_RAW=0x00cc7800(ESP_OK) new_packet=1 | LEN=0x2f0002f0(ESP_OK) len=752 | TOKEN=0x00021000(ESP_OK)
+I (6399) p4sdio:     INT_ST=0x00800000 (ESP_OK)
+I (6403) p4sdio:     payload: byte mode 752 B @0x1f510 (masked would be 0x110) -> ESP_ERR_INVALID_ARG
+I (6412) p4sdio:     payload: cc cc cc cc cc cc cc cc cc cc cc cc cc cc cc cc
+I (6419) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (6423) p4sdio:     LEN after drain: 0x2f0002f0 len=752 (ESP_OK)
+I (8729) p4sdio: [4] wait_int=ESP_ERR_TIMEOUT after 2000 ms | INT_RAW=0x004c7800(ESP_OK) new_packet=0 | LEN=0x2f0002f0(ESP_OK) len=752 | TOKEN=0x00021000(ESP_OK)
+I (8732) p4sdio:     INT_ST=0x00000000 (ESP_OK)
+I (8736) p4sdio:     payload: block mode 1024 B @0x1f510 (masked would be 0x110) -> ESP_OK
+I (8744) p4sdio:     payload: 03 00 1d 01 0c 00 00 00 04 00 00 00 01 06 00 52
+I (8751) p4sdio:     *** DATA ARRIVED ***
+I (8755) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (8759) p4sdio:     LEN after drain: 0x34c0034c len=844 (ESP_OK)
+I (11065) p4sdio: [5] wait_int=ESP_ERR_TIMEOUT after 2000 ms | INT_RAW=0x004c7800(ESP_OK) new_packet=0 | LEN=0x34c0034c(ESP_OK) len=844 | TOKEN=0x00021000(ESP_OK)
+I (11068) p4sdio:     INT_ST=0x00000000 (ESP_OK)
+I (11072) p4sdio:     payload: byte mode 844 B @0x1f4b4 (masked would be 0x0b4) -> ESP_ERR_INVALID_ARG
+I (11081) p4sdio:     payload: cc cc cc cc cc cc cc cc cc cc cc cc cc cc cc cc
+I (11088) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (11093) p4sdio:     LEN after drain: 0x34c0034c len=844 (ESP_OK)
+I (13399) p4sdio: [6] wait_int=ESP_ERR_TIMEOUT after 2000 ms | INT_RAW=0x004c7800(ESP_OK) new_packet=0 | LEN=0x34c0034c(ESP_OK) len=844 | TOKEN=0x00021000(ESP_OK)
+I (13402) p4sdio:     INT_ST=0x00000000 (ESP_OK)
+I (13406) p4sdio:     payload: block mode 1024 B @0x1f4b4 (masked would be 0x0b4) -> ESP_OK
+I (13414) p4sdio:     payload: 03 00 50 00 0c 00 00 00 05 00 00 00 01 06 00 52
+I (13421) p4sdio:     *** DATA ARRIVED ***
+I (13425) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (13430) p4sdio:     LEN after drain: 0x07900478 len=1144 (ESP_OK)
+I (15736) p4sdio: [7] wait_int=ESP_ERR_TIMEOUT after 2000 ms | INT_RAW=0x004c7800(ESP_OK) new_packet=0 | LEN=0x07900478(ESP_OK) len=1144 | TOKEN=0x00021000(ESP_OK)
+I (15739) p4sdio:     INT_ST=0x00000000 (ESP_OK)
+I (15743) p4sdio:     payload: byte mode 1144 B @0x1f388 (masked would be 0x388) -> ESP_ERR_INVALID_ARG
+I (15752) p4sdio:     payload: cc cc cc cc cc cc cc cc cc cc cc cc cc cc cc cc
+I (15759) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (15764) p4sdio:     LEN after drain: 0x07900478 len=1144 (ESP_OK)
+I (18070) p4sdio: [8] wait_int=ESP_ERR_TIMEOUT after 2000 ms | INT_RAW=0x004c7800(ESP_OK) new_packet=0 | LEN=0x07900478(ESP_OK) len=1144 | TOKEN=0x00021000(ESP_OK)
+I (18073) p4sdio:     INT_ST=0x00000000 (ESP_OK)
+I (Guru Meditation Error: Core  0 panic'ed (Interrupt wdt timeout on CPU0). 
+
+Core  0 register dump:
+MEPC    : 0x4ff20284  RA      : 0x4ff20274  SP      : 0x4ff327d0  GP      : 0x4ff30480  
+TP      : 0x4ff37620  T0      : 0x00000008  T1      : 0x10000000  T2      : 0x00000000  
+S0/FP   : 0x00000000  S1      : 

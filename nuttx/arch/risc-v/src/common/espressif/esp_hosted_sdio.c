@@ -1035,6 +1035,44 @@ int esp_hosted_sdio_initialize(void)
            dg_w1[0], dg_w1[1], dg_w1[2], dg_w1[3],
            dg_w1[4], dg_w1[5], dg_w1[6], dg_w1[7]);
 
+    /* The same window as ONE transfer.
+     *
+     * The official transport does not read INT_RAW and PACKET_LEN with separate
+     * CMD52s: it reads 0x50..0x63 -- the whole twenty-byte window
+     * (REG_BUF_LEN in eh_host_bus_sdio.c) -- in a single CMD53, and the NuttX
+     * port now issues exactly that shape again (appendix BY.3).  Printing it
+     * next to the byte-by-byte values above shows whether the two agree, which
+     * is what the four-byte workaround used to hide.
+     */
+
+    {
+      uint8_t dg_win[20];
+      int     dg_wr;
+
+      /* Filled with 0x5a first, because a byte that still reads 0x5a afterwards
+       * was never written by the driver: that is how the *delivered* length of
+       * a multi-byte read becomes visible.  A zero-filled buffer cannot tell
+       * "the companion sent zeros" from "the byte never arrived", and the
+       * difference decides whether the transport's twenty-byte window read is
+       * usable at all (appendices BT/BY.5).
+       */
+
+      memset(dg_win, 0x5a, sizeof(dg_win));
+      dg_wr = sdio_io_rw_extended(sdio, false, 1, 0x00050, true, dg_win,
+                                  sizeof(dg_win), 0);
+
+      syslog(LOG_INFO,
+             "%s: diag window 0x50 x20 ret=%d bytes="
+             "%02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x "
+             "%02x%02x%02x%02x %02x%02x%02x%02x\n",
+             HOSTED_TAG, dg_wr,
+             dg_win[0], dg_win[1], dg_win[2], dg_win[3],
+             dg_win[4], dg_win[5], dg_win[6], dg_win[7],
+             dg_win[8], dg_win[9], dg_win[10], dg_win[11],
+             dg_win[12], dg_win[13], dg_win[14], dg_win[15],
+             dg_win[16], dg_win[17], dg_win[18], dg_win[19]);
+    }
+
     /* CMD53 read ladder.
      *
      * The IDF baseline reads the same registers this driver does -- FN1 0x60

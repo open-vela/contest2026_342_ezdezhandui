@@ -2926,6 +2926,75 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
         if (st & SDMMC_DATA_OVER)
           {
             sdmmc_ll_clear_interrupt(hw, SDMMC_DATA_OVER);
+
+            /* DATA_OVER says the wire phase is over.  It does not say the bytes
+             * reached the caller's buffer.
+             *
+             * The drain above runs on one FIFO_COUNT sample per pass, so a
+             * transfer longer than whatever was in the FIFO at that instant was
+             * completed with only its first word copied: measured, a twenty-byte
+             * register read delivered four bytes and left the rest untouched,
+             * and a 512-byte payload read came back as "ret 0, first word
+             * 00000000" (appendix BY.5).  Worse, the CIU was then left with its
+             * data state machine still busy -- after that, no command completed
+             * at all, not even the controller-internal clock update, so the
+             * transport could never start.
+             *
+             * Finish the drain here, bounded, before reporting success: take
+             * what the FIFO still holds, and give the CIU a bounded number of
+             * empty polls for the remaining words before giving up.
+             */
+
+            if (g_pio_rxbuf != NULL)
+              {
+                unsigned idle_polls = 0;
+                unsigned limit      = 20000;
+
+                while (g_pio_rxdone < g_pio_rxlen && limit-- > 0)
+                  {
+                    uint32_t sts  = *(volatile uint32_t *)&hw->status;
+                    unsigned have = (unsigned)((sts >> 17) & 0x1fff);
+
+                    if (have == 0)
+                      {
+                        if (++idle_polls > 200)
+                          {
+                            /* The FIFO stopped filling: whatever arrived is in
+                             * the buffer now.  Saying so is better than
+                             * spinning, and the caller's timeout still covers a
+                             * transfer that never completes at all.
+                             */
+
+                            break;
+                          }
+
+                        continue;
+                      }
+
+                    idle_polls = 0;
+
+                    {
+                      uint32_t word =
+                        *(volatile uint32_t *)((uintptr_t)hw +
+                                               ESP_SDMMC_FIFO_PORT);
+                      size_t left = g_pio_rxlen - g_pio_rxdone;
+
+                      if (left > 4)
+                        {
+                          left = 4;
+                        }
+
+                      if (left > have)
+                        {
+                          left = have;
+                        }
+
+                      memcpy(g_pio_rxbuf + g_pio_rxdone, &word, left);
+                      g_pio_rxdone += left;
+                    }
+                  }
+              }
+
             priv->xfrmask |= SDIOWAIT_TRANSFERDONE;
           }
 

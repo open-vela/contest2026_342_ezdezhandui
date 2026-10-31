@@ -1,0 +1,5 @@
+stamp: 20261101-021222
+reset: False
+seconds: 100
+console: Tabby session 993d882c-56ef-4c98-ae45-43267f1f7623
+boot section starts at line 4549 of the buffer

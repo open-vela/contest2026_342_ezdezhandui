@@ -1,0 +1,53 @@
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0xc (SW_CPU_RESET),boot:0xf (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4ff22b6c
+Core1 Saved PC:0x4000189e
+SPI mode:DIO, clock div:1
+load:0x4ffb60d0,len:0x14d4
+load:0x4ffac2c0,len:0xfd0
+load:0x4ffaefc0,len:0x3628
+entry 0x4ffac2ca
+I (33) boot: ESP-IDF 3ea97e75 2nd stage bootloader
+I (33) boot: compile time Oct 31 2026 23:01:34
+I (34) boot: chip revision: v3.2
+I (34) boot.esp32p4: SPI Speed      : 80MHz
+I (37) boot.esp32p4: SPI Mode       : DIO
+I (41) boot.esp32p4: SPI Flash Size : 16MB
+I (45) boot: Partition Table:
+I (47) boot: ## Label            Usage          Type ST Offset   Length
+I (54) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (60) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+I (67) boot:  2 factory          factory app      00 00 00010000 00100000
+I (74) esp_image: segment 0: paddr=00010020 vaddr=40030020 size=0cd80h ( 52608) map
+I (88) esp_image: segment 1: paddr=0001cda8 vaddr=30100000 size=001d4h (   468) load
+I (89) esp_image: segment 2: paddr=0001cf84 vaddr=301001e0 size=00048h (    72) load
+I (96) esp_image: segment 3: paddr=0001cfd4 vaddr=4ff20000 size=03044h ( 12356) load
+I (105) esp_image: segment 4: paddr=00020020 vaddr=40000020 size=204fch (132348) map
+I (128) esp_image: segment 5: paddr=00040524 vaddr=4ff23044 size=0cc08h ( 52232) load
+I (138) esp_image: segment 6: paddr=0004d134 vaddr=4ff2fc80 size=02164h (  8548) load
+I (143) boot: Loaded app from partition at offset 0x10000
+I (152) cpu_start: Multicore app
+I (162) cpu_start: GPIO 38 and 37 are used as console UART I/O pins
+I (162) cpu_start: Pro cpu start user code
+I (162) cpu_start: cpu freq: 400000000 Hz
+I (164) app_init: Application information:
+I (168) app_init: Project name:     p4sdiohost
+I (172) app_init: App version:      0c22c7f-dirty
+I (176) app_init: Compile time:     Nov  1 2026 02:10:18
+I (181) app_init: ELF file SHA256:  ffdb54d54...
+I (186) app_init: ESP-IDF:          3ea97e75
+I (190) efuse_init: Min chip rev:     v3.1
+I (194) efuse_init: Max chip rev:     v3.99 
+I (198) efuse_init: Chip rev:         v3.2
+I (202) heap_init: Initializing. RAM available for dynamic allocation:
+I (208) heap_init: At 4FF33AB0 len 00087510 (541 KiB): RETENT_RAM
+I (213) heap_init: At 4FFBAFC0 len 00004BF0 (18 KiB): RAM
+I (219) heap_init: At 50108080 len 00007F80 (31 KiB): RTCRAM
+I (224) heap_init: At 30100228 len 00001DD8 (7 KiB): SPM
+I (230) spi_flash: detected chip: gd
+I (232) spi_flash: flash io: dio
+I (235) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (242) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (248) main_task: Started on CPU0
+I (279) main_task: Calling app_main()

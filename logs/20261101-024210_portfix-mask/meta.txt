@@ -1,0 +1,8 @@
+stamp: 20261101-024210
+reset: True
+seconds: 150
+analyzer: capture started (150 s at 1 MHz)
+openocd rc=0 ['shutdown command invoked']
+console: Tabby session 993d882c-56ef-4c98-ae45-43267f1f7623
+decode: 45 frames decoded
+boot section starts at line 11023 of the buffer

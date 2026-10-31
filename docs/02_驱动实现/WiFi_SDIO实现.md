@@ -1,43 +1,32 @@
 # WiFi（板载协处理器 / SDIO + ESP-Hosted）—— 现状调研与实现路线
 
-> 版本：**2026-11-01（第 54 轮）** ·
-> 状态：**官方 esp-hosted 主机栈已完整接入 NuttX 并运行；
-> SDIO 数据通路与寄存器通道均已修通并留证；唯一未通的一环是"传输层的第一次寄存器读不返回"**
+> 版本：**2026-11-01（第 65 轮）** ·
+> 状态：**根因已定位并修复 —— 不是硬件问题，是移植层的功能缺陷。
+> 官方基线已在同一块板上读到真实报文载荷（附录 BZ），附录 BX 的"硬件/从机不可用"结论已撤回**
 >
 > ## 执行摘要（当前状态）
 >
 > | 层 | 状态 | 关键证据 |
 > |---|---|---|
-> | 官方 esp-hosted 主机栈接入 NuttX | ✅ 编译 / 链接 / **运行** | 栈自己的日志出现在串口：`Card init success, TRANSPORT_RX_ACTIVE`、`Open data path at slave`（附录 AV–AX）|
-> | NuttX 薄移植层（端口层） | ✅ | POSIX 端口原样可用 + 我们的 SDIO 端口 + 3 个 IDF shim（附录 BA/BD）|
-> | SDIO 数据通路 | ✅ | 梯子全尺寸 `ret=0`，读到正确 `PACKET_LEN = 3c 00 c0 03`（附录 BU）|
-> | 寄存器通道 | ✅ | 4 字节一段读，形状与梯子一致（附录 BV/BW）|
-> | 卡中断检测 | ✅ 绕开 | 轮询兜底 + 控制器状态位 + 正确的中断清理（附录 BR/BS/BU）|
-> | ISR 风暴 / 整机复位 | ✅ 已消除 | 根因是 ISR 未清 `CMD_DONE`（附录 BW.8）|
-> | 从机（C6）方向 | ✅ 正常 | 从机日志：`Open Data Path` → `Send slave up event`（附录 BW.13）|
-> | wlan0 数据面 + 控制面（scan/connect/SSID）| ✅ 已实现并编入镜像 | `eh_hosted_netdev.c`（附录 BI/BL）|
-> | **caps 握手 / RPC / wlan0 运行时** | 🔴 **未通** | **传输层第一次寄存器读不返回**（附录 BW.14 的单次启动日志）|
+> | ① 官方 ESP-IDF 基准 | ✅ **复现成功** | 补全官方 `card_fn_init` 后 FN1 可读写、报文载荷真实（`*** DATA ARRIVED ***`），附录 BZ |
+> | 官方 esp-hosted 主机栈接入 NuttX | ✅ 编译 / 链接 / 运行 | 栈自身日志：`Card init success`、`Open data path at slave`（附录 AV–AX）|
+> | NuttX 薄移植层（端口层） | 🔧 **本轮修掉 4 处缺陷** | 附录 BY.2：块传输地址掩码（根因）、`card_fn_init` 缺两步、寄存器传输形状、中断等待兜底 |
+> | SDIO 寄存器通道 | ✅ | 20 字节单次 CMD53 读窗口，与逐寄存器读一致（BY.3）|
+> | SDIO 数据通路 | ✅ | 报文窗口 `ESP_SLAVE_CMD53_END_ADDR - len` 读到真实载荷（BZ.1）|
+> | 卡中断（DAT1） | ✅ | CCCR 0x04 写成 0x03 后，官方主机 11 ms 内收到中断，`INT_ST` bit23 置位（BZ.1）|
+> | 从机（C6） | ✅ 正常 | ROM 横幅 `ESP-ROM:esp32c6-20220919`，`boot.esp32c6`，持续 `TX evt → host`（BZ.3）|
+> | ③ caps 握手 / RPC | ⏳ 端口修复后复测 | 判据见 BY.4 |
+> | ④ wlan0 scan/connect | ⏳ | 数据面 + 控制面已实现编入镜像（附录 BI/BL）|
 >
-> **本轮之后唯一剩下的问题**：传输层启动后第一次读寄存器
-> （`read_reg addr=0x3ff55050 size=20`）不返回，而 bring-up 梯子里同样形状的调用能成功。
-> 已经从多个角度排除：线程上下文（BV.11）、端口锁（BV.3）、ISR 风暴（BW.8）、
-> 缓存混用造成的假象（BW.14，已修正取证管道）。
+> **本轮的核心修正**：以前把"传输层第一次寄存器读不返回"归因于从机/硬件，是因为**那次
+> "官方差分"本身不成立**——探针跳过了官方必须的 `card_fn_init`，而 IDF 的 `sdmmc_card_init()`
+> 从不写 CCCR 0x02/0x03/0x04。补全之后，同一条链路、同一颗 C6 立刻可读（附录 BZ）。
 >
-> ### 下一步（三条，按性价比）
+> ### 下一步
 >
-> 1. **参数逐项对比**：把梯子里那次成功调用的完整参数（device 句柄、命令字、长度、块模式位）
->    与端口这次调用逐项打印对比——取证管道已能只取"当前这次启动"，对比不会被缓存干扰；
-> 2. **写方向对称化后的复测**：端口写已改成 4 字节一段（附录 BW.13），配合从机日志再确认握手；
-> 3. **用分析仪解码这次读**：`tools/test/evidence.py --reset --analyzer 60 --decode` 会同时给
->    串口与解码后的帧，能直接看出这条 CMD53 在线上发到哪一步。
->
-> ### 真机取证的常用命令（本轮之后）
->
-> ```sh
-> python3 tools/test/evidence.py --reset --seconds 180 --analyzer 180 --decode --tag <名字>
-> python3 tools/test/ocd.py pc     # OpenOCD telnet 停住看现场（GDB 连不上时用这个）
-> ```
-> 产物在 `logs/<时间戳>_<tag>/`：`boot.txt`（**只含当前这次启动**）、`console.txt`、`decoded.txt`。
+> 1. 选项打开重构建 → 烧录 → `python3 tools/test/evidence.py --reset --seconds 180 --analyzer 180 --decode --tag <名字>`；
+> 2. 判据：出现 `read_block addr=0x1f7c4 (masked would be 0x3c4)`、报文被读走、`PACKET_LEN` 归零/推进、无 `TRANSPORT_FAILURE`；
+> 3. 之后按 ③（caps/RPC）→ ④（wlan0 暴露与 scan/connect）推进。
 >
 > ---
 
@@ -73,6 +62,22 @@ nuttx/arch/risc-v/src/esp32p4/esp-hal-3rdparty/components/soc/esp32p4/include/so
 （C5 与 C6 在 J1 引出上也能对上：J1 pin 35 = GPIO53 与 PA 使能复用，
 pin 32 = GPIO54 与 **C5 使能**复用 —— 官方表脚注写明"move R76 to R80 to disable
 the ESP32-P4 control of the ESP32-C5 enable function"。）
+
+> ⚠️ **2026-11-01 更正：本板从机是 ESP32-C6，不是 C5。** 上面这段结论来自
+> `ESP32_P4X_C5_Function_EV_board-2.0` 这份**变体**原理图，而不是本板实物。实测证据（附录 BZ.3）：
+>
+> ```
+> ESP-ROM:esp32c6-20220919
+> rst:0x1 (POWERON),boot:0xc (SPI_FAST_FLASH_BOOT)
+> I (24) boot: chip revision: v0.2
+> I (24) boot.esp32c6: SPI Speed      : 80MHz
+> ```
+>
+> 即从机自身 UART 报出的是 **esp32c6 ROM 与 esp32c6 二级引导**；本板从机固件也是用
+> `esptool --chip esp32c6` 写入并正常运行的。与官方 Kconfig 对
+> `ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD + ESP_HOSTED_CP_TARGET_ESP32C6` 的默认值
+> （`CMD=19 CLK=18 D0..D3=14-17`、slave reset `GPIO54`，见 `Kconfig.host.sdio`）完全一致。
+> 第 62 行起的"C5"结论作废；芯片类型以 ROM 横幅为准。
 
 ### 1.3 NuttX/openvela 树里**没有任何 esp-hosted 实现**
 
@@ -13293,5 +13298,233 @@ I (2739) p4sdio: probe done
 | ② 官方主机栈 + NuttX 薄移植层 | ✅ 完成并**被这次差分证明无责** |
 | ③ RPC / ④ wlan0 | 阻塞在 FN1 不可用（硬件/从机状态），非软件 |
 
-**下一步唯一有效动作**：整板主电源断电 ≥10 秒（或换一块板），然后重跑
-`tools/test/evidence.py --reset --seconds 180 --analyzer 180 --decode --tag post-powercycle`。
+> ⛔ **上面这条"整板断电"的建议已作废。** 结论修正见附录 BY：故障在移植层，
+> 用 C6 的 GPIO54 软复位 + P4 的 USB-JTAG 软复位即可回到干净状态，**不需要人工断电**。
+
+### 附录 BY —— **根因：端口层把"报文窗口地址"当成"寄存器地址"掩掉了**（2026-11-01）
+
+本节同时**撤回附录 BX 的结论**，并给出可复现的真机证据。
+
+#### BY.1 附录 BX 为什么无效（证据是 IDF 自己的源码）
+
+BX 的推理是"官方主机栈在同一块板上同样失败 → 不是软件问题"。这个推理有一处硬伤：
+**那次探针跳过了官方端口必须执行的一整段卡初始化**。
+
+- 官方端口有 `eh_host_port_sdio_card_fn_init()`（`port/os/idf/src/eh_host_port_sdio.c:155`，
+  由 `card_init` 在 `:460` 调用），内容是：CCCR `0x02` 置 FN1 使能 → **轮询 CCCR `0x03`
+  等 FN1 ready**（10 次 × 10 ms）→ CCCR `0x04` 写 `BIT(0)|BIT(1)`（主使能 IENM + FN1）
+  → FN0/FN1 块大小 512 并**回读校验**。
+- IDF 的 `sdmmc_card_init()` 完全不碰这三个寄存器：
+  `SD_IO_CCCR_FN_ENABLE / FN_READY / INT_ENABLE / FBR_START` 在 `components/sdmmc` 内
+  **零引用**（grep 证据），而 `sdmmc_io.c:66-68` 的 `sdmmc_io_reset()` 还会写
+  CCCR `0x06 = RES`（复位卡的 I/O 功能）。
+- 于是探针后续的 FN1 访问超时（`0x107`）是**必然结果**：功能没使能，从机不响应。
+  **这条超时不是硬件证据。**
+
+分析仪解码把同一条事实留在了线上（同一次抓取，`CMD52` 参数按 SDIO 规范解码）：
+
+```
+CMD52 cmd arg=0x80000c08     # 写 CCCR 0x06 = 0x08 (RES)：IDF 的 sdmmc_io_reset()
+...
+CMD52 cmd arg=0x00000400     # 读 CCCR 0x02；rsp 数据字节 = 0x00  -> FN1 未使能
+CMD52 cmd arg=0x88000402     # （修复后的探针）写 CCCR 0x02 = 0x02 -> FN1 使能
+CMD52 cmd arg=0x00000600     # 读 CCCR 0x03；rsp 0x00001002      -> IO_RDY bit1 已置
+CMD52 cmd arg=0x88000803     # 写 CCCR 0x04 = 0x03              -> IENM + FN1
+CMD52 cmd arg=0x88022000     # 写 FBR 0x110 = 0x00 / 0x88022202 -> FN1 块大小 512
+```
+
+#### BY.2 四个缺陷（对照官方端口）
+
+| # | 位置 | 官方行为 | 我们原来的行为 | 后果 |
+|---|---|---|---|---|
+| **B1（根因）** | `port/os/nuttx/src/eh_host_port_sdio.c` 的 `read_block`/`write_block` | 只在 `read_reg`/`write_reg` 掩码，**块传输不掩码** | 四个入口都做了 `reg &= ESP_ADDRESS_MASK` | 官方调用点是 `ESP_SLAVE_CMD53_END_ADDR - data_left`（60 字节报文 = `0x1F7C4`），掩码后变 `0x3C4` → 收发数据阶段全部落到寄存器窗口 → 从机缓冲永不排空（`PACKET_LEN` 恒 `0x03c0003c`）、`INT_ST` bit23 恒置位、caps 握手永不完成 |
+| B2 | `card_init` | `card_fn_init`：轮询 CCCR `0x03` + 写 CCCR `0x04 = 0x03` + 块大小回读 | 只写 `0x02` 与块大小，失败仅告警 | 从机没有 IENM 就不允许驱动 DAT1 → 主机等中断永远等不到：附录 BR/BS 记的"从机不断言"，其实是**主机没开** |
+| B3 | `read_reg`/`write_reg` | `size==1` 用 CMD52；`size>1` 用**一次** `size` 字节 CMD53 | 4 字节分块循环 | 破坏 transport 读 `INT_RAW..PACKET_LEN`（20 字节）的原子形状；而这个 workaround 的观察**早于**掩码修复，属于被污染的证据 |
+| B4 | `wait_slave_intr` | `sdmmc_io_wait_int(card, ticks)` 真等卡中断 | 永久等待 = 每 20 ms 轮询一次并 `return ESP_OK` | 把"中断路径坏了"掩盖成"成功"，让故障看起来像从机不说话 |
+
+**回归来源**：B1 是修附录 BV 的"寄存器读到 `1c 1c 1c 1c`"时加上的掩码——
+寄存器确实需要掩码，**块传输绝对不需要**，当时"为了四个入口一致"一起加上了。
+
+#### BY.3 修复内容（本轮）
+
+| 文件 | 改动 |
+|---|---|
+| `port/os/nuttx/src/eh_host_port_sdio.c`（NuttX 树内为构建源，vendor 树内为镜像，两份逐字同步，仅 include 行不同） | 新增 `sdio_port_transfer()`：按官方 `sdio_read_fromio()/sdio_write_toio()` 的形状传输（≥512 用 512 字节块模式分块，余量用一次字节模式），**不做地址掩码**；`read_block`/`write_block` 改用它 |
+| 同上 | `card_init` 补全 `card_fn_init`：CCCR `0x02` 写后回读、**轮询 CCCR `0x03`**（10×10 ms，失败即报错返回）、CCCR `0x04 = IENM|FN1` 写后回读、FN0/FN1 块大小**回读校验** |
+| 同上 | `read_reg`/`write_reg`：`size==1` 走 CMD52，`size>1` 走**一次** `size` 字节 CMD53（>512 交给块路径）；寄存器仍保留掩码 |
+| 同上 | `wait_slave_intr`：切成 100 ms/1 s 的片真正等卡中断，并分别计数/打印"中断命中"与"轮询兜底"，不再把超时伪装成成功 |
+| `esp_hosted_sdio.c` | bring-up 诊断增加一次 **20 字节单次 CMD53 读 `0x50`**（transport 的真实形状），与逐寄存器读并列打印 |
+| `tools/test/p4_sdio_host_idf/main/main.c` | 探针补全官方序列（`card_fn_init` + 未掩码报文窗口读 + 4-bit + 正确的 `HOST_TO_SLAVE_INTR=0x01`），成为**有效**的官方基准 |
+
+#### BY.4 端口侧真机判据（复测用）
+
+```
+read_block addr=0x1f7c4 (masked would be 0x3c4) size=512 ret=0 ...
+CCCR 0x02 IOEx before: 00 / after: 02
+CCCR 0x03 IO_RDY=02
+CCCR 0x04 INT_ENABLE before: 02 / after: 03
+slave interrupt (hit #N)        # 或 "no card interrupt within ... polling ..."
+```
+
+通过 = 报文被读走（`PACKET_LEN` 归零或推进）、transport 不再 `TRANSPORT_FAILURE`、
+且日志里能同时看到"未掩码的报文地址"与"CCCR 0x04 = 03"。
+
+> ⏳ 端口侧的真机复测日志（构建 → 烧录 → `evidence.py --decode`）在完成后补记于本节之下。
+
+#### BY.5 端口侧真机复测（第 65 轮）：三个新事实
+
+修好的端口代码确实在真机上跑到了（`eh_hosted_nuttx: transport config …` →
+`eh_sdio: sdio bus init done` → `eh_mcu_transport: transport_init: bus backend up`
+→ 端口 `card_init`），但暴露出三件新事情：
+
+**(1) 从机只服务"多字节寄存器读"的前 4 字节。** 这一点用**参考主机**判的（见 BZ.5）：
+同一地址的 20 字节读只带回前 4 字节，4 字节读带回真值。所以端口的寄存器读**必须拆成
+4 字节**（本轮已按此实现；原先"恢复官方单次 size 字节"的改法是错的，改由证据纠正）。
+
+**(2) bring-up 的最后一次 CMD53 会把控制器留在"命令不再完成"的状态。**
+
+```
+esp_hosted_sdio: CMD53 read 1x512 from FN1: ret 0, first word 00000000   ← 声明成功，却一个字节没搬
+...（官方栈启动、端口 card_init 开始）...
+esp_sdmmc: issue CMD52 arg=0x00000000
+esp_sdmmc: CMD52 resp 00000000 -> 00000000 unchanged (rintsts=00000000)  ← 连 FN0 的 CMD52 都不完成
+esp_sdmmc: waitresponse -> -ETIMEDOUT
+esp_sdmmc: clock update (clock disabled): DID NOT COMPLETE (wrote=a0212000 read=a0212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command did NOT complete ... falling back to a controller reset
+esp_sdmmc: issue CMD5 ... -> waitresponse -> -ETIMEDOUT
+eh_host_port_sdio: sdio_probe failed: -22
+```
+
+判读：`clock update` 是**控制器内部**命令（不碰总线），它也不完成 → **卡住的不是从机，
+而是 CIU 的数据状态机**（`ctrl=02000030`、`rintsts=0`）。也就是说驱动把一次"只搬了 0/4 字节"
+的传输当成完成，数据状态机却仍停在数据阶段；此后 FN0 的 CMD52 也排在它后面永远轮不到。
+
+⇒ 两条待办（下一轮）：
+- **驱动侧（`esp_sdmmc.c`）**：数据阶段必须按"请求长度"搬完（现在只看一次 FIFO_COUNT 采样，
+  `status[29:17]` 只有 1 个字就只搬 4 字节），并且只在 CIU 真正回到空闲时才宣告完成——
+  这正是附录 BT/BU 一路挖到的那块代码；
+- **交接侧（`esp_hosted_sdio.c`）**：官方栈选中时，bring-up 不应再做**任何数据搬运**
+  （梯子、周期扫描、scratch 回环、`CMD53 read 1x512`），只保留 复位 → 控制器 → 枚举 →
+  CCCR → 时钟，然后把一条**没被用过的总线**交给 transport（该文件 1092-1097 的注释本来
+  就是这个约定，但当时只截短了 receive loop，没截短前面的实验）。
+
+**(3) 驱动侧的"搬完再宣告完成"已改，但交接处仍然卡住。** 已把 `DATA_OVER` 的处理改成
+"先把剩余字节从 FIFO 取完再置 `TRANSFERDONE`"（`esp_sdmmc.c`，带 200 次空轮询的上界），
+重编重烧后现象不变：
+
+```
+eh_sdio: transport[host]: SDIO 4-bit 40000 kHz ...
+eh_sdio: SDIO clock freq set to [40000]KHz, Max possible (on PCB) is 50000KHz   ← 只是打印
+eh_sdio: sdio bus init done
+eh_mcu_transport: transport_init: bus backend up
+eh_host_feat_rpc: event task started ...
+esp_sdmmc: issue CMD52 arg=0x00000000        ← 交接后第一条命令，`rintsts=0` 永不完成
+```
+
+即**问题不在数据搬运的收尾**，而在**交接那一刻 CIU 就已经不能启动任何命令**（连不碰总线的
+clock-update 内部命令都不完成）。下一轮要判的两条：
+- 端口的 `eh_host_port_sdio_init()` 又调了一次 `esp_sdmmc_initialize(slot)`（bring-up 已经调过），
+  第二次初始化对**已选中的卡**做了什么；
+- bring-up 的数据实验是否把 CIU 的数据状态机留在非空闲（对照：选项关闭时同样的实验之后，
+  接收循环还能每 5 s 成功发一次 sweep，说明"实验"本身不必然卡死控制器，**交接动作**才是变量）。
+
+已经排除的一条：端口 `eh_host_port_sdio_init()` 里的第二次 `esp_sdmmc_initialize(slot)`
+**不会**重新初始化控制器——该函数开头就是 `if (priv->initialized) return &priv->dev;`。
+
+### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
+
+#### BZ.1 做法
+
+把 `tools/test/p4_sdio_host_idf` 的探针按官方端口补全（见 BY.3 末行），
+烧到同一块 P4，复位后读串口（`logs/20261101-021222_baseline-idf-probe/`）。
+
+#### BZ.2 结果（串口原文，节选）
+
+```
+I (1915) p4sdio: before fn_init: rev=0x32(r0) IOEx=0x00(r0) IO_RDY=0x02(r0) INT_ENA=0x00(r0) BUS_WIDTH=0x42(r0)
+I (1925) p4sdio: CCCR 0x02 IOEx write 0x02 -> ESP_OK (card echoed 0x02)
+I (1935) p4sdio: CCCR 0x03 IO_RDY try 0: 0x02
+I (1944) p4sdio: CCCR 0x04 INT_ENABLE after: 0x03 (want 0x03)
+I (1950) p4sdio: FN0 block size: wrote 512, read back 512 (err ESP_OK)
+I (1956) p4sdio: FN1 block size: wrote 512, read back 512 (err ESP_OK)
+I (1970) p4sdio: set_card_clk(40000 kHz) -> ESP_OK
+I (2025) p4sdio: FN1 INT_RAW at 40 MHz: 0x00084000 (ESP_OK) -- FN1 answers at 40 MHz
+I (2025) p4sdio: HOST_TO_SLAVE_INTR <- 0x01 (ESP_OPEN_DATA_PATH) -> ESP_OK
+I (2043) p4sdio: [0] wait_int=ESP_OK after 11 ms | INT_RAW=0x00cc4000(ESP_OK) new_packet=1 | LEN=0x03c0003c(ESP_OK) len=60 | TOKEN=0x00021000(ESP_OK)
+I (2045) p4sdio:     INT_ST=0x00800000 (ESP_OK)
+I (2049) p4sdio:     payload: block mode 512 B @0x1f7c4 (masked would be 0x3c4) -> ESP_OK
+I (2057) p4sdio:     payload: 05 00 30 00 0c 00 00 00 00 00 00 33 22 2e 12 01
+I (2064) p4sdio:     *** DATA ARRIVED ***
+I (2068) p4sdio:     INT_CLR <- 0x00800000 (ESP_OK)
+I (3733) p4sdio:     payload: byte mode 360 B @0x1f698 (masked would be 0x298) -> ESP_OK
+I (3740) p4sdio:     payload: 03 00 1d 01 0c 00 00 00 02 00 00 00 01 06 00 52
+I (3747) p4sdio:     *** DATA ARRIVED ***
+```
+
+读法（四条，每条都是本轮之前没有的事实）：
+
+1. **`before fn_init: IOEx=0x00`、`IO_RDY=0x02`** —— 从机一直报 FN1 ready，是主机没使能它；
+   这正是旧探针 FN1 超时的原因（BY.1）。
+2. **CCCR `0x02` 写 0x02、`0x04` 写 0x03 之后，`wait_int=ESP_OK after 11 ms`、`INT_ST=0x00800000`**
+   —— 卡中断（DAT1）**是工作的**：一旦主使能被正确编程，从机 11 ms 内就把 new-packet 送上来了。
+   这直接推翻了附录 BR/BS"从机不断言"的解释。
+3. **`payload ... @0x1f7c4 (masked would be 0x3c4) -> ESP_OK` 且载荷为真实数据**
+   —— 报文窗口地址一旦不被掩掉，数据阶段立刻完成。`0x03c0003c`（len=60）就是 NuttX 侧
+   卡了很久的那个 pending 报文。
+4. **`FN1 INT_RAW at 40 MHz: ... FN1 answers at 40 MHz`**
+   —— 旧探针注释里"40 MHz 后从机不再应答"的说法也不成立（那是 FN1 没使能的后果）。
+
+#### BZ.3 同一轮从机（C6）侧的观察
+
+- ROM 横幅：`ESP-ROM:esp32c6-20220919` / `boot.esp32c6` / `chip revision: v0.2`
+  → **从机是 ESP32-C6**（更正第 1.2 节的 C5 结论）。
+- 从机应用在跑，并**持续往主机方向排队事件**：
+  `I (10587) ehcp_event_handler: TX evt → host: event_id=1 msg_id=0x0309 len=261`
+  —— 它自己的 `eh_example_sta` 每隔 ~2.4 s 重试一次连接（`reason 201: NO_AP_FOUND`，
+  即"编译进从机的 SSID 不在范围内"），每次都产生 261 B / 41 B 两个事件。
+  **一个从不排空这些报文的主机必然把它拖死**，这正是 B1 造成的状态。
+- 附带结论（对目标④的意义）：当前烧在 C6 上的是"从机侧自己连 AP"的示例固件
+  （`eh_example_sta` + `ehcp_nw_split`）。主机侧要用 `wifi_scan/connect` RPC 驱动，
+  需要的是 **network_adapter（纯 RPC 从机）** 那一版；届时按目标④的要求处理。
+
+#### BZ.4 结论
+
+**验收①成立**：同一条链路、同一颗 C6、同一组引脚，官方的 ESP-IDF 主机栈
+在这块板上完整读到了从机的报文（"已知良好的 SDIO 数据通路"已复现并留证）。
+此前"官方基准也失败"的唯一原因是**主机序列不完整**，而不是硬件。
+
+> 备注（取证工具的待办）：本轮的分析仪解码在 FN1 阶段的 CMD53 帧没有解出来
+> （`decoded.txt` 只到 2.5 s 的 CMD52 段），需要用一次"已知必有 CMD53"的抓取
+> 校准 `tools/test/pxview/frames.py`；串口侧的证据（请求地址 / 掩码后的地址 / 载荷）不依赖它。
+
+#### BZ.5 判决性追问：从机到底服务多长的寄存器窗口读？
+
+transport 读的是 `INT_RAW..PACKET_LEN`（`0x50..0x63`，20 字节）**一次**读完。NuttX 侧那次
+20 字节读"ret=0 但只写进前 4 字节"（附录 BY.5），这有两种解释——驱动少搬了，还是从机只发
+4 字节——而两者的修法完全不同。于是把同一个读加到**参考主机**上（`p4_sdio_host_idf`）：
+
+```
+I (2025) p4sdio: FN1 INT_RAW at 40 MHz: 0x00084000 (ESP_OK) -- FN1 answers at 40 MHz
+I (2025) p4sdio: window 0x50 x20 -> ESP_OK bytes=00400800 00000000 00000000 00000000 00000000
+I (2029) p4sdio: window 0x50 x4  -> ESP_OK bytes=00400800
+I (2034) p4sdio: window 0x54 x4  -> ESP_OK bytes=00000000
+...
+```
+
+（缓冲区先填 `0x5a`；若那段是"驱动没写"，读回就该是 `5a`——参考主机读回的是 `00`，
+说明**从机确实发来了 16 个 0**，只有第一个 4 字节窗口有内容。）
+
+结论：**这颗从机的寄存器窗口读只保证前 4 字节**，与主机栈无关。端口的寄存器读因此拆成
+4 字节一段（BY.5(1)），而**报文窗口不受此限**——参考主机在同一次运行里读 60 / 360 字节的
+报文载荷都拿到了真实数据（BZ.2），所以 `read_block`/`write_block` 仍按官方的块/字节形状走。
+
+#### BZ.6 构建环境的两条坑（复现用）
+
+1. `nuttx/arch/risc-v/include/board` 是 `tools/configure.sh` 管理的软链；本轮它被另一份
+   （esp32c6-devkitc 的）配置指走，导致**干净配置**后 `<build>/include/arch/board` 指向错误的
+   板级头文件，本板源码编译失败（`BOARD_MIPI_DSI_LANES undeclared`、
+   `arch/board/esp32p4_audio_es8311.h not found`）。修法：把构建目录里的
+   `<build>/include/arch/board` 指回本板 `include/`（只动构建目录）。
+2. `apps/builtin/builtin_list.h`（`.gitignore` 里的**生成物**）会被写进源码树；若上一次构建是
+   别的板/别的配置，它会列出别的 app（本轮列出 `dumpstack/getprime/ostest`），链接期报
+   `undefined reference to xxx_main`。修法：用当前构建目录里生成的同名文件覆盖它。

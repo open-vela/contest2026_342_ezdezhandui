@@ -456,11 +456,16 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
 
   if (forever)
     {
-      if (esp_sdmmc_wait_card_intr(c->dev, EH_SDIO_INTR_POLL_MS))
+      static uint32_t calls;
+
+      calls++;
+      if (calls <= 20 || (calls % 50) == 0)
         {
-          return ESP_OK;
+          syslog(LOG_INFO, "%s: wait#%u (forever) -> polling\n",
+                 SDIO_TAG, (unsigned)calls);
         }
 
+      (void)esp_sdmmc_wait_card_intr(c->dev, EH_SDIO_INTR_POLL_MS);
       return ESP_OK;
     }
 

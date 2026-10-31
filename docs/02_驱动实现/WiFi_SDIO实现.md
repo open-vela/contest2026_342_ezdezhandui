@@ -12566,3 +12566,25 @@ esp_hosted_sdio: sweep[0] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
 **没有出现 read_reg 的打印** —— 说明这一版里传输层没有走到读那一步。
 下一轮要确认的是：我们的 wait 到底有没有被反复调用、返回值被谁吞了
 （在 wait 里加一个**计数心跳**打印即可判定），必要时改成"直接读 INT_RAW 再返回"的主动轮询。
+
+#### BU.6 轮询兜底生效了，但传输层卡在**总线锁**上（本轮实测）
+
+加了计数心跳后实测（`logs/…_wait-heartbeat`）：
+
+```
+eh_sdio: --- SDIO intr received ---      ← 出现 2 次，说明我们的 wait 已经成功"唤醒"了传输层
+eh_host_port_sdio: wait#1 (forever) -> polling
+（read_reg 打印：0 次）
+```
+
+读传输层源码，wait 之后紧接着是：
+
+```c
+SDIO_DRV_LOCK();                      // eh_host_port_mutex_lock(sdio_bus_lock)
+if (sdio_read_regs(reg_buf)) { ... }   // 这一步会调我们的 read_reg
+```
+
+而 `read_reg` 的**入口**都没进（打印在函数末尾，0 次）——所以卡在 `SDIO_DRV_LOCK()`：
+**总线锁被别人持有**，最可能是某条 TX/RX 任务正卡在传输里（我们的 `write_block`/`read_block`）
+没返回。下一步就把"谁持着 sdio_bus_lock"查出来：在端口的 mutex 包装（POSIX 端口那个）上加
+持锁者/等待者的打印即可定位。

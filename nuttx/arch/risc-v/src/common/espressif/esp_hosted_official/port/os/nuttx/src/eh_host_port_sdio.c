@@ -36,6 +36,7 @@
 
 #include "eh_host_port_config.h"
 #include "eh_host_port_sdio.h"
+#include "eh_host_port_sync.h"
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
 
@@ -351,6 +352,12 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }
 
+/* Longest slice handed to the driver's card-interrupt wait, in milliseconds.
+ * Keeping it well under 2^31 stops MSEC2TICK() from wrapping.
+ */
+
+#define EH_SDIO_INTR_SLICE_MS 1000
+
 /****************************************************************************
  * Name: eh_host_port_sdio_wait_slave_intr
  *
@@ -367,13 +374,50 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
 {
   struct eh_host_port_sdio_ctx_s *c =
     (struct eh_host_port_sdio_ctx_s *)ctx;
+  bool     forever;
+  uint32_t remaining;
 
   if (c == NULL || c->dev == NULL)
     {
       return ESP_FAIL;
     }
 
-  return esp_sdmmc_wait_card_intr(c->dev, ticks_to_wait) ? ESP_OK : ESP_FAIL;
+  /* Walk the wait in bounded slices.
+   *
+   * This function used to hand the stack's timeout straight to the driver, and
+   * the transport asks for EH_HOST_PORT_WAIT_FOREVER (0xffffffff).  The driver
+   * converts milliseconds to ticks, so that value wraps and the wait ends
+   * immediately -- measured on hardware: the transport spun on
+   * "wait_slave_intr error: -1" thousands of times a second instead of
+   * blocking.  Slicing keeps every conversion in range; in practice the card's
+   * interrupt is what ends the wait.
+   */
+
+  forever   = (ticks_to_wait == EH_HOST_PORT_WAIT_FOREVER);
+  remaining = ticks_to_wait;
+
+  for (; ; )
+    {
+      uint32_t slice = (forever || remaining > EH_SDIO_INTR_SLICE_MS) ?
+                       EH_SDIO_INTR_SLICE_MS : remaining;
+
+      if (esp_sdmmc_wait_card_intr(c->dev, slice))
+        {
+          return ESP_OK;
+        }
+
+      if (forever)
+        {
+          continue;
+        }
+
+      if (remaining <= slice)
+        {
+          return ESP_ERR_TIMEOUT;
+        }
+
+      remaining -= slice;
+    }
 }
 
 #endif /* CONFIG_ESPRESSIF_HOSTED_OFFICIAL */

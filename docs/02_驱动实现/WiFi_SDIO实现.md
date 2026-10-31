@@ -11796,3 +11796,48 @@ eh_sdio: --- Wait for SDIO intr ---
 断电恢复后重烧本镜像，预期串口继续往前走到 caps 握手成功与 RPC 往返（目标③）；
 若 `wait_slave_intr` 仍返回 -1，则回头查 `esp_sdmmc_wait_card_intr()` 的 D1 电平判断
 （它先读引脚、再等中断，与 ESP-IDF `sdmmc_host_io_int_wait` 同构）。
+
+### 附录 BF —— 路线 B 第 11 步：**官方栈走完卡初始化，停在 caps 交换**（2026-11-01）
+
+#### BF.1 修掉的那个 bug：`EH_HOST_PORT_WAIT_FOREVER` 溢出
+
+上一轮串口里 `wait_slave_intr error: -1` 每秒刷几千次。追到我们的端口函数：
+
+```c
+return esp_sdmmc_wait_card_intr(c->dev, ticks_to_wait) ? ESP_OK : ESP_FAIL;
+```
+
+栈传的是 `EH_HOST_PORT_WAIT_FOREVER = 0xFFFFFFFF`，而驱动内部是
+`MSEC2TICK(timeout_ms)`——`0xFFFFFFFF × 1000` 溢出 → 超时条件**立刻成立** → 函数马上返回
+false（不是"等不到中断"，是"根本没有等"）。
+
+修法：端口自己按 **1 秒切片**循环调用（保持每次换算都在范围内），语义上仍是"等到中断为止"；
+有限超时则返回 `ESP_ERR_TIMEOUT`（栈把它当"继续"而不是错误）。
+
+#### BF.2 修完之后的串口（真机）
+
+```
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512, CLK io_-1 CMD io_-1 D0..D3 -1,-1,-1,-1
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_reconfigure: bring-up failed after 3 re-attempts; restarting host
+eh_host_xport: TRANSPORT_FAILURE: aborting host process
+```
+
+逐条读：
+
+1. **`card ready: slot 1, 4-bit, block 512`** —— 官方栈通过我们的端口**成功初始化了卡**
+   （枚举、4-bit、块大小都下来了），这是路线 B 第一次走到这一步；
+2. **`Card init success, TRANSPORT_RX_ACTIVE`** —— 传输层起来了、接收任务在跑；
+3. 之后 **caps 交换超时** → 按我们配置的 `CP_BRINGUP_ON_TIMEOUT_REATTEMPT` 重试 3 次
+   → `restarting host` → `TRANSPORT_FAILURE`；
+4. 期间 CMD53 写是**成功**的（`INT_CLR as one 4-byte CMD53 write: ret 0`，
+   `issue CMD53 arg=0x1fef8801` 就是写 `HOST_TO_SLAVE_INTR`）。
+
+也就是说：**软件链路（端口层 + 传输 + 卡初始化）已确认可用**，卡住的是
+caps 交换所依赖的从机数据阶段——与附录 AU/AY 的硬件判决一致。
+
+#### BF.3 下一步
+
+断电恢复后重烧本镜像（md5 `4bbfb1b9…`），预期越过的就是 BF.2 的第 3 条：
+caps 交换完成 → 目标③（RPC 往返）；之后才是目标④（wlan0 netdev）。

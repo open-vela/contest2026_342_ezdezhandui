@@ -10,7 +10,10 @@ target_sources(arch PRIVATE
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
 )
 
-target_include_directories(arch PRIVATE
+# BEFORE: the stack includes <freertos/FreeRTOS.h> and friends, and this port's
+# self-contained shims must win over the tree's freertos_compat layer (whose
+# implementation lives in the untracked MCUboot subtree; see appendix AT).
+target_include_directories(arch BEFORE PRIVATE
   ${EH_HOSTED_NUTTX_DIR}/include
   ${EH_HOSTED_NUTTX_DIR}/../include
   ${EH_HOSTED_NUTTX_DIR}/../../../common/eh_common/include

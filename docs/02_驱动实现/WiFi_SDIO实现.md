@@ -11318,3 +11318,46 @@ GPIO54 能让 C6 芯片重启，但**重启后它的 SDIO slave 数据阶段依�
 
 恢复后的验收顺序不变：① `sweep[0] summary` 回到 `r1=r4=r20=0`；
 ② 读方向连续多笔稳定；③ 再谈写方向与 CMD53 路线。
+
+### 附录 AV —— 路线 B 第 3 步：自带 FreeRTOS shim，官方栈 10/16 模块编过（2026-11-01）
+
+#### AV.1 做了什么
+
+在 `port/os/nuttx/include/freertos/` 下写了一套**自包含**的 FreeRTOS 门面
+（`FreeRTOS.h` / `semphr.h` / `task.h` / `queue.h`），只用 NuttX 原语：
+
+| 头 | 实现基础 |
+|---|---|
+| `FreeRTOS.h` | 标量类型 + `pdTRUE/pdFALSE/portMAX_DELAY/pdMS_TO_TICKS`（tick 当毫秒用，与树里既有兼容层一致） |
+| `semphr.h` | `nxsem`（二值信号量）/ `nxmutex`（互斥量），句柄是堆上的小对象 |
+| `task.h` | `kthread_create` / `nxsched_cancel` / `nxsig_usleep`（`*WithCaps` 变体等价折叠） |
+| `queue.h` | NuttX 消息队列 `mq_open/mq_send/mq_timedreceive` |
+
+**为什么不用树里已有的 `freertos_compat/`**：它建立在 `platform/os.h` 上，而那份 shim 的实现体
+在 `bootloader/esp-hal-3rdparty-mcuboot/` 那棵**未被 git 跟踪**的子树里（附录 AT/AI）——
+评审环境重建就没有了。所以端口自带一套，并且 `CMakeLists.txt` 用
+`target_include_directories(arch BEFORE ...)` 让它在 include 顺序上**先于**那层兼容层。
+
+（第一次写时撞过 `conflicting types for SemaphoreHandle_t`：因为兼容层的 `queue.h` 把
+`SemaphoreHandle_t` 定义成队列句柄。把端口 include 放到最前就解决了，这也是 BEFORE 的原因。）
+
+#### AV.2 覆盖度实测（真实构建 flags，逐个语法编译）
+
+| 范围 | 结果 |
+|---|---|
+| 叶子模块：`eh_mempool.c`、`eh_mempool_ll.c`、`eh_check.c`、`eh_frame.c` | ✅ |
+| 端口层：`eh_host_port_sdio.c` | ✅ |
+| `host/mcu/eh_host_mcu_transport/src/*.c`、`host/eh_host_config/src/*.c`、`common/eh_tlv/src/*.c`、`host/compat/src/*.c` 共 16 个 | **10 ✅ / 6 ❌** |
+
+剩余 6 个的缺口（都在预期内的"再补一点点"）：
+
+1. `eh_host_mcu_transport_channels.c` 等需要 **`esp_netif_types.h`** —— 路线 B 本来就不搬
+   esp_netif，但传输层用了它的**类型定义**；补一个只含 typedef 的空壳头即可（不引入实现）。
+2. `esp_hosted_compat.c` 需要 `eh_host_api_types.h` —— 是 include 路径没配全，不是缺实现。
+（另有两个 glob 没匹配到目录，属于统计噪声。）
+
+#### AV.3 验收
+
+- 默认配置（选项关闭）构建 **0 error**，`nuttx.bin` md5 **`e7be71a0…` 前后一致**；
+- 端口自带 shim 的 4 个头 + 端口源 + 4 个叶子模块，全部用真实工具链编过；
+- 下一轮：补 `esp_netif_types.h` 类型壳 + 把 16 个模块的 include 配全，然后接 CMake 变量映射。

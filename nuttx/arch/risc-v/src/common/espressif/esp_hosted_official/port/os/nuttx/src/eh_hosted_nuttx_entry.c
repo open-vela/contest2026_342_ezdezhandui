@@ -25,6 +25,8 @@
 
 #include "eh_host_core.h"
 
+#include "eh_hosted_nuttx.h"
+
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
 
 #define ENTRY_TAG "eh_hosted_nuttx"
@@ -66,6 +68,19 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
     }
 
   syslog(LOG_INFO, "%s: companion connected, transport ready\n", ENTRY_TAG);
+
+  /* wlan0 comes up once there is something to carry: the channel is registered
+   * with the stack here, and the network stack finds the interface when it
+   * configures it.  Goal stage 4 (scan/connect/DHCP) runs on top of it.
+   */
+
+  ret = esp_hosted_netdev_register();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "%s: wlan0 registration failed: %d\n", ENTRY_TAG, ret);
+      return ret;
+    }
+
   return OK;
 }
 

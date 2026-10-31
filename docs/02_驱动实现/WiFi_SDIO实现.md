@@ -11931,3 +11931,43 @@ I (17852) ehcp_event_handler: TX evt → host: event_id=2 msg_id=0x0308 len=41
 
 若断电后 DAT1 仍常低、CMD53 读仍无数据阶段，则**可以判定为从机硬件/固件层面的确定故障**
 （不是本移植层的问题）——本文件 BK 起的结论都建立在"软件侧已就绪"之上。
+
+### 附录 BI —— 路线 B 第 13 步：wlan0 的 NuttX netdev 接线完成（目标④的骨架）（2026-11-01）
+
+#### BI.1 结构：栈的 channel API ↔ NuttX netdev
+
+```
+NuttX 网络栈
+     |  netdev_input()   ^  d_txavail()
+     v                   |
+eh_hosted_netdev.c（net_driver_s，即 wlan0）
+     |  channel rx       ^  eh_host_transport_tx()
+     v                   |
+官方栈：eh_host_transport_add_channel(ESP_STA_IF, ...)
+     |  帧
+     v
+传输层 + 我们的 SDIO 端口
+     v
+C6 从机
+```
+
+路线 B 不搬 esp_netif/lwIP——它们在 IDF 里是给 lwIP 造 netif 的，NuttX 这边对应物就是
+`net_driver_s`。所以这层胶水**只有这一个文件**，上面完全不需要知道 esp-hosted 的存在。
+
+#### BI.2 实现要点（都是编译验证过的）
+
+| 关注点 | 做法 |
+|---|---|
+| 注册 | `netdev_register(&dev, NET_LL_ETHERNET)`，`d_buf` 用 `kmm_malloc(1500+64)` |
+| 发送 | **这版 NuttX 没有 `d_iftransmit`**，是 `d_txavail` 模型：网络栈把包放进 `d_buf/d_len` 后回调，驱动在里面调 `eh_host_transport_tx(ESP_STA_IF, 0, buf, len, 0)` |
+| 接收 | 栈的 channel 回调 `(h, buf, buff_to_free, len)` → 拷进 `d_buf` → `netdev_input(dev, NULL, false)` → 按 `buff_to_free` 释放 |
+| 上下线 | `d_ifup`/`d_ifdown` 只记状态（传输在启动时就绪） |
+| 注册时机 | `eh_host_init()` + `eh_host_connect_to_slave()` **成功之后**才注册——链路没通时不暴露半成品接口 |
+
+#### BI.3 现在的状态
+
+- 选项打开：**编译 + 链接 + 进镜像**，`nuttx.bin` md5 `0207bb03…`；
+- 运行时还没观察到（caps 握手都过不去，见附录 BH），所以 wlan0 在真机上**还不会出现**；
+- 目标④剩下的部分：`scan / connect / 取 IP` 要走官方栈 WiFi 特性的 RPC
+  （`host/features/eh_host_feat_*` 里的请求/响应族），与目标③同一条通道——即先把 RPC 打通，
+  再把这些调用接到 NuttX 的 `SIOCSIWSCAN`/`SIOCSIWESSID`/DHCP 客户端上。

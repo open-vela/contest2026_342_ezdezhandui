@@ -30,6 +30,17 @@
 
 int esp_hosted_official_start(void);
 
+/****************************************************************************
+ * Name: esp_hosted_netdev_register
+ *
+ * Description:
+ *   Create wlan0 and bind it to the stack's STA channel.  Called once the
+ *   stack is connected to the companion.
+ *
+ ****************************************************************************/
+
+int esp_hosted_netdev_register(void);
+
 #endif /* CONFIG_ESPRESSIF_HOSTED_OFFICIAL */
 
 #endif /* __EH_HOSTED_NUTTX_H */

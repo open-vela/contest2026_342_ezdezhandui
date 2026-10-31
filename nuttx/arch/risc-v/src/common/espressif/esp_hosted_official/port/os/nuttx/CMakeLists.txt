@@ -40,6 +40,7 @@ file(GLOB EH_HOSTED_STACK_SRCS
 set(EH_HOSTED_SRCS
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_event_extra_nuttx.c
+  ${EH_HOSTED_NUTTX_DIR}/src/eh_hosted_netdev.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_hosted_nuttx_entry.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_task_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/port_stubs.c

@@ -15,6 +15,28 @@
 
 #include <stdint.h>
 
+/* Configuration handed to esp_wifi_init().  The host has no local radio, but
+ * the stack's Wi-Fi headers declare one, so the shape has to exist.
+ */
+
+typedef struct
+{
+  void    *event_handler;
+  void    *osi_funcs;
+  void    *wpa_crypto_funcs;
+  int      static_rx_buf_num;
+  int      dynamic_rx_buf_num;
+  int      tx_buf_type;
+  int      static_tx_buf_num;
+  int      dynamic_tx_buf_num;
+  int      csi_enable;
+  int      ampdu_rx_enable;
+  int      ampdu_tx_enable;
+  int      nvs_enable;
+  int      nano_enable;
+  int      magic;
+} wifi_init_config_t;
+
 /* The handful of type names the transport headers declare.  The values mirror
  * ESP-IDF's so that any comparison the stack makes behaves the same.
  */

@@ -11971,3 +11971,44 @@ C6 从机
 - 目标④剩下的部分：`scan / connect / 取 IP` 要走官方栈 WiFi 特性的 RPC
   （`host/features/eh_host_feat_*` 里的请求/响应族），与目标③同一条通道——即先把 RPC 打通，
   再把这些调用接到 NuttX 的 `SIOCSIWSCAN`/`SIOCSIWESSID`/DHCP 客户端上。
+
+### 附录 BJ —— 路线 B 第 14 步：把 WiFi 特性搬进来；它需要「真正的 IDF 头」而不是 shim（2026-11-01）
+
+#### BJ.1 搬进来的东西
+
+`host/features/eh_host_feat_wifi`（**4 个 .c / 3,014 行 / 184 KB**）——目标④的 scan/connect
+RPC 就在这里面（`eh_host_wifi_scan_start()`、`eh_host_wifi_connect()` 等）。已入仓、进 manifest。
+
+#### BJ.2 编不过，而且**不该用 shim 硬凑**
+
+它（及其头）要的是**整套 ESP-IDF Wi-Fi 头面**：
+
+```
+esp_wifi.h → esp_wifi_types.h → esp_wifi_he_types.h
+→ wifi_config_t、wifi_ps_type_t、wifi_scan_config_t、wifi_ap_record_t …
+```
+
+我先按老办法补了 `esp_wifi.h`/`esp_wifi_types.h`/`esp_wifi_he_types.h` + 两个函数 stub，
+结果一个接一个地缺类型（`wifi_config_t` → `wifi_ps_type_t` → …）——这说明：**这是真实 API，不是几个
+typedef**，继续补 shim 只会把 IDF 的 Wi-Fi 类型系统在交付树里重抄一遍，既违反"低耦合"也没意义。
+
+正解是**让这层编译单元看到树里本来就有的 IDF 头**（`esp-hal-3rdparty/components/*/include`）。
+我试了 `esp_hal_3rdparty_SOURCE_DIR`（FetchContent 的常规变量名），**实测没生效**：
+编译命令行里没有出现任何 `esp-hal-3rdparty` 路径。所以正确的变量/挂法还没找到——
+这一步的失败与结论都写进了 CMakeLists 的注释，免得下一个人重走。
+
+#### BJ.3 本轮的处理：入仓但不进构建（保持绿灯）
+
+- `eh_host_feat_wifi` 源码入仓（下一步直接接）；
+- CMake 里**注释说明为什么暂不编译**与下一步怎么做；
+- 其余 shim（esp_wifi_types.h / esp_wifi.h / esp_wifi_he_types.h / esp_wifi_stub.c）保留——
+  它们服务的模块（`eh_host_feat_system` 等）确实只需要这几个类型，编译通过；
+- 选项打开构建仍 **0 error**，`nuttx.bin` md5 仍是 `0207bb03…`（与第 13 步一致，无回归）。
+
+#### BJ.4 下一步（目标④的最后一公里）
+
+1. 找到能取到 `esp-hal-3rdparty` include 目录的 CMake 变量（或用 `get_target_property` 从未知
+   IDF 目标上取），把 `eh_host_feat_wifi` 编进来；
+2. 把 `eh_host_wifi_scan_start()` / `eh_host_wifi_connect()` 接到 NuttX 的
+   `SIOCSIWSCAN` / `SIOCSIWESSID`（以及 DHCP 客户端）；
+3. 真机验收（需先断电恢复，附录 BH）。

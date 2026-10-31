@@ -40,6 +40,7 @@ file(GLOB EH_HOSTED_STACK_SRCS
 set(EH_HOSTED_SRCS
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_event_extra_nuttx.c
+  ${EH_HOSTED_NUTTX_DIR}/src/esp_wifi_stub.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_hosted_netdev.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_hosted_nuttx_entry.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_task_nuttx.c
@@ -86,6 +87,15 @@ target_include_directories(eh_hosted_nuttx PRIVATE
   ${EH_HOSTED_DIR}/common/serializers/third_party/msg_codec/protobuf-c
   ${EH_HOSTED_DIR}/port/os/posix/include
 )
+
+# NOTE: the Wi-Fi feature (host/features/eh_host_feat_wifi) is vendored but not
+# compiled yet.  Its headers expect the whole ESP-IDF Wi-Fi surface
+# (wifi_config_t, wifi_ps_type_t, esp_wifi_he_types.h, ...), which lives in the
+# tree's esp-hal-3rdparty fetch; handing this library those include directories
+# is the next step -- esp_hal_3rdparty_SOURCE_DIR was not visible from here
+# (measured: the paths never reached the compile line), so the right variable
+# still has to be found.  Shimming that surface is not the answer: it is a real
+# API, not a set of typedefs.
 
 # Configuration of the official stack, in the symbols its own
 # eh_host_port_master_config.h reads (board wiring from appendices AK/AN).

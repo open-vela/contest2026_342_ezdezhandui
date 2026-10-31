@@ -13727,6 +13727,38 @@ transport 自报 `companion connected, transport ready`，网卡也已注册。*
 2. 触发主机侧 Wi-Fi 初始化（发 `Req_WifiInit` 等真实 RPC 请求）并观察请求/响应成对出现；
 3. `scan / connect / 取 IP`。
 
+#### BY.14 第 71 轮：`wlan0` 上线、Wi-Fi 特性经 RPC 初始化成功（真往返）
+
+三件事一次做成：
+
+1. **网卡名改成 `wlan0`**：`netdev_register()` 会把**已经设置好的 `d_ifname`** 当名字格式
+   （`net/netdev/netdev_register.c`），所以在注册前写入 `"wlan0"` 即可，不必改链接类型。
+2. **主机侧 Wi-Fi 初始化**：`eh_hosted_nuttx_entry` 在 netdev 注册后依次发
+   `eh_host_wifi_init() / set_mode(STA) / start()` —— 这就是目标③要的"真实 RPC 往返"。
+3. **补上 Wi-Fi 特性需要的三个 IDF 全局量**：`g_wifi_osi_funcs`、`g_wifi_default_wpa_crypto_funcs`、
+   `WIFI_EVENT`。新增 `port/os/nuttx/src/wifi_glue_nuttx.c`（**故意不 include `esp_wifi.h`**：
+   注入头里 `wifi_osi_funcs_t` 是不完整类型、无法定义该类型的对象；而链接只看符号名，
+   两张表都给足 512 字节零区，读方按自己的 sizeof 拷贝不会越界）。
+
+真机结果：
+
+```
+eh_hosted_netdev: wlan0 registered (STA channel bound)
+eh_hosted_nuttx: RPC wifi_init -> 0
+eh_rpc_ll: rx: kind=resp id=516 (SetWifiMode) uid=2
+eh_hosted_nuttx: RPC wifi_set_mode(STA) -> 0
+eh_hosted_nuttx: RPC wifi_start -> 0
+```
+
+**三次真实 RPC 往返全部成功**（请求发出、从机执行、响应回来），目标③由此获得了
+"端到端 request/response"的真凭据，而不只是 caps 事件。
+
+**下一步（仍在验收④）**：
+1. 从控制台触发 `scan`（`wlan0` 的 `SIOCSIWSCAN` 已接到 `eh_host_wifi_scan_start`）——
+   为此要先把控制台噪声压下去：transport 在"没有报文"时每 100 ms 醒一次并打印
+   `--- Wait for SDIO intr ---`，约 10 行/秒，把 NSH 的输入输出冲掉了；
+2. 再做 `connect` 与取 IP。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

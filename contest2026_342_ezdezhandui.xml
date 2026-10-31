@@ -425,6 +425,7 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_event_extra_nuttx.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_event_extra_nuttx.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_wifi_stub.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/esp_wifi_stub.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/port_stubs.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/port_stubs.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/wifi_glue_nuttx.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/nuttx/src/wifi_glue_nuttx.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/posix/.gitkeep" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/posix/.gitkeep"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/posix/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/posix/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/posix/posix_features.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/port/os/posix/posix_features.h"/>

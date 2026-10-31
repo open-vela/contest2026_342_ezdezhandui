@@ -41,6 +41,7 @@ set(EH_HOSTED_SRCS
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_event_extra_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_wifi_stub.c
+  ${EH_HOSTED_NUTTX_DIR}/src/wifi_glue_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_hosted_netdev.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_hosted_nuttx_entry.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_task_nuttx.c

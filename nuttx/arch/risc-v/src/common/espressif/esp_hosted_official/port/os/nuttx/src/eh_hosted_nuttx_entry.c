@@ -29,6 +29,8 @@
 
 #include "eh_host_core.h"
 #include "eh_host_transport_config.h"
+#include "eh_host_feat_wifi.h"
+#include "esp_wifi.h"
 
 #include "eh_hosted_nuttx.h"
 
@@ -195,6 +197,39 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
       syslog(LOG_ERR, "%s: wlan0 registration failed: %d\n", ENTRY_TAG, ret);
       return ret;
     }
+
+  /* Bring the radio up over RPC (goal stage 4).
+   *
+   * The caps handshake only opens the transport; the Wi-Fi subsystem on the
+   * companion is initialized by host-side RPCs.  eh_host_wifi_init() sends
+   * Req_WifiInit and waits for the response -- that request/response pair is the
+   * "one real RPC round trip" goal stage 3 asks for -- and the mode/start calls
+   * put the station into STA so the netdev's scan/connect ioctls have something
+   * to talk to.
+   */
+
+  {
+    wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    esp_err_t          werr;
+
+    werr = eh_host_wifi_init(&init_cfg);
+    syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
+           "%s: RPC wifi_init -> %d\n", ENTRY_TAG, werr);
+
+    if (werr == ESP_OK)
+      {
+        werr = eh_host_wifi_set_mode(WIFI_MODE_STA);
+        syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
+               "%s: RPC wifi_set_mode(STA) -> %d\n", ENTRY_TAG, werr);
+      }
+
+    if (werr == ESP_OK)
+      {
+        werr = eh_host_wifi_start();
+        syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
+               "%s: RPC wifi_start -> %d\n", ENTRY_TAG, werr);
+      }
+  }
 
   return OK;
 }

@@ -451,6 +451,15 @@ int esp_hosted_netdev_register(void)
   priv->dev.d_mac.ether.ether_addr_octet[4] = 0x00;
   priv->dev.d_mac.ether.ether_addr_octet[5] = 0x01;
 
+  /* Name it wlan0 (goal stage 4).
+   *
+   * netdev_register() takes an already-set d_ifname as the name format
+   * (net/netdev/netdev_register.c), so this is the documented way to choose the
+   * interface name instead of accepting the "eth" prefix the link type implies.
+   */
+
+  strlcpy(priv->dev.d_ifname, "wlan0", IFNAMSIZ);
+
   ret = netdev_register(&priv->dev, NET_LL_ETHERNET);
   if (ret < 0)
     {

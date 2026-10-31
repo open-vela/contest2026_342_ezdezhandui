@@ -3186,6 +3186,25 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
               }
 
             priv->xfrmask |= SDIOWAIT_TIMEOUT;
+
+            /* Put the data path back before returning.
+             *
+             * A timed-out transfer leaves the data state machine busy with an
+             * empty FIFO and an armed descriptor, and it does not return to
+             * idle on its own -- "every later transfer inherits the failure",
+             * as the note on esp_sdmmc_reset_data_path() says.  That note is
+             * about doing the reset *before* a transfer; measured, the failed
+             * state has to be cleared *after* the failure as well, or the very
+             * next command stalls identically (the transport's four-byte
+             * register reads: dwait status=0001ad06 fifo=0 mc=1
+             * idsts=DMA_SUSPEND des0=OWN, appendix BY.8).  With the path reset
+             * here the transport's own retry gets a working controller back
+             * instead of inheriting a dead one.
+             */
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+            esp_sdmmc_reset_data_path(priv);
+#endif
             break;
           }
 
@@ -3202,6 +3221,45 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
   wkupevent        = priv->xfrmask;
   priv->xfrmask    = 0;
   priv->waitmask   = 0;
+
+  /* Do not leave the data state machine busy for the next transfer.
+   *
+   * A transfer can be reported as done (DATA_OVER, or the PIO drain gate) while
+   * the CIU's data state machine has not returned to idle yet.  The next command
+   * then finds it busy and its data phase never starts: measured in the
+   * transport, the first twenty-byte register read succeeded and every read
+   * after it came back with -ETIMEDOUT while "dwait status=0001ad06 fifo=0
+   * mc=1 idsts=DMA_SUSPEND des0=OWN" showed the machine stuck (appendix BY.9).
+   *
+   * So wait, bounded, for idle -- and if it never comes, put the data path back
+   * (the FIFO, the IDMAC and the state machine) instead of handing a dead
+   * controller to the next transfer.
+   */
+
+  if ((wkupevent & SDIOWAIT_TRANSFERDONE) != 0)
+    {
+      clock_t istart = clock_systime_ticks();
+
+      while (((*(volatile uint32_t *)&priv->hw->status >> 10) & 1u) != 0)
+        {
+          if (clock_systime_ticks() - istart > MSEC2TICK(100))
+            {
+              syslog(LOG_ERR,
+                     "esp_sdmmc: data state machine still busy 100 ms after "
+                     "the transfer (status=%08" PRIx32 " idsts=%08" PRIx32
+                     " des0=%08" PRIx32 ")\n",
+                     *(volatile uint32_t *)&priv->hw->status,
+                     priv->hw->idsts.val, priv->desc[0].des0);
+
+#if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
+              esp_sdmmc_reset_data_path(priv);
+#endif
+              break;
+            }
+
+          up_udelay(20);
+        }
+    }
 
   /* The transfer is over: drop the PIO references so the next one starts clean.
    */

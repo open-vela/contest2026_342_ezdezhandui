@@ -1,0 +1,4 @@
+  8225902  CMD53 CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=4 op=1 arg=0x1400a004 | data phase: NO start bit (no data driven)
+ 13581343  CMD53 CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=4 op=1 arg=0x1400a004 | data phase: NO start bit (no data driven)
+
+summary: CMD53 frames=2 with data=0 without data=2

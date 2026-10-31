@@ -13557,6 +13557,45 @@ eh_sdio: failed to read registers
 ①命令/响应有没有正常结束；②DAT0 上从机有没有发那 4 个字节；③是否有一条被吃掉的数据阶段
 （`decoded.txt` 里 CMD53 段目前解不出来，这也是要先补的：见 BZ.4 备注）。
 
+#### BY.9 第 67 轮：分析仪给出判决 —— 失败的那条读**线上没有数据阶段**
+
+新增一件工具 `tools/test/pxview/live_cmd53_probe.py`：抓波形 → 复位 → 逐窗解码 CMD 帧，
+再对**每一条 CMD53** 调 `decode_data_phase()`，直接回答"从机到底有没有发数据"。
+
+```
+35152500  CMD53 READ  fn=1 addr=0x060 count=4 | data phase: start@+400 clocks=60 bytes=[3c 00 c0]   ← 这类读**有**数据
+35312345  CMD53 WRITE fn=1 addr=0x0d4 count=4 | data phase: NO start bit clocks=30 dat0_low=0% ...
+```
+
+另一台次抓到的失败读（`addr=0x050`，正是 `INT_RAW`）：
+
+```
+  8225902  CMD53 READ fn=1 addr=0x00050 count=4 | data phase: NO start bit (no data driven)
+ 13581343  CMD53 READ fn=1 addr=0x00050 count=4 | data phase: NO start bit (no data driven)
+summary: CMD53 frames=2 with data=0 without data=2
+```
+
+即：**失败的那条读，从机在 DAT[3:0] 上一个 bit 都没驱动**（`dat0_low=0%` 也排除"卡在拉忙"）。
+读 `0x60` 的那条却有完整数据阶段（`3c 00 c0`）——所以不是"线上全坏"，而是**特定读被从机拒绝/忽略**。
+
+**同时修正一条此前的错误结论**：BZ.5 说"从机只服务多字节寄存器读的前 4 字节"——重新对账后发现
+那次 20 字节读与逐 4 字节读**结果一致**，后面那些"零"是寄存器当时本来就是 0。因此端口把
+`read_reg`/`write_reg` 拆成 4 字节是**多余的**（还把传输次数乘以 5），本轮已改回官方的
+"一次 `size` 字节 CMD53 / `size==1` 用 CMD52"。
+
+本轮另有三处驱动/端口加固（都已真机跑过）：
+
+| 位置 | 改动 |
+|---|---|
+| 端口四个传输入口 | 锁改为**阻塞**（原来是 1 s 超时后"无锁继续"，多任务下会与在途传输打架）；拿不到锁就返回失败 |
+| `esp_sdmmc_eventwait()` | 传输结束后**等数据状态机回 idle**（有界 100 ms），超时则复位数据通路，不再把"忙"的控制器交给下一次传输 |
+| `esp_sdmmc_eventwait()` 超时分支 | 超时后**立即复位数据通路**，让 transport 的重试拿到可用的控制器 |
+
+**当前卡点（下一轮）**：transport 的 20 字节寄存器读"返回成功但数据是旧的"
+（`INT_RAW read: ret=0 bytes=92 0a 62 45`——不是 `INT_RAW` 的真值），说明**读回来的字节没有落进
+调用者的缓冲区**；而后续同地址的读连数据阶段都没有。要查的就是 PIO 读路径
+（`g_pio_rxlen` 的 20 字节 vs 实际搬入量）与"为什么从机对重复的 `0x50` 读不再应答"。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

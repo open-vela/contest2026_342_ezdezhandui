@@ -601,10 +601,24 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
    * (appendix BV.3): on timeout the call proceeds and says so.
    */
 
-  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+  /* Block until the bus is ours, and fail the transfer if it never is.
+   *
+   * This used to time out after a second and then carry on unlocked, which was
+   * a workaround for the wedge of the day (appendices BV.3/BU.6).  With that
+   * wedge gone it is a correctness bug: the official transport reads registers,
+   * writes registers and moves payloads from more than one task, and an
+   * unlocked transfer races the one in flight.  Measured with the timed-out
+   * version: the first register read after the hand-over succeeded and every
+   * one after it failed with -ETIMEDOUT while the data state machine sat busy
+   * (appendix BY.9).  Failing the call is the honest outcome when the lock
+   * cannot be taken -- corrupting the transfer in flight is not.
+   */
+
+  if (lock_required && nxmutex_lock(&c->lock) < 0)
     {
-      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+      syslog(LOG_ERR, "%s: %s: cannot take the bus lock\n",
              SDIO_TAG, __func__);
+      return ESP_FAIL;
     }
 
   /* Mask the address to the slave's register window.
@@ -665,23 +679,20 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      unsigned done = 0;
+      /* ONE transfer of the whole register window, as the IDF port does.
+       *
+       * This was briefly split into four-byte transfers on the theory that the
+       * companion only answers the first four bytes of a longer window read.
+       * Re-measuring cleared that up: the twenty-byte read and the individual
+       * four-byte reads return the *same* values, because the registers that
+       * looked like padding were genuinely zero at that moment (appendix
+       * BZ.5/BY.9).  Splitting therefore bought nothing and multiplied the
+       * transfer count by five -- five chances to hit the stall below instead
+       * of one.
+       */
 
-      ret = 0;
-      while (done < size)
-        {
-          unsigned chunk = (size - done >= 4) ? 4 : (size - done);
-          int      r     = sdio_io_rw_extended(c->dev, false, 1,
-                                               (uint32_t)(reg + done), true,
-                                               &data[done], (int)chunk, 0);
-          if (r < 0)
-            {
-              ret = r;
-              break;
-            }
-
-          done += chunk;
-        }
+      ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data,
+                                (int)size, 0);
     }
 
   {
@@ -727,10 +738,24 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
    * (appendix BV.3): on timeout the call proceeds and says so.
    */
 
-  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+  /* Block until the bus is ours, and fail the transfer if it never is.
+   *
+   * This used to time out after a second and then carry on unlocked, which was
+   * a workaround for the wedge of the day (appendices BV.3/BU.6).  With that
+   * wedge gone it is a correctness bug: the official transport reads registers,
+   * writes registers and moves payloads from more than one task, and an
+   * unlocked transfer races the one in flight.  Measured with the timed-out
+   * version: the first register read after the hand-over succeeded and every
+   * one after it failed with -ETIMEDOUT while the data state machine sat busy
+   * (appendix BY.9).  Failing the call is the honest outcome when the lock
+   * cannot be taken -- corrupting the transfer in flight is not.
+   */
+
+  if (lock_required && nxmutex_lock(&c->lock) < 0)
     {
-      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+      syslog(LOG_ERR, "%s: %s: cannot take the bus lock\n",
              SDIO_TAG, __func__);
+      return ESP_FAIL;
     }
 
   /* Mask the address to the slave's register window.
@@ -769,23 +794,10 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      unsigned done = 0;
+      /* One transfer, symmetric to read_reg() (see the note there). */
 
-      ret = 0;
-      while (done < size)
-        {
-          unsigned chunk = (size - done >= 4) ? 4 : (size - done);
-          int      r     = sdio_io_rw_extended(c->dev, true, 1,
-                                               (uint32_t)(reg + done), true,
-                                               &data[done], (int)chunk, 0);
-          if (r < 0)
-            {
-              ret = r;
-              break;
-            }
-
-          done += chunk;
-        }
+      ret = sdio_io_rw_extended(c->dev, true, 1, reg, true, data,
+                                (int)size, 0);
     }
 
   if (lock_required)
@@ -832,10 +844,24 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
    * (appendix BV.3): on timeout the call proceeds and says so.
    */
 
-  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+  /* Block until the bus is ours, and fail the transfer if it never is.
+   *
+   * This used to time out after a second and then carry on unlocked, which was
+   * a workaround for the wedge of the day (appendices BV.3/BU.6).  With that
+   * wedge gone it is a correctness bug: the official transport reads registers,
+   * writes registers and moves payloads from more than one task, and an
+   * unlocked transfer races the one in flight.  Measured with the timed-out
+   * version: the first register read after the hand-over succeeded and every
+   * one after it failed with -ETIMEDOUT while the data state machine sat busy
+   * (appendix BY.9).  Failing the call is the honest outcome when the lock
+   * cannot be taken -- corrupting the transfer in flight is not.
+   */
+
+  if (lock_required && nxmutex_lock(&c->lock) < 0)
     {
-      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+      syslog(LOG_ERR, "%s: %s: cannot take the bus lock\n",
              SDIO_TAG, __func__);
+      return ESP_FAIL;
     }
 
   /* The address is NOT masked here: payload transfers live in the companion's
@@ -920,10 +946,24 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
    * (appendix BV.3): on timeout the call proceeds and says so.
    */
 
-  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+  /* Block until the bus is ours, and fail the transfer if it never is.
+   *
+   * This used to time out after a second and then carry on unlocked, which was
+   * a workaround for the wedge of the day (appendices BV.3/BU.6).  With that
+   * wedge gone it is a correctness bug: the official transport reads registers,
+   * writes registers and moves payloads from more than one task, and an
+   * unlocked transfer races the one in flight.  Measured with the timed-out
+   * version: the first register read after the hand-over succeeded and every
+   * one after it failed with -ETIMEDOUT while the data state machine sat busy
+   * (appendix BY.9).  Failing the call is the honest outcome when the lock
+   * cannot be taken -- corrupting the transfer in flight is not.
+   */
+
+  if (lock_required && nxmutex_lock(&c->lock) < 0)
     {
-      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+      syslog(LOG_ERR, "%s: %s: cannot take the bus lock\n",
              SDIO_TAG, __func__);
+      return ESP_FAIL;
     }
 
   /* The address is NOT masked here, for the same reason as in read_block():

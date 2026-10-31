@@ -1,0 +1,6 @@
+ 35761827  CMD53 CMD53 cmd READ  blk=1 fn=1 addr=0x1f7c4 count=1 op=1 arg=0x1fef8801 | data phase: NO start bit clocks=30 dat0_low=0% nibbles=F F F F F F F F 
+ 35763067  CMD53 CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000 | data phase: start@+0 clocks=60 bytes=[05 00]
+ 38701922  CMD53 CMD53 cmd READ  blk=1 fn=1 addr=0x1f6d4 count=1 op=1 arg=0x1feda801 | data phase: NO start bit clocks=30 dat0_low=0% nibbles=F F F F F F F F 
+ 38703162  CMD53 CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000 | data phase: start@+0 clocks=60 bytes=[03 00]
+
+summary: CMD53 frames=4 with data=2 without data=2

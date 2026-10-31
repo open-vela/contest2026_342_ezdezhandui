@@ -143,6 +143,15 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
   CONFIG_ESP_HOSTED_HOST_SDIO_EN_GPIO=54
   CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE=20
   CONFIG_ESP_HOSTED_HOST_SDIO_RX_Q_SIZE=20
+  # Match the companion's data-path mode (appendix BY.12).
+  #
+  # The host advertised "operating in PACKET MODE" while the slave reports
+  # streaming, and the init-event exchange says so out loud: "SDIO mode
+  # mismatch: slave is streaming mode, but host is packet mode ..." -- which
+  # is where the caps handshake stopped.  Without this define the stack's own
+  # config falls through to its "no optimization" branch, which is the
+  # packet mode this companion does not use.
+  CONFIG_ESP_HOSTED_HOST_SDIO_RX_STREAMING_MODE=1
   EH_HOST_HOST_USES_STATIC_NETIF=0
   CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=1
   CONFIG_ESP_HOSTED_USE_MEMPOOL=1

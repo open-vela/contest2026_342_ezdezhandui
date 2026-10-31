@@ -13631,6 +13631,46 @@ PIO/DMA 数据搬运实现。本轮已试并排除：全 DMA（不搬，超时�
 判定标准很明确：`read_block` 的 `bytes=` 前 16 字节必须与从机帧一致（`03 00 1d 01 0c 00 00 00 …`），
 之后 `Dropping packet` 消失、caps 握手继续。
 
+#### BY.11 第 69 轮：报文读通了，**丢包归零**
+
+两处修复（都在端口层）：
+
+1. **FIFO 端口在内部 DMA 模式下不"弹出"**：`03 00 1d 01` 连写 128 次——把 64 字节、512 字节都试过，
+   重复的永远是同一字。对照分析仪（`live_cmd53_probe.py`）确认线上是**完整帧**，
+   所以是主机侧搬运问题。寄存器用 CMD52 已经证明可行，于是**报文也用 CMD52 逐字节读**
+   （几十毫秒/字节，几百字节的控制面报文可以接受），立刻读回真实帧：
+   `bytes=05 00 30 00 0c 00 00 00 00 00 00 33 22 2e 12 01`
+2. **不能读过窗口尾**：transport 按"块对齐"请求 512 字节，从 `0x1F800 - 60 = 0x1F7C4` 起读
+   会越过窗口末尾 `0x1F800`，从机回"越界错误"，导致整次读失败
+   （`sdio_read_task: Failed to read data - -1 60 60`）。端口把读长度**钳到窗口边界**后：
+   `read_block addr=0x1f7c4 ... ret=0 bytes=05 00 30 00 0c 00 00 00 ...` ✔
+
+**结果：`Drop`/`offset[]` 计数 = 0**，transport 接受报文，串口出现 caps 协商的迹象
+（`eh_init_evt: …`，逐字符与驱动日志交织，需静音后才能整行读）。
+
+#### BY.12 第 69 轮：模式不匹配 —— 主机 PACKET、从机 STREAMING
+
+把驱动日志降级后，交织的 init-event 文本仍能读出关键行：
+
+```
+eh_init_evt: RPC version negotiation: V2
+eh_init_evt: SDIO mode: slave=streaming host=packet
+eh_init_evt: SDIO mode mismatch: slave is streaming mode, but host is packet mode ...
+```
+
+——主机宣告 **PACKET MODE**，而从机是 **STREAMING**，握手就停在这条不匹配上。
+主机的模式由 `EH_HOST_PORT_SDIO_HOST_RX_MODE` 决定（`eh_host_port_master_config.h`），
+而它取决于编译宏 `CONFIG_ESP_HOSTED_HOST_SDIO_RX_STREAMING_MODE`：没定义时落到
+"无优化（packet）"分支。于是在端口 CMakeLists 的编译定义里补上该宏
+（并给 `esp_log.h` shim 补了 `ESP_LOG_BUFFER_HEX_LEVEL`，streaming 路径会引用它）。
+
+真机结果：`eh_sdio: SDIO Host operating in STREAMING MODE` ✔、`Card init success`、
+`Open data path at slave`、首读 `INT_RAW read: ret=0 bytes=00 40 cc 00 (bit23=1)`、
+`slave interrupt (hit #1)`（**真实卡中断**）——依然 0 丢包。
+
+下一轮：把驱动剩余的 `LOG_DEBUG`/`LOG_INFO` 逐条静音（NuttX 这里不按级别过滤），
+拿到**整行可读**的 caps/init-event 日志，确认 caps 交换完成并看到第一次真实 RPC 往返。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

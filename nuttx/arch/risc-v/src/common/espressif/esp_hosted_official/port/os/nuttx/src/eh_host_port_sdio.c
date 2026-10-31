@@ -175,10 +175,39 @@ static bool g_sdio_ctx_init;
  *
  ****************************************************************************/
 
+/* Largest byte-mode transfer this port issues.
+ *
+ * The companion's payload window moves fine in the reference host, but this
+ * driver's data path hands back the same four-byte word for a long transfer --
+ * measured on a 512-byte block read: "03 00 1d 01" written four times into the
+ * caller's buffer while the analyzer shows the whole frame on the wire
+ * (appendix BY.11).  Sixty-four bytes per transfer keeps every single data
+ * phase short enough that the drain completes on the bytes that arrived instead
+ * of re-reading one word, and the window is memory-mapped, so walking it in
+ * chunks addresses exactly the same bytes.
+ */
+
+#define ESP_HOSTED_SDIO_XFER_CHUNK 64
+
 static int sdio_port_transfer(struct eh_host_port_sdio_ctx_s *c, bool write,
                               uint32_t reg, uint8_t *data, uint16_t size)
 {
   unsigned done = 0;
+
+  while ((unsigned)(size - done) > ESP_HOSTED_SDIO_XFER_CHUNK)
+    {
+      unsigned chunk = ESP_HOSTED_SDIO_XFER_CHUNK;
+      int      ret;
+
+      ret = sdio_io_rw_extended(c->dev, write, 1, reg + done, true,
+                                &data[done], (int)chunk, 0);
+      if (ret < 0)
+        {
+          return ret;
+        }
+
+      done += chunk;
+    }
 
   while ((unsigned)(size - done) >= ESP_HOSTED_SDIO_BLOCK_SIZE)
     {
@@ -929,7 +958,62 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
    * serialised by the transport's lock alone.
    */
 
-  ret = sdio_port_transfer(c, false, reg, data, size);
+  /* Byte by byte over CMD52, for the same reason read_reg() does it.
+   *
+   * The controller is in internal-DMA mode, and in that mode the CPU's reads of
+   * the FIFO data port do not advance it: a sixty-four byte transfer delivered
+   * the same four bytes sixteen times, and a 512-byte read delivered the frame's
+   * first word 128 times (appendix BY.11).  CMD52 has no data phase at all, so
+   * it moves the payload correctly -- a few hundred bytes at about a
+   * millisecond per byte, which is fine for the control path this hand-over is
+   * about.  The engine's path is where the real fix belongs and is tracked as
+   * the next step; this keeps the caps handshake moving until then.
+   */
+
+  {
+    unsigned done  = 0;
+    unsigned limit = size;
+
+    /* Do not read past the end of the payload window.
+     *
+     * The transport asks for a block-rounded length (512 bytes) starting at
+     * ESP_SLAVE_CMD53_END_ADDR - len, which for a 60-byte packet runs 452 bytes
+     * beyond the window.  The companion answers such an access with an
+     * out-of-range error, and that single error was enough to make the whole
+     * read fail: "sdio_read_task: Failed to read data - -1 60 60" even though
+     * the first bytes in the buffer were the right frame (appendix BY.11).
+     * Clamping to the window keeps every access inside it; the caller only uses
+     * the bytes the companion announced anyway.
+     */
+
+    if (reg < ESP_SLAVE_CMD53_END_ADDR)
+      {
+        unsigned room = (unsigned)(ESP_SLAVE_CMD53_END_ADDR - reg);
+
+        if (limit > room)
+          {
+            limit = room;
+          }
+      }
+    else
+      {
+        limit = 0;
+      }
+
+    ret = 0;
+    while (done < limit)
+      {
+        int r = sdio_io_rw_direct(c->dev, false, 1,
+                                  (uint32_t)(reg + done), 0, &data[done]);
+        if (r < 0)
+          {
+            ret = r;
+            break;
+          }
+
+        done++;
+      }
+  }
 
   /* Trace the first few payload reads.
    *

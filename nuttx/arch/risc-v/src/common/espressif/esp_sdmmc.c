@@ -1087,6 +1087,31 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
   clock_t start = clock_systime_ticks();
   uint32_t div;
 
+  /* Name every clock change and the state it arrives in.
+   *
+   * The clock sequence starts by disabling the card clock and only re-enables it
+   * at the end, so a clock change that is issued while the CIU is busy leaves the
+   * card with no clock at all -- measured: clkena fell to 00000000 in the middle
+   * of the transport's transfers, after which every CMD53 stalled with
+   * "fifo=0 data_state_mc_busy=1" (status 0001ad06).  Which rate was asked for,
+   * and what the controller was doing at that moment, is the fact needed to fix
+   * the caller rather than the symptom.
+   */
+
+  {
+    static int clock_calls;
+
+    if (clock_calls < 12)
+      {
+        syslog(LOG_INFO,
+               "esp_sdmmc: clock(%d) requested: status=%08" PRIx32
+               " clkena=%08" PRIx32 " cmd=%08" PRIx32 " idsts=%08" PRIx32 "\n",
+               (int)rate, *(volatile uint32_t *)&hw->status, hw->clkena.val,
+               *(volatile uint32_t *)&hw->cmd, priv->hw->idsts.val);
+        clock_calls++;
+      }
+  }
+
   switch (rate)
     {
       default:
@@ -1425,6 +1450,19 @@ static void esp_sdmmc_reset(struct sdio_dev_s *dev)
 
   sdmmc_ll_set_response_timeout(hw, 0xffffff);
   sdmmc_ll_set_data_timeout(hw, 0xffffff);
+
+  /* Put the interrupt mask back the way attach() left it.
+   *
+   * The reset starts by disabling every source, and without this line that is
+   * how the controller stays: the completion bits are still set in the raw
+   * RINTSTS, but every reader of the *masked* register (sdmmc_ll_get_intr_status
+   * returns MINTSTS) sees zero.  Measured at the hand-over, where a clock change
+   * runs this reset: the card answered CMD5 (raw RINTSTS = 00000004, RESP0 =
+   * a0ffff00) and this driver still reported "no command completion" followed by
+   * -ETIMEDOUT, after which every probe retry failed (appendix BY.6).
+   */
+
+  sdmmc_ll_enable_interrupt(hw, SDMMC_INT_ENABLE, true);
 
   priv->xfrmask  = 0;
   priv->waitmask = 0;
@@ -2458,7 +2496,17 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
             break;
           }
 
-        if (sdmmc_ll_get_intr_status(hw) & SDMMC_CMD_DONE)
+        /* Read the RAW status, not the masked one.
+         *
+         * sdmmc_ll_get_intr_status() returns MINTSTS -- raw AND the enable mask
+         * -- so it reads zero whenever the source happens to be masked, and that
+         * is how a command the card had already answered was reported as "no
+         * command completion": the error line prints the raw register and showed
+         * 00000004 while this check saw nothing (appendix BY.6).  Completion is
+         * a fact about the wire, not about our mask.
+         */
+
+        if ((*(volatile uint32_t *)&hw->rintsts & SDMMC_CMD_DONE) != 0)
           {
             sdmmc_ll_clear_interrupt(hw, SDMMC_CMD_DONE);
             done = true;
@@ -2504,7 +2552,7 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
         return -ETIMEDOUT;
       }
 
-    if (sdmmc_ll_get_intr_status(hw) & SDMMC_ERR_RE)
+    if ((*(volatile uint32_t *)&hw->rintsts & SDMMC_ERR_RE) != 0)
       {
         syslog(LOG_ERR, "esp_sdmmc: response error (rintsts=%08" PRIx32 ")\n",
                *(volatile uint32_t *)&hw->rintsts);
@@ -2680,7 +2728,7 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
 
     while ((priv->xfrmask & priv->waitmask) == 0)
       {
-        uint32_t st = sdmmc_ll_get_intr_status(hw);
+        uint32_t st = *(volatile uint32_t *)&hw->rintsts;
 
         /* Move the data by hand while the data phase runs.
          *

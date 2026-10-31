@@ -933,6 +933,26 @@ int esp_hosted_sdio_initialize(void)
              HOSTED_TAG, mask, w, rb, rr);
     }
 
+    /* Everything from here on moves data.
+     *
+     * The register ladder, the sweep loop, the clean-window TX write and the
+     * payload read all drive the companion's data path, and the data path is
+     * what the official stack has to own from the moment this function returns.
+     * Leaving them enabled is not merely wasteful: measured, the TX test's
+     * 512-byte block write arms its descriptor and then stalls the controller's
+     * data state machine (status 0001ad06: fifo=0, data_state_mc_busy=1, IDMAC
+     * FSM = DMA_SUSPEND, descriptor OWN set) *while the transport is already
+     * running* -- the transport's own reads then queue behind a busy CIU.
+     *
+     * With the stack selected the bring-up's job is: reset the companion, bring
+     * up the controller, enumerate, set CCCR up, hand over.  Nothing else, so
+     * this jumps straight to the hand-over.
+     */
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+    goto handover;
+#endif
+
     syslog(LOG_INFO, "%s: starting receive loop (400 rounds)\n", HOSTED_TAG);
 
     /* Result of the A/B read-geometry test, carried across rounds.
@@ -2085,6 +2105,8 @@ int esp_hosted_sdio_initialize(void)
       }
     }
   }
+
+handover:
 
 #ifndef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
   /* Raise the card clock for data transfers.

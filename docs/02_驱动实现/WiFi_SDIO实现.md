@@ -13467,6 +13467,51 @@ esp_sdmmc: waitresponse -> -ETIMEDOUT
 下一轮从这里接着做：`esp_sdmmc.c` 的 `waitresponse` 轮询分支（`waitmask=00`、`CMD_DONE` 被读到又没被认、
 以及 `xfrmask` 与轮询两条完成路径的关系）——把它修对，枚举即可继续走到 `card_fn_init`。
 
+#### BY.7 **验收②打通：官方主机栈真的跑起来了**（第 65 轮）
+
+修掉"完成判定读的是**被屏蔽**的状态"之后（两个小改动，见下），交接链路一次跑通：
+
+```
+eh_host_port_sdio: SDIO probe succeeded on try 2
+eh_host_port_sdio: CCCR 0x02 IOEx before: 00 / after: 02
+eh_host_port_sdio: CCCR 0x03 IO_RDY=02 after 1 try/tries
+eh_host_port_sdio: CCCR 0x04 INT_ENABLE before: 00 / after: 03 (want 03)
+eh_host_port_sdio: FN0 block size read back 512 / FN1 block size read back 512
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: SDIO Host operating in PACKET MODE
+eh_sdio: Open data path at slave
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0     ← 20 字节窗口读**返回**了
+...（id=2..15 全部 ret=0）
+```
+
+这正是附录 BW.17–BW.24 追了十几轮的那个现象（"传输层第一次寄存器读不返回"）——**现在返回了**。
+`Card init success, TRANSPORT_RX_ACTIVE` + `Open data path at slave` 就是官方栈对"卡就绪、传输可用"
+的判定。
+
+两条关键修复：
+
+| # | 位置 | 问题 | 修法 |
+|---|---|---|---|
+| 1 | `esp_sdmmc.c` `waitresponse` 轮询分支 | 用 `sdmmc_ll_get_intr_status()`，它返回的是 **MINTSTS（原始 & 屏蔽位）**；中断屏蔽一旦为 0，命令完成就永远读不到，于是"卡明明答了 CMD5（原始 `rintsts=00000004`、`resp0=a0ffff00`）却被判成 `no command completion` → -ETIMEDOUT" | 改读**原始** `RINTSTS`（数据等待与响应错误判定同步改） |
+| 2 | `esp_sdmmc.c` `esp_sdmmc_reset()` | 复位开头把所有中断源关掉，之后**从不恢复**（`attach()` 里才设一次），于是时钟路径每次复位都把完成事件一起关掉 | 复位结尾按 `SDMMC_INT_ENABLE` 重新打开（不动卡中断位） |
+
+**新发现（下一轮入口）**：传输跑起来之后，仍有一次 `eh_sdio: failed to read registers`，
+官方栈于是**重试 `card_init`**；重试路径里的 `SDIO_CLOCK(CLOCK_IDMODE)`（`clock(1)` 已在日志里
+被点名）会在**传输进行中**发起"时钟更新命令"——该命令在 CIU 忙时不会完成，而时钟序列的第一步
+是**关闭卡时钟**，于是 `clkena` 掉到 `00000000`，此后每个 CMD53 都停在
+`fifo=0 data_state_mc_busy=1`（status `0001ad06`）。
+
+```
+esp_sdmmc: clock(1) requested: status=0001ad06 clkena=00000002 cmd=20010174 idsts=00000000
+esp_sdmmc: clock update (clock disabled): DID NOT COMPLETE (wrote=a0212000 read=a0212000 ...)
+esp_sdmmc: regs2: ... clkena=00000000 ...
+```
+
+两条待办：① 时钟更改必须**决不把卡时钟留在关闭状态**（失败时回滚/重开），且不应在传输进行中发起；
+② 查清那次 `failed to read registers` 本身（是 4 字节寄存器读在 IDMAC 路径上的形状问题）。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

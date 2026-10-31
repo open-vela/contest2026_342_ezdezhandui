@@ -227,12 +227,20 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                "%s: RPC wifi_set_mode(STA) -> %d\n", ENTRY_TAG, werr);
       }
 
-    if (werr == ESP_OK)
-      {
-        werr = eh_host_wifi_start();
-        syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
-               "%s: RPC wifi_start -> %d\n", ENTRY_TAG, werr);
-      }
+    /* No eh_host_wifi_start() here.
+     *
+     * It blocks: Req_WifiStart is a synchronous RPC and the companion never
+     * answers this one, because the slave firmware flashed on this board is the
+     * "Wi-Fi station" example, whose own application has already started the
+     * radio -- a second start from the host side never returns (measured: the
+     * call hangs; every later step, including the scan, never runs; appendix
+     * BY.17).  The radio is up, the mode is STA, so scan/connect RPCs can go
+     * straight out; when this board gets the pure-RPC (network adapter) slave
+     * firmware, this call belongs back here.
+     */
+
+    syslog(LOG_INFO, "%s: skipping RPC wifi_start (the slave app already started "
+           "the radio)\n", ENTRY_TAG);
 
     /* One scan through the netdev's own ioctl path (goal stage 4).
      *

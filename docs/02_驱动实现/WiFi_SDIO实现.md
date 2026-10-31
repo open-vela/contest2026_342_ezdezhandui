@@ -13822,6 +13822,35 @@ eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) status=0
 2. 若换固件前想在当前形态下推进：把主机的 payload 读取提速（回到 CMD53 并把数据通路修对），
    或者临时把从机示例的重试关掉（需要重新构建从机固件，成本与 1 相当）。
 
+#### BY.17 第 74 轮：从机**本来就是合格的 RPC 从机**；`wifi_start` 才是那个阻塞点
+
+先纠正上一轮的方向判断：**不需要换从机固件**。从机自己的串口显示它完整处理了主机的 RPC：
+
+```
+I (14819) ehcp_wifi_rpc: === __wrap_esp_wifi_init called ===
+I (14825) ehcp_wifi_rpc: WiFi init config: static_rx_buf_num changed: 20 -> 10
+I (14872) ehcp_wifi_rpc: WiFi init config changed, reinitializing
+I (15016) ehcp_wifi_rpc: __real_esp_wifi_init returned: 0
+```
+
+即 `Req_WifiInit` 被从机执行并回包（主机侧 `wifi_init -> 0` 正是它的回执）。所以示例应用那版
+**照样当 RPC 从机用**，只是它自己另外还在连一个不存在的 SSID（额外事件流）。
+
+**真正的阻塞点**是 `eh_host_wifi_start()` → `eh_rpc_do_empty_request(RPC_ID__Req_WifiStart)`
+——同步请求，而从机**不回**这个请求（它自己的应用已经把 radio 启动了，二次 start 不返回）。
+本轮据此跳过该调用（代码里写明了原因和恢复条件）。
+
+跳过后 `scan` 第一次真正走到了 netdev ioctl 路径：
+
+```
+eh_hosted_nuttx: SIOCSIWSCAN(wlan0) -> -1
+```
+
+——**调用链打通了**（socket ioctl → `hosted_netdev_ioctl` → `eh_host_wifi_scan_start`），
+但本地就失败了（从机侧没有任何 scan 记录），说明请求没发出去或分配失败（`eh_rpc_ctrl_cmd_alloc()`
+/ 同步发送）。下一轮第一件事：把这个本地错误打出来（`eh_host_wifi_scan_start` 的返回值 +
+控制命令池状态），判据是**从机串口出现 scan 相关日志**。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

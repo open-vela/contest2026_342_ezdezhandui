@@ -11144,3 +11144,63 @@ openocd ... -f board/esp32p4-builtin.cfg -c "init" -c "reset halt" -c "reset run
 期间 Tabby 重启（串口会话 id 变了），`tools/engineering/tabby_mcp.py` 需要
 `rm -f /tmp/.tabby_mcp_sid` 后重新 `init` 才能继续读串口——这一步已写进操作习惯，
 以免把「读不到串口」误判成板子挂了。
+
+### 附录 AS —— 路线 B 的落地勘察：官方栈已经入仓，且自带**POSIX 端口**（2026-11-01）
+
+按附录 AR 的定案（路线 B）做落地勘察，结果比预期好得多。
+
+#### AS.1 已入仓的官方栈（不是从零开始）
+
+`nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/`（提交 `51a2a4a`，**136 个文件**，
+已进 manifest）：
+
+```
+common/   eh_common  eh_frame  eh_mempool  eh_tlv
+host/     eh_host_config  mcu/（transport/bus/frames）  compat/
+port/os/  include/（20 个端口契约头）  idf/src/（IDF 端口实现）  posix/src/（POSIX 端口实现）
+```
+
+37 个 .c / 74 个 .h；`host/eh_host_mcu_transport/src/` 里就有 `eh_host_bus_sdio.c`、
+`eh_host_mcu_transport.c`、`eh_host_mcu_hci.c` —— 正是路线 B 要的「传输 + 协议」。
+
+#### AS.2 关键发现：**自带 POSIX 端口，981 行，NuttX 几乎能直接用**
+
+`port/os/posix/src/`（`eh_host_port_{sync,task,queue,gpio,power,event_group,dma}.c`，981 行）
+的 OS 依赖只有：`pthread_mutex_*`、`pthread_cond_*`、`sem_*`、`pthread_create`、
+`clock_nanosleep`、`sched_*`、`signal`、`<time.h>`、`<unistd.h>`。
+
+**NuttX 这些都有**（pthread/互斥量/条件变量/信号量/clock_nanosleep 都在 NuttX 的 POSIX 子集里）。
+→ 路线 B 的「NuttX 薄移植层」不必从零写：**以 POSIX 端口为底、改少量 API 差异 + 换掉 SDIO 传输**即可，
+这是本轮最大的一条降险结论。
+
+#### AS.3 仍需补的 IDF API 面（实测 include 次数）
+
+| 头 | 次数 | NuttX 映射 |
+|---|---|---|
+| `esp_log.h` | 22 | → `syslog()` |
+| `esp_err.h` | 14 | → 整数 errno（`ESP_OK=0`、`ESP_FAIL=-1`、`ESP_ERR_*` 各自定义） |
+| `esp_event.h` | 5 | → 小型事件队列（或 NuttX 的 `nxevent`/消息队列）|
+| `freertos/{task,semphr,queue,idf_additions}.h` | 8 | → pthread/sem/mq（`compat/freertos_shim` 已有对应思路）|
+| `esp_timer.h` | 3 | → `wdog`/`clock` |
+| `esp_heap_caps.h` | 3 | → `kmm_malloc`/`mm_malloc` |
+| `esp_system.h` / `esp_sleep.h` | 4 | → 空实现/`up_mdelay` |
+| `esp_check.h` | 3 | → 几个宏（`ESP_RETURN_ON_FALSE` 等）|
+| `esp_netif_types.h` / `esp_memory_utils.h` / `esp_cache.h` | 3 | 路线 B 里可**裁掉**（netif 不用）/ 映射到 `up_clean_dcache` |
+
+按 `ESP_*` 宏的实际用量（`ESP_OK` 80、`ESP_FAIL` 37、其余 ~15）看，`esp_err.h` +
+`esp_check.h` + `esp_log.h` 三个 shim 就能覆盖绝大部分。
+
+#### AS.4 路线 B 的施工顺序（每步都能单独验收）
+
+1. **shim 头**：`esp_err.h` / `esp_check.h` / `esp_log.h` / `freertos_*.h` / `esp_timer.h` 等
+   （预计 600–1,000 行，纯头文件 + 少量 .c）；
+2. **NuttX 端口**：以 `port/os/posix/src/` 为底改 API 差异，SDIO 传输改为调用我们已跑通的
+   `sdio_io_rw_*` + `esp_sdmmc_wait_card_intr()`（附录 AP.1 的 9 个函数）；
+3. **Kconfig/CMake 钩子**：`CONFIG_ESPRESSIF_HOSTED_OFFICIAL`（`default n`），
+   默认配置产物逐字节等价；
+4. 打开选项后验收：`companion enumerated` → FN1 ready → RX/TX 任务起来
+   （**这一步必须先恢复板子**：附录 AO 的断电）；
+5. 之后才是 RPC（目标③）与 netdev（目标④）。
+
+> 一句话：路线 B 的前三步（shim + 端口 + 钩子）**不依赖板子**，可以先做完并只用构建验收；
+> 第 4 步起才需要真机。

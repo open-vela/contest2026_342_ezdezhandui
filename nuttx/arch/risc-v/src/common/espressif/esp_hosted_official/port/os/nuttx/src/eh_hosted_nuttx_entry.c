@@ -159,6 +159,26 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
       syslog(LOG_ERR,
              "%s: connect to slave failed: %d (D1 now = %d, 0 = companion asking for service)\n",
              ENTRY_TAG, ret, esp_gpioread(CONFIG_ESPRESSIF_SDMMC_D1));
+      /* Run the same register read from this thread.
+       *
+       * The bring-up ladder (boot thread, before the stack) reads INT_RAW fine,
+       * while the transport's read of the same register hangs (appendix BV.11).
+       * Doing it here -- a task, with the stack already up but not in a transfer
+       * -- separates "task context" from "the stack's transfer state" as the
+       * cause.
+       */
+
+      {
+        extern int eh_host_port_sdio_read_reg(void *, uint32_t, uint8_t *,
+                                              uint16_t, bool);
+        uint8_t rb[4] = { 0, 0, 0, 0 };
+        int rr = eh_host_port_sdio_read_reg(NULL, 0x3ff55050u, rb, 4, true);
+
+        syslog(LOG_INFO,
+               "%s: post-failure INT_RAW probe: ret=%d bytes=%02x %02x %02x %02x\n",
+               ENTRY_TAG, rr, rb[0], rb[1], rb[2], rb[3]);
+      }
+
       return ret;
     }
 

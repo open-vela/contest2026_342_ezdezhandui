@@ -300,16 +300,29 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      /* One byte-mode transfer for the whole window.
+      /* One CMD52 per byte.
        *
-       * Four-byte chunks were tried and hang (the completion trace never
-       * returns), even though the bring-up ladder reads the same register as
-       * four bytes successfully -- the difference between the two contexts is
-       * the next thing to chase, and until it is understood a transfer that
-       * returns is worth more than one that does not.
+       * Multi-byte transfers (byte-mode CMD53) complete fine from the bring-up
+       * ladder but hang when issued from the transport's context (appendix
+       * BV.11), while single-byte CMD52 has never hung.  With the address mask
+       * now applied (BV.4) these reads return real values, so the per-byte form
+       * is what keeps the transport moving until the context-dependent hang is
+       * understood.
        */
 
-      ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data, size, 0);
+      unsigned i;
+
+      ret = 0;
+      for (i = 0; i < size; i++)
+        {
+          int one = sdio_io_rw_direct(c->dev, false, 1,
+                                      (uint32_t)(reg + i), 0, &data[i]);
+          if (one < 0)
+            {
+              ret = one;
+              break;
+            }
+        }
     }
 
   /* Trace the first few register reads.

@@ -341,57 +341,35 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      /* One CMD52 per byte.
+      /* Four bytes per transfer.
        *
-       * Multi-byte transfers (byte-mode CMD53) complete fine from the bring-up
-       * ladder but hang when issued from the transport's context (appendix
-       * BV.11), while single-byte CMD52 has never hung.  With the address mask
-       * now applied (BV.4) these reads return real values, so the per-byte form
-       * is what keeps the transport moving until the context-dependent hang is
-       * understood.
+       * The transport asks for the whole INT_RAW..PACKET_LEN window (20 bytes)
+       * in one go and this card answers that with one byte repeated
+       * ("val=1c 1c 1c 1c"), while a four-byte read of the same register returns
+       * the real value (the bring-up ladder reads 00cc7800 with the new-packet
+       * bit set).  Splitting the window keeps the transport's shape and its
+       * correctness.
        */
 
-      unsigned i;
-
-      ret = 0;
-      for (i = 0; i < size; i++)
-        {
-          int one = sdio_io_rw_direct(c->dev, false, 1,
-                                      (uint32_t)(reg + i), 0, &data[i]);
-          if (one < 0)
-            {
-              ret = one;
-              break;
-            }
-        }
-    }
-
-  /* Trace the first few register reads.
-   *
-   * This is the path the stack actually walks while it waits: it polls the
-   * companion's interrupt/packet-length registers and only then decides to pull
-   * a payload (appendices BP/BQ).  Logging the address, the result and the value
-   * says what the stack is seeing, which is the last piece of the software-side
-   * picture.  Capped so the console stays readable.
-   */
-
-  {
-    static int traced;
-
-    if (traced < 12)
       {
-        syslog(LOG_INFO,
-               "%s: read_reg addr=0x%05x size=%u ret=%d val=%02x %02x %02x %02x\n",
-               SDIO_TAG, (unsigned)reg, (unsigned)size, ret,
-               data[0], size > 1 ? data[1] : 0,
-               size > 2 ? data[2] : 0, size > 3 ? data[3] : 0);
-        traced++;
-      }
-  }
+        unsigned done = 0;
 
-  if (lock_required)
-    {
-      nxmutex_unlock(&c->lock);
+        ret = 0;
+        while (done < size)
+          {
+            unsigned chunk = (size - done >= 4) ? 4 : (size - done);
+            int r = sdio_io_rw_extended(c->dev, false, 1,
+                                        (uint32_t)(reg + done), true,
+                                        &data[done], (int)chunk, 0);
+            if (r < 0)
+              {
+                ret = r;
+                break;
+              }
+
+            done += chunk;
+          }
+      }
     }
 
   xfer_guard_disarm();

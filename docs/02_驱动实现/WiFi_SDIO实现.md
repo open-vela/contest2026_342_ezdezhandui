@@ -12325,3 +12325,55 @@ eh_hosted_nuttx: D1 test: driven high -> readback 0 (1 = nothing else pulls it l
 传输路径，把它的返回值、读到的首字节、以及驱动侧的 `dwait/status/fifo` 一起打印出来
 （诊断梯子里已有同类打印，这里是要在**官方栈调用的路径**上做一次）。
 这样就能确认：官方栈的读是不是与自测梯子一样"命令成功、数据阶段不来"。
+
+### 附录 BR —— 在**官方栈的调用路径**上取证：它根本没走到读，以及一个真 bug（2026-11-01）
+
+上一轮的计划是"给端口层的 CMD53 读加取证"。做完之后结论比预期更干净，而且顺手修掉一个真 bug。
+
+#### BR.1 取证结果：官方栈**没有发起过任何读**
+
+在端口层加了三处**封顶**打印（各自前 10–12 次）：
+
+| 打印点 | 观察结果 |
+|---|---|
+| `read_block`（载荷 CMD53 读） | **一次都没有被调用** |
+| `read_reg`（INT_RAW/PACKET_LEN 等寄存器读） | **一次都没有被调用** |
+| `wait_slave_intr` | 反复进入，并打印 `ticks=4294967295 D1=1 probe=0` |
+
+即：官方栈卡在**等从机中断**这一步，**在它之前不会去读任何东西**——这解释了为什么串口里
+`Open data path at slave` 之后只有 `--- Wait for SDIO intr ---` 在循环。
+
+#### BR.2 顺手发现的真 bug：矩阵路由之后 `esp_gpioread()` 看不到 DAT1
+
+端口原来的判据是 `esp_gpioread(D1)`。但 slot 1 的 pin 经 **GPIO 矩阵**接到 SDMMC 后，这个 pad 已归属
+外设，GPIO 的输入寄存器不再可靠地反映线上的电平——本轮实测就出现了"分析仪看到 DAT1 被拉低、
+而 `esp_gpioread()` 读到高"的矛盾。
+
+修法（已改 `esp_sdmmc_wait_card_intr()`）：**先问控制器**——`RINTSTS` 的 SDIO 中断位
+（`SDMMC_SDIO_INTR`）是原始状态、不受中断屏蔽影响（我们为了治中断风暴把该源屏蔽了，但状态位仍在）：
+
+```c
+if ((sdmmc_ll_get_intr_status(priv->hw) & SDMMC_SDIO_INTR) != 0) { return true; }
+...
+while (...) { if (rintsts & SDMMC_SDIO_INTR) return true; ... }
+```
+
+#### BR.3 改完之后的实测（**关键**）
+
+```
+eh_host_port_sdio: wait_slave_intr ticks=4294967295 D1=1 probe=0
+```
+
+- 这条 `probe` 用的就是**修好后的**判据（控制器状态 + 引脚），仍是 0；
+- 也就是说：**这一次启动里从机根本没有拉 DAT1**（控制器状态位也没置），
+  主机只能一直等 → 重试 3 次 → `TRANSPORT_FAILURE`。
+
+与附录 BP（另一台次抓到的 DAT1 全程为低）合起来看，从机的行为是**不稳定/不一致**的：
+有时把 DAT1 常拉低（那样主机至少能"看到"中断，但读不出数据），有时干脆不响应、不拉信号。
+两种表现都指向**从机 SDIO 侧已经处于不可用状态**，与附录 BH 的判决一致。
+
+#### BR.4 状态与下一步
+
+- 软件侧：目标②③④的实现全部就位（本轮还修掉了 wait 判据这个真 bug），**卡在从机**；
+- 下一步仍然只有一件事有意义：**整板主电源断电 ≥10 秒**，然后按 BH.4 判据复跑
+  `tools/test/evidence.py --reset --seconds 180 --analyzer 180 --tag post-powercycle`。

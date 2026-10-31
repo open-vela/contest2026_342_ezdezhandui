@@ -38,6 +38,8 @@
 #include "eh_host_port_sdio.h"
 #include "eh_host_port_sync.h"
 
+#define SDIO_TAG "eh_host_port_sdio"
+
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
 
 #define TAG "eh_host_port_sdio"
@@ -237,6 +239,29 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
       ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data, size, 0);
     }
 
+  /* Trace the first few register reads.
+   *
+   * This is the path the stack actually walks while it waits: it polls the
+   * companion's interrupt/packet-length registers and only then decides to pull
+   * a payload (appendices BP/BQ).  Logging the address, the result and the value
+   * says what the stack is seeing, which is the last piece of the software-side
+   * picture.  Capped so the console stays readable.
+   */
+
+  {
+    static int traced;
+
+    if (traced < 12)
+      {
+        syslog(LOG_INFO,
+               "%s: read_reg addr=0x%05x size=%u ret=%d val=%02x %02x %02x %02x\n",
+               SDIO_TAG, (unsigned)reg, (unsigned)size, ret,
+               data[0], size > 1 ? data[1] : 0,
+               size > 2 ? data[2] : 0, size > 3 ? data[3] : 0);
+        traced++;
+      }
+  }
+
   if (lock_required)
     {
       nxmutex_unlock(&c->lock);
@@ -311,6 +336,28 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
 
   ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data,
                             ESP_HOSTED_SDIO_BLOCK_SIZE, nblocks);
+
+  /* Trace the first few payload reads.
+   *
+   * These are the transfers the official stack issues once the data path is
+   * open; they are the ones whose data phase never happens on this board
+   * (appendices BP/BQ).  Logging the return code and the first bytes here puts
+   * the finding on the stack's own path instead of only on the bring-up sweep,
+   * and the count is capped so the console stays readable.
+   */
+
+  {
+    static int traced;
+
+    if (traced < 10)
+      {
+        syslog(LOG_INFO,
+               "%s: read_block f%d addr=0x%05x size=%u nb=%u ret=%d first=%02x %02x %02x %02x\n",
+               SDIO_TAG, 1, (unsigned)reg, (unsigned)size, nblocks, ret,
+               data[0], data[1], data[2], data[3]);
+        traced++;
+      }
+  }
 
   if (lock_required)
     {
@@ -395,6 +442,33 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
 
   forever   = (ticks_to_wait == EH_HOST_PORT_WAIT_FOREVER);
   remaining = ticks_to_wait;
+
+  /* What the wait actually observes.
+   *
+   * The transport's log only says it is waiting; whether the line is asserted
+   * and what the driver answers decides where the stall is.  Capped, so the
+   * console stays readable.
+   */
+
+  {
+    static int traced;
+
+    if (traced < 12)
+      {
+        int level = esp_gpioread(CONFIG_ESPRESSIF_SDMMC_D1);
+        bool got  = esp_sdmmc_wait_card_intr(c->dev, 100);
+
+        syslog(LOG_INFO,
+               "%s: wait_slave_intr ticks=%u D1=%d probe=%d\n",
+               SDIO_TAG, (unsigned)ticks_to_wait, level, (int)got);
+        traced++;
+
+        if (got)
+          {
+            return ESP_OK;
+          }
+      }
+  }
 
   for (; ; )
     {

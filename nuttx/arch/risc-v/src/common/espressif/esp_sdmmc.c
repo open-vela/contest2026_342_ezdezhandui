@@ -3109,6 +3109,22 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
    * raise the CIU interrupt.
    */
 
+  /* Ask the controller first.
+   *
+   * Once the slot-1 pads are routed through the GPIO matrix, the DAT1 pad
+   * belongs to the SDMMC peripheral and esp_gpioread() no longer observes it --
+   * measured on hardware: the wire held DAT1 asserted while this function read
+   * the pad as high, so the host waited for an interrupt that had already
+   * arrived.  RINTSTS keeps the raw SDIO-interrupt state regardless of the
+   * interrupt mask, which is exactly the "card is asking" signal wanted here.
+   */
+
+  if ((sdmmc_ll_get_intr_status(priv->hw) & SDMMC_SDIO_INTR) != 0)
+    {
+      priv->cardintr = false;
+      return true;
+    }
+
   if (esp_gpioread(priv->d1_pin) == 0)
     {
       priv->cardintr = false;
@@ -3120,6 +3136,12 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
   start = clock_systime_ticks();
   while (!priv->cardintr)
     {
+      if ((sdmmc_ll_get_intr_status(priv->hw) & SDMMC_SDIO_INTR) != 0)
+        {
+          priv->cardintr = false;
+          return true;
+        }
+
       if (clock_systime_ticks() - start > MSEC2TICK(timeout_ms))
         {
           return false;

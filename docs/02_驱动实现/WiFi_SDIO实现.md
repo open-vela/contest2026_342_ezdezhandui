@@ -13057,3 +13057,30 @@ eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
 传输层这条 CMD53 需要"4 MHz + 与那次读精确对齐"的抓取。下一步应当：
 用 `px.py watch` 之类的边沿触发（或先抓到 `read_reg enter` 再从此刻回看）来对齐，
 而不是盲抓一段再事后找。
+
+#### BW.16 对齐抓取成功：**传输层那条读根本没上总线**
+
+按 BW.15 的方法（4 MHz + 以 `read_reg enter` 为对齐点）抓到了现场，解码结果分成两部分：
+
+**1. bring-up 梯子的 CMD53 全部成功，数据正确**
+
+```
+CMD53 frames: 8  counts: 1, 2, 4, 8, 16, 20, 32, 60      ← 正是梯子的尺寸序列
+  count=1  data clocks=100 start=True bytes=3c 00 3c 00 00 03
+  count=4  data clocks=100 start=True bytes=3c 00 c0 03 fc 00
+  count=8  data clocks=100 start=True bytes=3c 00 c0 03 00 00
+```
+
+每条都有**起始位**、数据阶段完整（100 个时钟）、首字节就是 `PACKET_LEN` 的 `3c` ✓
+—— 数据通路在线上是**确定良好**的。
+
+**2. 传输层那次读（`read_reg addr=0x3ff55050 size=20`）在总线上**没有任何对应帧**
+
+抓取窗口以"串口出现 `read_reg enter`"为对齐点，前后各覆盖一两秒；窗口里只有梯子的那 8 条 CMD53
+和正常的 CMD52 流，**没有** 20 字节或 4 字节一段的读。
+
+**结论（把范围又缩了一层）**：传输层的第一次读**卡在"发命令之前"**——根本没有到达总线。
+不是数据阶段、不是响应、也不是命令发出去没回；而是驱动在准备/发起命令的那一步就没走完。
+
+下一步：在 `esp_sdmmc_sendcmd()` 的**入口**打印（命令号 + 当时的 `ctrl/status/rintsts`），
+确认它到底进没进 `sendcmd`；若没进，就再往上一层（`sdio_io_rw_extended` 内部）看。

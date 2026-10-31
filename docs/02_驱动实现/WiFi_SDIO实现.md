@@ -13914,6 +13914,23 @@ eh_hosted_nuttx: AP[7] ssid="KGDZ_Guest"        rssi=-50 ch=1
 剩余：**connect + 取 IP**。连接需要真实 AP 的凭据；下一轮先打印 `authmode`，
 若有开放 AP 就直接连它，否则需要你给一个可用的 SSID/密码（只用于本板联调）。
 
+**第 77 轮补记**：已把 `authmode` 打印出来并尝试自动连开放 AP，真机结果是**范围内没有开放 AP**：
+
+```
+AP[0] ssid="KGDZ_SHARE"        rssi=-39 ch=11 auth=4   (WPA2_PSK)
+AP[1] ssid="KGDZ_Guest"        rssi=-40 ch=1  auth=4   (WPA2_PSK)
+AP[2] ssid="KGDZ_YF"           rssi=-40 ch=1  auth=4   (WPA2_PSK)
+AP[3] ssid="HUAWEI-497ECE"     rssi=-45 ch=6  auth=3   (WPA_PSK)
+AP[4] ssid="FAST-KG-5FLOOR"    rssi=-49 ch=11 auth=4
+AP[5] ssid="KGDZ_YF"           rssi=-50 ch=1  auth=4
+AP[6] ssid="KGDZ_Guest"        rssi=-50 ch=1  auth=4
+AP[7] ssid="Hello_World_2.4G"  rssi=-50 ch=6  auth=3
+```
+
+（`auth=0` 一个都没有，即全部加密。）所以 **connect 这一步需要真实凭据**——这是唯一一个
+只有板子的使用者才掌握的信息。拿到 SSID/密码后：`eh_host_wifi_set_config(STA, …)` →
+`eh_host_wifi_connect()` → 等 `DhcpDnsStatus` 事件里的 IP，验收④即可闭环。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

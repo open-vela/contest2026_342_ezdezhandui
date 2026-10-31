@@ -409,12 +409,50 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                              "%s: scan_get_ap_records -> %d n=%u\n",
                              ENTRY_TAG, dir, (unsigned)n);
 
+                      bool joined = false;
+
                       for (unsigned i = 0; dir == ESP_OK && i < n; i++)
                         {
                           syslog(LOG_INFO,
-                                 "%s: AP[%u] ssid=\"%s\" rssi=%d ch=%u\n",
+                                 "%s: AP[%u] ssid=\"%s\" rssi=%d ch=%u auth=%d%s\n",
                                  ENTRY_TAG, i, (FAR const char *)aps[i].ssid,
-                                 (int)aps[i].rssi, (unsigned)aps[i].primary);
+                                 (int)aps[i].rssi, (unsigned)aps[i].primary,
+                                 (int)aps[i].authmode,
+                                 aps[i].authmode == WIFI_AUTH_OPEN ?
+                                     "  <-- open" : "");
+
+                          /* Join the first open AP found (goal stage 4).
+                           *
+                           * An encrypted one would need credentials this board
+                           * does not have; an open one exercises exactly the
+                           * same RPC path (set_config + connect) with nothing to
+                           * configure.
+                           */
+
+                          if (!joined && aps[i].authmode == WIFI_AUTH_OPEN)
+                            {
+                              wifi_config_t ccfg;
+                              esp_err_t     crc;
+
+                              memset(&ccfg, 0, sizeof(ccfg));
+                              memcpy(ccfg.sta.ssid, aps[i].ssid,
+                                     sizeof(ccfg.sta.ssid));
+
+                              crc = eh_host_wifi_set_config(WIFI_IF_STA, &ccfg);
+                              syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+                                     "%s: RPC wifi_set_config(\"%s\") -> %d\n",
+                                     ENTRY_TAG, (FAR const char *)aps[i].ssid,
+                                     crc);
+
+                              if (crc == ESP_OK)
+                                {
+                                  crc = eh_host_wifi_connect();
+                                  syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+                                         "%s: RPC wifi_connect -> %d\n",
+                                         ENTRY_TAG, crc);
+                                  joined = crc == ESP_OK;
+                                }
+                            }
                         }
                     }
                 }

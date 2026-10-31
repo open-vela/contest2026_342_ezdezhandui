@@ -12117,3 +12117,31 @@ DHCP：交给 NuttX 自己的客户端（app 侧）
 
 结果：**选项打开构建 0 error**（`nuttx.bin` md5 `0b53f2c1…`，`NETDEV_IOCTL` 已随选项打开），
 Wi-Fi 控制面代码在位、可随时打开；缺的只有"IDF Wi-Fi 类型面"这一件事，已在 CMakeLists 与文档里写明。
+
+#### BL.5 完成（下一轮继续）：Wi-Fi 控制面**编进构建**了 —— 靠的是"vendor 的注入头"
+
+上一节的结论是"缺 IDF Wi-Fi 类型面"。本轮把它补完了，而且**没有重抄任何 IDF 类型**：
+
+1. **官方栈自带"注入头"**：`port/idf_components/esp_wifi_remote/.../idf_v6.1/include/injected/`
+   （356 KB，`esp_wifi.h` / `esp_wifi_types*.h` / `esp_wifi_ap_get_sta_list.h` …）——这正是
+   **esp_wifi_remote 用的那套头**，`wifi_config_t`、`wifi_sta_list_t` 在里面都是**完整的**。
+   已入仓 `port/idf_components/injected_idf_v6.1/`，并放在端口 include 顺序的**最前**。
+2. 它们读的是 **`CONFIG_WIFI_RMT_*`**（远程版命名）而不是 `CONFIG_ESP_WIFI_*`：32 个常量按
+   ESP-IDF 默认值写进端口 `sdkconfig.h`（`TX_BUFFER_TYPE=1`、`RX_BA_WIN=6`、
+   `HETB_QUEUE_NUM=4` 等）。
+3. 距补上还差的两个小件：端口 `esp_netif_types.h` 里补
+   `esp_ip4_addr_t`/`esp_netif_pair_mac_ip_t`（`esp_wifi_ap_get_sta_list.h` 需要），以及
+   `eh_host_port_nuttx_supplement.h`——**在 master config 之后**再强制包含的头，用来带
+   `wifi_config_t` 等（与 master config 同一机制，只作用于官方栈的编译单元）。
+
+结果：
+
+```
+$ ./build.sh <board> --cmake -j8      # CONFIG_ESPRESSIF_HOSTED_WIFI=y（Kconfig 默认已改为 y）
+#### build completed successfully ####   0 error
+目标文件 51 → 67（WiFi 特性 4 个 .c + 相关）；
+```
+
+`CONFIG_ESPRESSIF_HOSTED_WIFI` 同时 `select NETDEV_IOCTL`，所以打开它 = **scan/connect RPC + wlan0
+的 SIOCSIW\* 处理一起就位**。目标④的软件侧到这里是**完整的**：数据面（netdev ↔ channel）+
+控制面（ioctl ↔ eh_host_wifi_*），只剩真机链路。

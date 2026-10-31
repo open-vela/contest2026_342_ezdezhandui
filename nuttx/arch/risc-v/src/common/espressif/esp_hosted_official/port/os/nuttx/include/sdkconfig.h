@@ -53,3 +53,45 @@
 #define CONFIG_ESP_WIFI_SLP_IRAM_OPT             0
 #define CONFIG_ESP_WIFI_IRAM_OPT                 1
 #define CONFIG_ESP_WIFI_EXTRA_IRAM_OPT           0
+
+/****************************************************************************
+ * The remote Wi-Fi build constants
+ *
+ * The vendor's injected esp_wifi.h (the header set for esp_wifi_remote, which
+ * is what a host without a local radio uses) reads these instead of the
+ * CONFIG_ESP_WIFI_* names.  Values are ESP-IDF's Wi-Fi defaults: the host has
+ * no local radio, and the numbers travel to the companion inside the init RPC.
+ ****************************************************************************/
+
+#define CONFIG_WIFI_RMT_11R_SUPPORT                    0
+#define CONFIG_WIFI_RMT_AMPDU_RX_ENABLED               1
+#define CONFIG_WIFI_RMT_AMPDU_TX_ENABLED               1
+#define CONFIG_WIFI_RMT_AMSDU_TX_ENABLED               0
+#define CONFIG_WIFI_RMT_BSS_MAX_IDLE_SUPPORT           1
+#define CONFIG_WIFI_RMT_CACHE_TX_BUFFER_NUM            16
+#define CONFIG_WIFI_RMT_CSI_ENABLED                    0
+#define CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM          32
+#define CONFIG_WIFI_RMT_DYNAMIC_RX_MGMT_BUF            0
+#define CONFIG_WIFI_RMT_DYNAMIC_TX_BUFFER_NUM          32
+#define CONFIG_WIFI_RMT_ENABLE_DUMP_HESIGB             0
+#define CONFIG_WIFI_RMT_ENABLE_WPA3_OWE_SOFTAP         0
+#define CONFIG_WIFI_RMT_ENABLE_WPA3_SAE                1
+#define CONFIG_WIFI_RMT_ENTERPRISE_SUPPORT             0
+#define CONFIG_WIFI_RMT_ESPNOW_MAX_ENCRYPT_NUM         7
+#define CONFIG_WIFI_RMT_FTM_INITIATOR_SUPPORT          1
+#define CONFIG_WIFI_RMT_FTM_RESPONDER_SUPPORT          1
+#define CONFIG_WIFI_RMT_GCMP_SUPPORT                   0
+#define CONFIG_WIFI_RMT_GMAC_SUPPORT                   0
+#define CONFIG_WIFI_RMT_MGMT_SBUF_NUM                  16
+#define CONFIG_WIFI_RMT_NVS_ENABLED                    1
+#define CONFIG_WIFI_RMT_PASSIVE_HIDDEN_AP_SUPPORT      0
+#define CONFIG_WIFI_RMT_RX_BA_WIN                      6
+#define CONFIG_WIFI_RMT_RX_MGMT_BUF_NUM_DEF            4
+#define CONFIG_WIFI_RMT_SLP_SAMPLE_BEACON_FEATURE      0
+#define CONFIG_WIFI_RMT_SOFTAP_BEACON_MAX_LEN          752
+#define CONFIG_WIFI_RMT_STA_DISCONNECTED_PM_ENABLE     0
+#define CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM           10
+#define CONFIG_WIFI_RMT_STATIC_TX_BUFFER_NUM           16
+#define CONFIG_WIFI_RMT_TASK_PINNED_TO_CORE_1          0
+#define CONFIG_WIFI_RMT_TX_BUFFER_TYPE                 1
+#define CONFIG_WIFI_RMT_TX_HETB_QUEUE_NUM              4

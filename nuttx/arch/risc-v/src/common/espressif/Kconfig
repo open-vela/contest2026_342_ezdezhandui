@@ -2231,7 +2231,7 @@ config ESPRESSIF_HOSTED_OFFICIAL
 config ESPRESSIF_HOSTED_WIFI
 	bool "Wi-Fi control over esp-hosted (scan/connect)"
 	depends on ESPRESSIF_HOSTED_OFFICIAL
-	default n
+	default y
 	select NETDEV_IOCTL
 	---help---
 		Compile the stack's Wi-Fi feature and the netdev's SIOCSIW* handling,

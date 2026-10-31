@@ -63,6 +63,11 @@ add_library(eh_hosted_nuttx OBJECT ${EH_HOSTED_SRCS})
 target_include_directories(eh_hosted_nuttx BEFORE PRIVATE
   ${EH_HOSTED_NUTTX_DIR}/include
   ${EH_HOSTED_NUTTX_DIR}/../include
+  # The vendor's own Wi-Fi header set for the remote case (esp_wifi_remote's
+  # injected headers): they carry the complete remote-side types the stack's
+  # Wi-Fi feature is written against, instead of the tree's local-radio headers
+  # that leave e.g. wifi_sta_list_t incomplete.
+  ${EH_HOSTED_DIR}/port/idf_components/injected_idf_v6.1/include/injected
 )
 
 target_include_directories(eh_hosted_nuttx PRIVATE
@@ -81,8 +86,6 @@ target_include_directories(eh_hosted_nuttx PRIVATE
   ${EH_HOSTED_DIR}/host/eh_host_core/src
   ${EH_HOSTED_DIR}/host/eh_host_autoinit/include
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/include
-  ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/include
-  ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/src
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/include
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/include
   ${EH_HOSTED_DIR}/common/serializers/eh_proto_v2/include
@@ -102,13 +105,22 @@ if(DEFINED ESP_HAL_3RDPARTY_REPO AND IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}/comp
   message(STATUS "esp-hosted: ${ESP_HAL_3RDPARTY_REPO} IDF headers on the port's include path")
 endif()
 
-# The Wi-Fi control surface (host/features/eh_host_feat_wifi, i.e. scan/connect
-# over RPC) is vendored but not compiled yet: its headers pull the tree's real
-# esp_wifi.h, which needs the full IDF Wi-Fi type and build-constant surface
-# (wifi_config_t complete, ESP_WIFI_MAX_CONN_NUM, CONFIG_ESP_WIFI_RX_BA_WIN,
-# ...).  The port's shims/definitions cover part of it; finishing that surface
-# is the last step before CONFIG_ESPRESSIF_HOSTED_WIFI can be turned on, and it
-# is also what the netdev's SIOCSIW* handling is gated on.
+# Wi-Fi control surface (scan/connect over RPC).  Selected separately because it
+# is the one part that needs the vendor's *injected* Wi-Fi headers -- the header
+# set esp_wifi_remote uses -- rather than the tree's local-radio ones, plus the
+# CONFIG_WIFI_RMT_* build constants the port's sdkconfig.h supplies.
+if(CONFIG_ESPRESSIF_HOSTED_WIFI)
+  # GLOB first: target_sources() takes a file list, not a pattern.
+  file(GLOB EH_HOSTED_WIFI_SRCS
+    ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/src/*.c)
+  target_sources(eh_hosted_nuttx PRIVATE ${EH_HOSTED_WIFI_SRCS})
+  target_include_directories(eh_hosted_nuttx PRIVATE
+    ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/include
+    ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/src)
+  target_compile_definitions(eh_hosted_nuttx PRIVATE
+    CONFIG_ESP_HOSTED_HOST_FEAT_WIFI=1
+    CONFIG_ESP_HOSTED_HOST_FEAT_WIFI_READY=1)
+endif()
 
 # Configuration of the official stack, in the symbols its own
 # eh_host_port_master_config.h reads (board wiring from appendices AK/AN).
@@ -144,7 +156,7 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
 # The stack expects the master config to be force-included (its own build does
 # this through an INTERFACE target).  Scoped to this library only.
 set_source_files_properties(${EH_HOSTED_STACK_SRCS} PROPERTIES
-  COMPILE_OPTIONS "-include;eh_host_port_master_config.h")
+  COMPILE_OPTIONS "-include;eh_host_port_master_config.h;-include;eh_host_port_nuttx_supplement.h")
 
 # NuttX provides neither TLS nor an emutls runtime on this target, so the one
 # _Thread_local variable in the stack (the RPC dispatcher's re-entrancy guard in

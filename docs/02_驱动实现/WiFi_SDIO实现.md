@@ -12428,3 +12428,69 @@ eh_host_port_sdio: wait_slave_intr ticks=4294967295 D1=1 probe=0
 ```
 python3 tools/test/evidence.py --reset --seconds 180 --analyzer 180 --tag post-powercycle
 ```
+
+### 附录 BT —— 解码器解析 + 一个重要的新观察（DATA_OVER 不来，但数据已经到了）（2026-11-01）
+
+目标里补了"用解码器解析"。本轮把解码器补齐并使用，同时挖到一条比之前都更具体的新线索。
+
+#### BT.1 解码器：CMD 帧 + **数据阶段**都能解
+
+`tools/test/pxview/frames.py` 原本只解 CMD/响应（CRC7 校验）。本轮补上 `decode_data_phase()`：
+在命令之后按 CLK 上升沿采 DAT0..3 的半字节流，**找起始位（四线全低一拍）**、拼字节、
+打印前若干字节与半字节流。这样"数据阶段到底有没有发生"就是**解码结论**，不用再靠数边沿。
+
+`tools/test/evidence.py` 增加 `--decode`：**抓完立刻解码**并落盘 `decoded.txt`。
+（踩坑：分析仪是连续采样的，超出 sampleLimit 的数据会被滚掉——抓完隔一会儿再解码，
+往往只剩空窗口。所以解码必须与抓取在同一次运行里。）
+
+本轮实测解码结果（`logs/…_decode-check/decoded.txt`）：
+
+```
+window 15-20 s: 37 frame(s)
+   15526997  CMD0  cmd arg=0x00000000
+   15597740  CMD5  cmd arg=0x00000000
+   15635401  CMD5  cmd arg=0x00000300
+   15675262  CMD3  cmd arg=0x00000000
+   15725564  CMD7  cmd arg=0x20ff0000
+   15775565  CMD52 cmd arg=0x00000e00
+   16216100  CMD3  rsp arg=0x00010000
+   16256141  CMD7  rsp arg=0x00001e00
+   16296302  CMD52 rsp arg=0x00001040
+   16336444  CMD52 rsp arg=0x00001042
+```
+
+即：**命令/响应帧在 bring-up 窗口里被逐条解出来**（含参数与响应），
+而**整个抓包里没有一条 CMD53**——与附录 BR（官方栈根本没走到读）互相印证。
+
+#### BT.2 新观察：卡的数据**已经进到 FIFO**，但 DATA_OVER 不来
+
+串口里出现了以前没见过的一类行：
+
+```
+esp_sdmmc: timeout with 1 byte(s) still in the FIFO: first=0x0000003c fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: timeout with 1 byte(s) still in the FIFO: first=0x03c0003c …
+```
+
+`first=0x0000003c` 就是**卡发来的那一个字节**（FN1 0x60 的首字节，正是 PACKET_LEN 的 0x3c）。
+也就是说：**卡在发数据、CIU 也把字节放进了 FIFO，但 `DATA_OVER` 位始终不置起**，
+于是驱动的排空条件（要求 DATA_OVER）永不满足 → 超时 → 报 -110。
+
+#### BT.3 试过、并**已回退**的"修复"
+
+很自然的想法：超时时 FIFO 里已经有足够字节，就当成完成。**试了，但结果不对**：
+
+```
+sweep[0] FN1@0x60 size= 1 ret=0 first=5a 5a 5a 5a
+sweep[0] FN1@0x60 size=60 ret=0 first=5a 5a 5a 5a
+sweep[0] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
+```
+
+全变成 `ret=0`，但每一个都是同一串 `5a 5a 5a 5a`——那是**缓冲区没被真正写过的样子**：
+这个规则**把失败伪装成了成功**。已回退，并把这段经历写成注释留在代码里，免得后人再试一遍。
+
+#### BT.4 下一步（更具体了）
+
+要查的不是"有没有数据"，而是**为什么 CIU 不置 `DATA_OVER`**。可查的点：
+`bmod`（SWR/FB/DE 位）、`ctrl`（DMA 使能/内部 DMA 位）、`idsts`（IDMAC 状态）、
+以及数据超时寄存器 `tmout`——`idsts=00002000`（FSM 停在某个非 IDLE 状态）在每次超时里都是一样的，
+这条线可以顺下去。

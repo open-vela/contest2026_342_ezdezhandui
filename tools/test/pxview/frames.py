@@ -119,3 +119,56 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ---------------------------------------------------------------------------
+# Data phase decoding
+#
+# A CMD53 is only half the story: the transfer itself happens on DAT0..DAT3,
+# four bits per clock, after the command's response.  What matters when a data
+# path is suspect is whether that phase happens at all, so this reports the
+# start bit, the first bytes it can assemble, and how many clocks carried data.
+#
+# In four-bit mode the phase starts with the host (read) or card (write) pulling
+# all four data lines low for one clock -- that "start bit" is the thing to look
+# for.  The bytes that follow are nibble-per-clock, DAT3 first.
+# ---------------------------------------------------------------------------
+
+CH_DATA = (2, 3, 4, 5)          # DAT0..DAT3
+
+
+def decode_data_phase(start_sample, max_clocks=200, rate=1_000_000):
+    """Decode the DAT phase that follows a command, starting at start_sample.
+
+    Returns a dict: clocks seen, whether a start bit was found, the first bytes,
+    and the nibble stream in hex (for eyeballing).
+    """
+
+    span = int(rate * max_clocks / 100000) or 4096
+    clk = sample_bits(CH_CLK, start_sample, span)
+    dat = [sample_bits(c, start_sample, span) for c in CH_DATA]
+
+    if not clk:
+        return {"clocks": 0, "start": False, "bytes": [], "nibbles": ""}
+
+    rising = [i for i in range(1, len(clk)) if clk[i] and not clk[i - 1]]
+    nibbles = []
+    for e in rising[:max_clocks]:
+        nibbles.append((dat[3][e] << 3) | (dat[2][e] << 2) |
+                       (dat[1][e] << 1) | dat[0][e])
+
+    start = None
+    for i in range(len(nibbles) - 2):
+        if nibbles[i] == 0 and nibbles[i + 1] != 0xF:
+            start = i
+            break
+
+    out = []
+    if start is not None:
+        for i in range(start + 1, len(nibbles) - 1, 2):
+            out.append((nibbles[i] << 4) | nibbles[i + 1])
+            if len(out) >= 8:
+                break
+
+    return {"clocks": len(rising), "start": start is not None,
+            "bytes": out, "nibbles": " ".join("%X" % n for n in nibbles[:32])}
+

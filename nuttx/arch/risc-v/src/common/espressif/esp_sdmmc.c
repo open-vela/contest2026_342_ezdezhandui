@@ -2611,6 +2611,17 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
              * register holds f4 0a 60 2f.
              */
 
+            /* NOTE: accepting the transfer on "the FIFO holds enough bytes"
+             * instead of waiting for DATA_OVER was tried and reverted.
+             *
+             * It made every step of the sweep report ret=0, but all of them
+             * came back with the same 5a 5a 5a 5a -- the pattern the buffer
+             * holds when nothing was drained -- so it manufactured successes
+             * rather than transferring data.  The real observation to chase is
+             * the one below: bytes do reach the FIFO (0x0000003c for a one-byte
+             * read of FN1 0x60) while DATA_OVER never arrives.
+             */
+
             idle = (st & SDMMC_DATA_OVER) != 0 && bytes > 0 && idle;
 
             /* Empty the FIFO once the CIU says the data phase is over.

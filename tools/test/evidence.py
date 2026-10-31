@@ -11,6 +11,10 @@
   evidence.py --reset --seconds 180 --tag hosted        # 复位 + 抓 180 s 串口
   evidence.py --seconds 60 --watch '<regex>'            # 不复位，只看
   evidence.py --reset --analyzer 60 --tag dat1          # 顺便抓 60 s 波形
+  evidence.py --reset --seconds 60 --analyzer 60 --decode   # 抓完立刻用解码器解析
+
+--decode 会**在同一次运行里**抓完就解码，原因见下：分析仪是连续采样的，
+sampleLimit 之外的数据会被滚掉——抓完隔一会儿再解码，往往只剩空窗口。
 
 产物: logs/<UTC 时间戳>_<tag>/{console.txt,meta.txt[,analyzer.json]}
 """
@@ -118,6 +122,43 @@ def analyzer_capture(seconds, outdir):
     return "capture started (%d s at 1 MHz)" % seconds
 
 
+def decode_capture(outdir, seconds):
+    """Decode the capture that is still in the analyser's buffer.
+
+    Runs immediately after the capture on purpose: the instrument samples
+    continuously and only the last sampleLimit samples are readable, so a
+    decode performed later finds empty windows (measured).
+    """
+
+    try:
+        sys.path.insert(0, os.path.join(REPO, "tools/test/pxview"))
+        import frames as F
+    except Exception as e:
+        return "decoder unavailable: %s" % e
+
+    W = 5_000_000
+    lines, total = [], 0
+    for k in range(0, max(1, seconds // 5)):
+        try:
+            fr, _ = F.decode(k * W, W)
+        except Exception:
+            break
+        if not fr:
+            continue
+        lines.append("window %d-%d s: %d frame(s)" % (k * 5, k * 5 + 5, len(fr)))
+        for at, kind, idx, arg in fr:
+            lines.append("  %9d  %s" % (at, F.describe(kind, idx, arg)))
+            if idx == 53:
+                d = F.decode_data_phase(at + 2000)
+                lines.append("        data: clocks=%d start=%s bytes=%s"
+                             % (d["clocks"], d["start"],
+                                " ".join("%02x" % b for b in d["bytes"][:6]) or "-"))
+        total += len(fr)
+    lines.append("total frames: %d" % total)
+    open(os.path.join(outdir, "decoded.txt"), "w").write("\n".join(lines) + "\n")
+    return "%d frames decoded" % total
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reset", action="store_true", help="先按 USB-JTAG 约定复位 P4")
@@ -125,6 +166,8 @@ def main():
     ap.add_argument("--tag", default="evidence")
     ap.add_argument("--watch", default=None, help="只报告匹配该正则的行")
     ap.add_argument("--analyzer", type=int, default=0, help="同时抓 N 秒波形")
+    ap.add_argument("--decode", action="store_true",
+                    help="抓完立刻用 SDIO 解码器解析并保存")
     args = ap.parse_args()
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -147,6 +190,10 @@ def main():
         text = direct_read(args.seconds) or "(no output)"
     else:
         meta.append("console: Tabby session %s" % sid)
+
+    if args.decode:
+        dec = decode_capture(outdir, args.seconds)
+        meta.append("decode: " + dec)
 
     open(os.path.join(outdir, "console.txt"), "w").write(text)
     open(os.path.join(outdir, "meta.txt"), "w").write("\n".join(meta) + "\n")

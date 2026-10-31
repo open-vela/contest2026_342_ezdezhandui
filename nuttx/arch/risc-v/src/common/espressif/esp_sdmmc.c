@@ -482,7 +482,7 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
    * from "it was issued and the controller dropped it".
    */
 
-  syslog(LOG_INFO,
+  syslog(LOG_DEBUG,
          "esp_sdmmc: issue CMD%u arg=0x%08" PRIx32 " (cmd_word=%08" PRIx32 ")\n",
          (unsigned)(hwcmd.cmd_index), arg, hwcmd.val);
 
@@ -2373,7 +2373,17 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 
   if ((cmd & MMCSD_RESPONSE_MASK) == MMCSD_NO_RESPONSE)
     {
-      syslog(LOG_INFO, "esp_sdmmc: waitresponse -> OK (no response phase)\n");
+      syslog(LOG_DEBUG, "esp_sdmmc: waitresponse -> OK (no response phase)\n");
+      if (waits < 24)
+        {
+          syslog(LOG_INFO,
+                 "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
+                 " rintsts=%08x ctrl=%08x\n",
+                 (int)(OK), (unsigned)priv->xfrmask,
+                 (unsigned)priv->hw->rintsts.val,
+                 (unsigned)priv->hw->ctrl.val);
+        }
+
       return OK;
     }
 
@@ -2455,6 +2465,16 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
                *(volatile uint32_t *)&hw->rintsts,
                *(volatile uint32_t *)&hw->resp[0]);
         syslog(LOG_INFO, "esp_sdmmc: waitresponse -> -ETIMEDOUT\n");
+      if (waits < 24)
+        {
+          syslog(LOG_INFO,
+                 "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
+                 " rintsts=%08x ctrl=%08x\n",
+                 (int)(-ETIMEDOUT), (unsigned)priv->xfrmask,
+                 (unsigned)priv->hw->rintsts.val,
+                 (unsigned)priv->hw->ctrl.val);
+        }
+
         return -ETIMEDOUT;
       }
 
@@ -2463,6 +2483,16 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
         syslog(LOG_ERR, "esp_sdmmc: response error (rintsts=%08" PRIx32 ")\n",
                *(volatile uint32_t *)&hw->rintsts);
         syslog(LOG_INFO, "esp_sdmmc: waitresponse -> -EIO (RE set)\n");
+      if (waits < 24)
+        {
+          syslog(LOG_INFO,
+                 "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
+                 " rintsts=%08x ctrl=%08x\n",
+                 (int)(-EIO), (unsigned)priv->xfrmask,
+                 (unsigned)priv->hw->rintsts.val,
+                 (unsigned)priv->hw->ctrl.val);
+        }
+
         return -EIO;
       }
   }
@@ -2475,7 +2505,17 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
    * bailed out before CMD3.
    */
 
-  syslog(LOG_INFO, "esp_sdmmc: waitresponse -> OK\n");
+  syslog(LOG_DEBUG, "esp_sdmmc: waitresponse -> OK\n");
+      if (waits < 24)
+        {
+          syslog(LOG_INFO,
+                 "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
+                 " rintsts=%08x ctrl=%08x\n",
+                 (int)(OK), (unsigned)priv->xfrmask,
+                 (unsigned)priv->hw->rintsts.val,
+                 (unsigned)priv->hw->ctrl.val);
+        }
+
   return OK;
 }
 
@@ -2509,7 +2549,7 @@ static int esp_sdmmc_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
    * the block-size write is the first command that depends on those bits.
    */
 
-  syslog(LOG_INFO, "esp_sdmmc: short response raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
+  syslog(LOG_DEBUG, "esp_sdmmc: short response raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
          *(volatile uint32_t *)&priv->hw->resp[0], cmd);
 
   return OK;

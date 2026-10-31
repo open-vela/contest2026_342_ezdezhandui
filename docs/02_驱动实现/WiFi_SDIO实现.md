@@ -12880,3 +12880,27 @@ esp_sdmmc: waitresponse enter cmd=00 rintsts=00000...  esp_sdmmc: ISR #1
 
 下一步：把打印拆成"进入/退出"两行、只打关键三位（命令号、`rintsts`、是否有 RESPONSEDONE），
 并确认"响应位到底有没有置起、被谁清掉"——这是最后一块拼图。
+
+#### BW.7 让串口"安静下来"：per-command 日志降级（本轮）
+
+串口是本板唯一的证据通道，而驱动原来**每条命令**都打一行（`issue CMD…`、`short response raw=…`、
+`waitresponse -> OK`、`waitresponse exit xfrmask=…`），把传输层自己的日志全埋了。
+
+本轮把这些降为 `LOG_DEBUG`（NuttX 控制台默认只显示 INFO 及以上）：
+
+```
+（降级前）一次匹配只有 4 行，其余全是命令回显，而且关键行被截断/交错
+（降级后）同类匹配 632 行，传输层的时序看得清了
+```
+
+降级后读到的最后一段（一次抓取）：
+
+```
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: waitresponse -> OK (no response phase)      ×5
+esp_sdmmc: waitresponse enter cmd=00 rintsts=0000…  esp_sdmmc: ISR #1   ×3
+```
+
+即：命令确实在发、`waitresponse` 在被等、ISR 也在跑——**"等到没等到"现在可以从容地从串口里读了**。
+下一轮直接用这个干净的通道把 `waitresponse` 的 in/out 两行、以及 `ISR` 里清了哪些位，
+一起对齐时间线看。

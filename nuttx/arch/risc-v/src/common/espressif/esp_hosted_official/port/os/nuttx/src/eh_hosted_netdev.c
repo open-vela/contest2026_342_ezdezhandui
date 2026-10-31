@@ -44,9 +44,19 @@
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/net/netdev.h>
+#include <nuttx/wireless/wireless.h>
 
 #include "eh_common_interface.h"
 #include "eh_host_mcu_transport_channels.h"
+#ifdef CONFIG_ESPRESSIF_HOSTED_WIFI
+#  include "eh_host_wifi.h"
+#endif
+
+/* Scan results are kept here between SIOCSIWSCAN and SIOCGIWSCAN, which is the
+ * model NuttX's wireless layer expects (the driver owns the BSS table).
+ */
+
+#define HOSTED_MAX_AP 32
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
 
@@ -77,6 +87,11 @@ struct hosted_netdev_s
  ****************************************************************************/
 
 static struct hosted_netdev_s g_hosted_netdev;
+
+#if defined(CONFIG_NETDEV_IOCTL) && defined(CONFIG_ESPRESSIF_HOSTED_WIFI)
+static wifi_ap_record_t g_scan_ap[HOSTED_MAX_AP];
+static int               g_scan_count;
+#endif
 
 /****************************************************************************
  * Private Functions
@@ -154,6 +169,206 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
 }
 
 /****************************************************************************
+ * Name: hosted_netdev_ioctl
+ *
+ * Description:
+ *   The wireless commands NuttX issues on an interface: scan, then read the
+ *   results, then join.  Each one is a thin mapping onto the stack's Wi-Fi API
+ *   (eh_host_wifi_*), which turns them into RPCs to the companion.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_NETDEV_IOCTL) && defined(CONFIG_ESPRESSIF_HOSTED_WIFI)
+static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
+                               unsigned long arg)
+{
+  FAR struct iwreq *iwr = (FAR struct iwreq *)arg;
+  esp_err_t ret;
+
+  switch (cmd)
+    {
+      case SIOCSIWSCAN:
+        {
+          /* Blocking scan: the caller expects the table to be ready when this
+           * returns, and esp-hosted's RPC carries the result back with it.
+           */
+
+          uint16_t count = 0;
+
+          ret = eh_host_wifi_scan_start(NULL, true);
+          if (ret != ESP_OK)
+            {
+              syslog(LOG_ERR, "%s: scan failed: %d\n", NETDEV_TAG, ret);
+              return -EIO;
+            }
+
+          ret = eh_host_wifi_scan_get_ap_num(&count);
+          if (ret != ESP_OK)
+            {
+              return -EIO;
+            }
+
+          if (count > HOSTED_MAX_AP)
+            {
+              count = HOSTED_MAX_AP;
+            }
+
+          g_scan_count = 0;
+
+          if (count > 0)
+            {
+              ret = eh_host_wifi_scan_get_ap_records(&count, g_scan_ap);
+              if (ret != ESP_OK)
+                {
+                  return -EIO;
+                }
+
+              g_scan_count = count;
+            }
+
+          syslog(LOG_INFO, "%s: scan done, %d AP(s)\n", NETDEV_TAG, g_scan_count);
+          return OK;
+        }
+
+      case SIOCGIWSCAN:
+        {
+          /* Marshal the cached table as an iw_event stream.  The caller passes
+           * a buffer and its size; whatever does not fit is reported by the
+           * length written, which is how the wireless layer detects a short
+           * buffer.
+           */
+
+          FAR uint8_t *out = (FAR uint8_t *)iwr->u.data.pointer;
+          size_t       room = iwr->u.data.length;
+          size_t       used = 0;
+          int          i;
+
+          for (i = 0; i < g_scan_count; i++)
+            {
+              FAR wifi_ap_record_t *ap = &g_scan_ap[i];
+              struct iw_event ev;
+              size_t          need;
+
+              /* The AP's address, so the entry can be identified. */
+
+              memset(&ev, 0, sizeof(ev));
+              ev.cmd = SIOCGIWAP;
+              ev.u.ap_addr.sa_family = AF_INET;
+              memcpy(ev.u.ap_addr.sa_data, ap->bssid, 6);
+              need = IW_EV_LEN(ap_addr);
+
+              if (used + need > room)
+                {
+                  break;
+                }
+
+              memcpy(out + used, &ev, need);
+              used += need;
+
+              /* The SSID, which is what a join matches on. */
+
+              memset(&ev, 0, sizeof(ev));
+              ev.cmd = SIOCGIWESSID;
+              ev.u.essid.pointer = (FAR void *)ap->ssid;
+              ev.u.essid.length  = strnlen((FAR const char *)ap->ssid, 32);
+              ev.u.essid.flags   = 1;
+              need = IW_EV_LEN(essid);
+
+              if (used + need > room)
+                {
+                  break;
+                }
+
+              memcpy(out + used, &ev, need);
+              used += need;
+
+              /* Channel and signal strength. */
+
+              memset(&ev, 0, sizeof(ev));
+              ev.cmd = SIOCGIWFREQ;
+              ev.u.freq.m    = ap->primary;
+              ev.u.freq.e    = 0;
+              ev.u.freq.flags = IW_FREQ_FIXED;
+              need = IW_EV_LEN(freq);
+
+              if (used + need > room)
+                {
+                  break;
+                }
+
+              memcpy(out + used, &ev, need);
+              used += need;
+            }
+
+          iwr->u.data.length = used;
+          return OK;
+        }
+
+      case SIOCSIWESSID:
+        {
+          /* Join: fill the station configuration and connect.  The ESSID
+           * arrives as a pointer plus a length, not as a C string.
+           */
+
+          FAR const uint8_t *ssid = (FAR const uint8_t *)iwr->u.essid.pointer;
+          wifi_config_t      cfg;
+
+          if (ssid == NULL || iwr->u.essid.length == 0 ||
+              iwr->u.essid.length > 32)
+            {
+              return -EINVAL;
+            }
+
+          memset(&cfg, 0, sizeof(cfg));
+          memcpy(cfg.sta.ssid, ssid, iwr->u.essid.length);
+
+          ret = eh_host_wifi_set_config(WIFI_IF_STA, &cfg);
+          if (ret != ESP_OK)
+            {
+              syslog(LOG_ERR, "%s: set_config failed: %d\n", NETDEV_TAG, ret);
+              return -EIO;
+            }
+
+          ret = eh_host_wifi_connect();
+          if (ret != ESP_OK)
+            {
+              syslog(LOG_ERR, "%s: connect failed: %d\n", NETDEV_TAG, ret);
+              return -EIO;
+            }
+
+          syslog(LOG_INFO, "%s: joining \"%.*s\"\n", NETDEV_TAG,
+                 (int)iwr->u.essid.length, (FAR const char *)ssid);
+          return OK;
+        }
+
+      case SIOCGIWESSID:
+        {
+          wifi_config_t cfg;
+
+          if (iwr->u.essid.pointer == NULL)
+            {
+              return -EINVAL;
+            }
+
+          memset(&cfg, 0, sizeof(cfg));
+          if (eh_host_wifi_get_config(WIFI_IF_STA, &cfg) != ESP_OK)
+            {
+              return -EIO;
+            }
+
+          memcpy(iwr->u.essid.pointer, cfg.sta.ssid,
+                 strnlen((FAR const char *)cfg.sta.ssid, 32));
+          iwr->u.essid.length = strnlen((FAR const char *)cfg.sta.ssid, 32);
+          return OK;
+        }
+
+      default:
+        return -ENOTTY;
+    }
+}
+#endif /* CONFIG_NETDEV_IOCTL && CONFIG_ESPRESSIF_HOSTED_WIFI */
+
+/****************************************************************************
  * Name: hosted_netdev_ifup / hosted_netdev_ifdown
  *
  * Description:
@@ -221,6 +436,9 @@ int esp_hosted_netdev_register(void)
   priv->dev.d_ifup    = hosted_netdev_ifup;
   priv->dev.d_ifdown  = hosted_netdev_ifdown;
   priv->dev.d_txavail = hosted_netdev_txavail;
+#if defined(CONFIG_NETDEV_IOCTL) && defined(CONFIG_ESPRESSIF_HOSTED_WIFI)
+  priv->dev.d_ioctl   = hosted_netdev_ioctl;
+#endif
 
   /* A locally administered address until the companion reports the station
    * MAC over the control channel (goal stage 4 wires that through).

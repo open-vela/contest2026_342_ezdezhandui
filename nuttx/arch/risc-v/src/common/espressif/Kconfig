@@ -2227,6 +2227,19 @@ config ESPRESSIF_HOSTED_OFFICIAL
 		Requires a working SDIO data path: appendix AO records the board
 		state that has to be recovered (a full power cycle of the board,
 		not a JTAG reset) before the link can move payload again.
+	select NETDEV_IOCTL
+config ESPRESSIF_HOSTED_WIFI
+	bool "Wi-Fi control over esp-hosted (scan/connect)"
+	depends on ESPRESSIF_HOSTED_OFFICIAL
+	default n
+	select NETDEV_IOCTL
+	---help---
+		Compile the stack's Wi-Fi feature and the netdev's SIOCSIW* handling,
+		so wlan0 can scan and join through the companion.
+
+		Off until the IDF Wi-Fi type/constant surface the feature's headers
+		need is complete in this port (docs appendix BL); the data path and
+		the rest of the port do not depend on it.
 
 config ESPRESSIF_HOSTED_OFFICIAL_PRIO
 	int "Official esp-hosted stack thread priority"

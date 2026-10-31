@@ -28,7 +28,6 @@ file(GLOB EH_HOSTED_STACK_SRCS
   ${EH_HOSTED_DIR}/host/eh_host_autoinit/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc_ext_v2/src/*.c
-  ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/src/*.c
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/src/*.c
   ${EH_HOSTED_DIR}/common/serializers/third_party/msg_codec/protobuf-c/protobuf-c/*.c
@@ -102,6 +101,14 @@ if(DEFINED ESP_HAL_3RDPARTY_REPO AND IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}/comp
   target_include_directories(eh_hosted_nuttx PRIVATE ${EH_HOSTED_IDF_INCS})
   message(STATUS "esp-hosted: ${ESP_HAL_3RDPARTY_REPO} IDF headers on the port's include path")
 endif()
+
+# The Wi-Fi control surface (host/features/eh_host_feat_wifi, i.e. scan/connect
+# over RPC) is vendored but not compiled yet: its headers pull the tree's real
+# esp_wifi.h, which needs the full IDF Wi-Fi type and build-constant surface
+# (wifi_config_t complete, ESP_WIFI_MAX_CONN_NUM, CONFIG_ESP_WIFI_RX_BA_WIN,
+# ...).  The port's shims/definitions cover part of it; finishing that surface
+# is the last step before CONFIG_ESPRESSIF_HOSTED_WIFI can be turned on, and it
+# is also what the netdev's SIOCSIW* handling is gated on.
 
 # Configuration of the official stack, in the symbols its own
 # eh_host_port_master_config.h reads (board wiring from appendices AK/AN).

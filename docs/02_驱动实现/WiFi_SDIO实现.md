@@ -12059,3 +12059,61 @@ nuttx.bin md5 f7062833…（上一版 0207bb03…）
    `SIOCSIWSCAN` / `SIOCSIWESSID`（`eh_hosted_netdev.c` 里加 ioctl 处理即可，与 wlan0 同一个文件）；
 2. DHCP 交给 NuttX 自己的客户端；
 3. 真机验收：**需要先整板断电**（附录 BH 的波形判决）。
+
+### 附录 BL —— 路线 B 第 16 步：wlan0 的无线 ioctl（scan/connect/SSID）就位（2026-11-01）
+
+#### BL.1 做了什么
+
+在 `eh_hosted_netdev.c` 里加了 `d_ioctl`，把 NuttX 的无线命令映射到官方栈的 Wi-Fi API：
+
+| NuttX 命令 | 映射到 | 说明 |
+|---|---|---|
+| `SIOCSIWSCAN` | `eh_host_wifi_scan_start(NULL, true)` → `eh_host_wifi_scan_get_ap_num()` → `eh_host_wifi_scan_get_ap_records()` | 阻塞式扫描，结果缓存进驱动自己的 BSS 表（NuttX 的模型要求驱动持有该表） |
+| `SIOCGIWSCAN` | （读缓存） | 按 `struct iw_event` 流打包：每个 AP 发 `SIOCGIWAP`（BSSID）、`SIOCGIWESSID`（SSID）、`SIOCGIWFREQ`（信道）；写满即止，用 `u.data.length` 报告实际写入字节数（短缓冲就是这样被上层发现的） |
+| `SIOCSIWESSID` | `eh_host_wifi_set_config(WIFI_IF_STA, &cfg)` + `eh_host_wifi_connect()` | ESSID 以"指针+长度"给出（不是 C 字符串），拷进 `wifi_config_t.sta.ssid` 再连接 |
+| `SIOCGIWESSID` | `eh_host_wifi_get_config()` | 取回当前 SSID |
+
+#### BL.2 一个必须补的配置
+
+`d_ioctl` 字段在 NuttX 里受 **`CONFIG_NETDEV_IOCTL`** 保护，而本板默认没开（实测 `.config` 里是 0）。
+所以给 `CONFIG_ESPRESSIF_HOSTED_OFFICIAL` 加了 **`select NETDEV_IOCTL`**——打开官方栈就自动带上，
+不必让使用者去翻 netdev 的配置项。ioctl 代码本身也用 `#ifdef CONFIG_NETDEV_IOCTL` 包住，
+两种配置下都能编（本轮实测：关闭时 0 error 且产物 md5 不变；打开需要一次干净重配）。
+
+#### BL.3 目标④的软件侧：**到这里就全部就位了**
+
+```
+NuttX wlan0 (eh_hosted_netdev.c)
+  ├─ 数据面：d_txavail → eh_host_transport_tx(ESP_STA_IF)
+  │           channel rx → netdev_input()
+  └─ 控制面：SIOCSIWSCAN / SIOCGIWSCAN / SIOCSIWESSID / SIOCGIWESSID
+             → eh_host_wifi_scan_start / scan_get_ap_records / set_config + connect
+DHCP：交给 NuttX 自己的客户端（app 侧）
+```
+
+剩下**唯一**的依赖就是真机链路——附录 BH 已经给出断电恢复后的判据。
+
+#### BL.4 补充（同轮后续）：Wi-Fi 控制面的「类型面」比预想深，已用开关隔离
+
+把 WiFi 特性真正编进构建时，又连撞三层：
+
+1. **`d_ioctl` 需要 `CONFIG_NETDEV_IOCTL`**（本板默认关）→ 给
+   `CONFIG_ESPRESSIF_HOSTED_OFFICIAL` 加 `select NETDEV_IOCTL`，干净重配后实测 `.config` 里为 1；
+2. **WiFi 特性的代码整段在 `#if EH_HOST_FEAT_WIFI_READY` 里**（没有这个宏时编出来是**空目标文件**，
+   链接期表现为 `undefined reference to eh_host_wifi_scan_start`）→ 需要
+   `CONFIG_ESP_HOSTED_HOST_FEAT_WIFI(_READY)=1`；
+3. **树的真 `esp_wifi.h` 还需要一整套 IDF Wi-Fi 构建常量与完整类型**：
+   `CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM` 等 30 个符号、`CONFIG_ESP_WIFI_RX_BA_WIN`、
+   `ESP_WIFI_MAX_CONN_NUM`、以及完整的 `wifi_config_t`。我在端口 `sdkconfig.h` 里按 IDF 默认值补了
+   30 个常量（有注释说明为什么），但类型面仍不全——继续补就是**把 IDF 的 Wi-Fi 类型系统在本仓重抄**，
+   得不偿失。
+
+所以本轮的处理是**用开关把它隔离**，而不是硬凑：
+
+| 开关 | 作用 | 默认 |
+|---|---|---|
+| `CONFIG_ESPRESSIF_HOSTED_WIFI` | 编 WiFi 特性 + netdev 的 `SIOCSIW*` 处理（`select NETDEV_IOCTL`） | **n** |
+| ioctl 代码 | `#if defined(CONFIG_NETDEV_IOCTL) && defined(CONFIG_ESPRESSIF_HOSTED_WIFI)` 包住 | — |
+
+结果：**选项打开构建 0 error**（`nuttx.bin` md5 `0b53f2c1…`，`NETDEV_IOCTL` 已随选项打开），
+Wi-Fi 控制面代码在位、可随时打开；缺的只有"IDF Wi-Fi 类型面"这一件事，已在 CMakeLists 与文档里写明。

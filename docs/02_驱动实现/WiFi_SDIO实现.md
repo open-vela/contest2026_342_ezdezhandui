@@ -13876,6 +13876,44 @@ eh_hosted_nuttx: direct eh_host_wifi_scan_start -> 12294      ← 0x3006 = ESP_E
 下一步：把 scan 的调用点从 ioctl 改成**板级命令**（或保留 entry 自测），并把从机的 MODE 问题解决，
 即可拿到 scan 结果；随后 connect / 取 IP。
 
+#### BY.19 第 76 轮：**scan 成功拿到真实 AP 列表**（目标④的 scan 达成）
+
+上一轮那个 `ESP_ERR_WIFI_MODE` 的真正原因，是**从机自己的示例应用正在连一个不存在的 SSID**——
+从机串口把 IDF 的拒绝理由原样打了出来：
+
+```
+I (17256) ehcp_wifi_rpc: send WIFI_EVENT_STA_START          ← 主机的 Req_WifiStart（best-effort）生效
+W (17654) wifi:sta_scan: STA is connecting, scan are not allowed!
+E (17654) ehcp_wifi_rpc: req_wifi_scan_start:1110 failed [esp_wifi_scan_start(...)] = [12294]
+```
+
+即 **"连接中不允许扫描"**。而从机示例的重试循环是**有限次数**（6 次、约 18 秒），
+所以只要**重试 scan 直到它空闲**就行（本轮在自测里加了 5 次、每次 6 秒的重试）。
+另外：`Req_WifiStart` 用 **best-effort** 发出（从机其实是回包的，`resp=yes`），
+这样不会因为同步等待而把流程卡住。
+
+真机结果（`logs/20261101-06xxxx_scan-results`）：
+
+```
+eh_hosted_nuttx: direct eh_host_wifi_scan_start -> 0
+eh_hosted_nuttx: scan_get_ap_num -> 0 count=25
+eh_hosted_nuttx: scan_get_ap_records -> 0 n=8
+eh_hosted_nuttx: AP[0] ssid="KGDZ_SHARE"        rssi=-39 ch=11
+eh_hosted_nuttx: AP[1] ssid="KGDZ_Guest"        rssi=-40 ch=1
+eh_hosted_nuttx: AP[2] ssid="KGDZ_YF"           rssi=-40 ch=1
+eh_hosted_nuttx: AP[3] ssid="HUAWEI-497ECE"     rssi=-45 ch=6
+eh_hosted_nuttx: AP[4] ssid="Hello_World_2.4G"  rssi=-48 ch=6
+eh_hosted_nuttx: AP[5] ssid="FAST-KG-5FLOOR"    rssi=-49 ch=11
+eh_hosted_nuttx: AP[6] ssid="KGDZ_YF"           rssi=-50 ch=1
+eh_hosted_nuttx: AP[7] ssid="KGDZ_Guest"        rssi=-50 ch=1
+```
+
+**扫到 25 个 AP、逐条读回 SSID/RSSI/信道** —— 从机射频、RPC 请求/响应、结果回传、主机侧解析
+整条链路都通了。**验收④的 scan 达成。**
+
+剩余：**connect + 取 IP**。连接需要真实 AP 的凭据；下一轮先打印 `authmode`，
+若有开放 AP 就直接连它，否则需要你给一个可用的 SSID/密码（只用于本板联调）。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

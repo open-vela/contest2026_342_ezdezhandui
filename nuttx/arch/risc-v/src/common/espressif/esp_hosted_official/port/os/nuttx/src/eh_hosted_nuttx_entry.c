@@ -34,6 +34,9 @@
 #include "eh_host_core.h"
 #include "eh_host_transport_config.h"
 #include "eh_host_feat_wifi.h"
+#include "eh_host_feat_rpc.h"
+#include "eh_host_feat_rpc_ext_v2_types.h"
+#include "gen_v2.h"
 #include "esp_wifi.h"
 
 #include "eh_hosted_nuttx.h"
@@ -279,11 +282,95 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
           }
         else
           {
-            rc = ioctl(fd, SIOCSIWSCAN, (unsigned long)(uintptr_t)&iwr);
-            syslog(rc == 0 ? LOG_INFO : LOG_ERR,
-                   "%s: SIOCSIWSCAN(wlan0) -> %d (errno=%d)\n",
-                   ENTRY_TAG, rc, errno);
+            /* Retry for a while.
+             *
+             * The companion's own application keeps trying to join a SSID that
+             * is not on the air, and IDF refuses a scan while a connection
+             * attempt is in flight: its console says it plainly --
+             * "sta_scan: STA is connecting, scan are not allowed!" -- and
+             * esp_wifi_scan_start returns ESP_ERR_WIFI_MODE (12294) for it.  That
+             * loop ends after six tries (about eighteen seconds), so the scan is
+             * retried until it is allowed (appendix BY.19).
+             */
+
+            for (int attempt = 0; attempt < 5; attempt++)
+              {
+                if (attempt > 0)
+                  {
+                    nxsig_usleep(6 * 1000 * 1000);
+                  }
+
+                errno = 0;
+                rc = ioctl(fd, SIOCSIWSCAN, (unsigned long)(uintptr_t)&iwr);
+                syslog(rc == 0 ? LOG_INFO : LOG_ERR,
+                       "%s: SIOCSIWSCAN(wlan0) try %d -> %d (errno=%d)\n",
+                       ENTRY_TAG, attempt + 1, rc, errno);
+
+                if (rc == 0)
+                  {
+                    break;
+                  }
+              }
+
             close(fd);
+
+            /* Read the companion's mode back, force STA, read it again, then
+             * ask for the scan.
+             *
+             * The scan came back ESP_ERR_WIFI_MODE (0x3006) from the companion
+             * while set_mode(STA) had answered 0, so the two disagree about the
+             * mode and the read-back says which way (appendix BY.19).
+             */
+
+            {
+              wifi_mode_t mode = WIFI_MODE_NULL;
+              esp_err_t   mrc;
+
+              mrc = eh_host_wifi_get_mode(&mode);
+              syslog(mrc == ESP_OK ? LOG_INFO : LOG_ERR,
+                     "%s: RPC wifi_get_mode -> %d mode=%d\n", ENTRY_TAG, mrc,
+                     (int)mode);
+
+              mrc = eh_host_wifi_set_mode(WIFI_MODE_STA);
+              syslog(mrc == ESP_OK ? LOG_INFO : LOG_ERR,
+                     "%s: RPC wifi_set_mode(STA) again -> %d\n", ENTRY_TAG, mrc);
+
+              mode = WIFI_MODE_NULL;
+              mrc = eh_host_wifi_get_mode(&mode);
+              syslog(mrc == ESP_OK ? LOG_INFO : LOG_ERR,
+                     "%s: RPC wifi_get_mode after set -> %d mode=%d\n",
+                     ENTRY_TAG, mrc, (int)mode);
+            }
+
+            /* Start the companion's Wi-Fi best-effort, then ask for the scan.
+             *
+             * The scan answered ESP_ERR_WIFI_MODE (0x3006) while the companion
+             * reported mode = STA, which is what its handler returns when the
+             * radio was never started *through the RPC path*: the slave
+             * application started it on its own, and Req_WifiStart's reply never
+             * arrives (a blocking wait only burns the timeout -- measured,
+             * appendix BY.19).  Sending it best-effort tells the companion to
+             * start and gives up on the reply, which is all this needs.
+             */
+
+            {
+              eh_rpc_ctrl_cmd_t *wreq = eh_rpc_ctrl_cmd_alloc();
+
+              if (wreq != NULL)
+                {
+                  void *resp = NULL;
+
+                  (void)eh_host_feat_rpc_request_sync_best_effort(
+                          RPC_ID__Req_WifiStart, wreq, &resp);
+                  syslog(LOG_INFO, "%s: Req_WifiStart sent (best effort), "
+                         "resp=%s\n", ENTRY_TAG, resp ? "yes" : "no");
+
+                  if (resp != NULL)
+                    {
+                      eh_rpc_ctrl_cmd_free(resp);
+                    }
+                }
+            }
 
             /* If the netdev path refused it, ask the stack directly.
              *
@@ -294,14 +381,44 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
              * one it is (appendix BY.18).
              */
 
-            if (rc != 0)
-              {
-                esp_err_t dir = eh_host_wifi_scan_start(NULL, true);
+            {
+              esp_err_t dir = eh_host_wifi_scan_start(NULL, true);
 
-                syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
-                       "%s: direct eh_host_wifi_scan_start -> %d\n",
-                       ENTRY_TAG, dir);
-              }
+              syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
+                     "%s: direct eh_host_wifi_scan_start -> %d\n",
+                     ENTRY_TAG, dir);
+
+              /* And the results, which is what the scan is for. */
+
+              if (dir == ESP_OK)
+                {
+                  static wifi_ap_record_t aps[8];
+                  uint16_t count = 0;
+
+                  dir = eh_host_wifi_scan_get_ap_num(&count);
+                  syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
+                         "%s: scan_get_ap_num -> %d count=%u\n",
+                         ENTRY_TAG, dir, (unsigned)count);
+
+                  if (dir == ESP_OK && count > 0)
+                    {
+                      uint16_t n = count > 8 ? 8 : count;
+
+                      dir = eh_host_wifi_scan_get_ap_records(&n, aps);
+                      syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
+                             "%s: scan_get_ap_records -> %d n=%u\n",
+                             ENTRY_TAG, dir, (unsigned)n);
+
+                      for (unsigned i = 0; dir == ESP_OK && i < n; i++)
+                        {
+                          syslog(LOG_INFO,
+                                 "%s: AP[%u] ssid=\"%s\" rssi=%d ch=%u\n",
+                                 ENTRY_TAG, i, (FAR const char *)aps[i].ssid,
+                                 (int)aps[i].rssi, (unsigned)aps[i].primary);
+                        }
+                    }
+                }
+            }
           }
       }
   }

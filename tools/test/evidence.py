@@ -196,6 +196,20 @@ def main():
         meta.append("decode: " + dec)
 
     open(os.path.join(outdir, "console.txt"), "w").write(text)
+
+    # Save the current boot on its own.
+    #
+    # The console keeps a scrollback that spans several boots (it survives
+    # resets), so a tail of it interleaves them -- measured: lines from three
+    # different boots ended up in one capture and sent the analysis chasing a
+    # contradiction that did not exist.  Everything from the last boot banner
+    # onwards belongs to the run that was just triggered.
+    boots = [i for i, l in enumerate(text.split("\n"))
+             if ("Booting MCUboot" in l) or ("ESP-ROM:esp32p4" in l)]
+    if boots:
+        cur = "\n".join(text.split("\n")[boots[-1]:])
+        open(os.path.join(outdir, "boot.txt"), "w").write(cur)
+        meta.append("boot section starts at line %d of the buffer" % boots[-1])
     open(os.path.join(outdir, "meta.txt"), "w").write("\n".join(meta) + "\n")
     print("saved: %s" % outdir)
     print("\n".join(meta))

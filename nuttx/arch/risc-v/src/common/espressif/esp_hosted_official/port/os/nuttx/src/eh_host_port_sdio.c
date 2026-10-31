@@ -335,6 +335,14 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
 
   xfer_guard_arm();
 
+  /* Log what the transport sees when it reads the interrupt window.
+   *
+   * Its first read decides whether a packet is fetched at all, and the bring-up
+   * ladder read INT_RAW as 0x00cc7800 (bit23, new packet) through CMD52 byte
+   * reads -- if this path returns the same bytes in a different order the bit
+   * test downstream fails silently (appendix BW.13).
+   */
+
   if (size == 1)
     {
       ret = sdio_io_rw_direct(c->dev, false, 1, reg, 0, data);
@@ -371,6 +379,22 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
           }
       }
     }
+
+  {
+    static int seen;
+
+    if (reg == 0x00050 && size >= 4 && seen < 8)
+      {
+        syslog(LOG_INFO,
+               "%s: transport INT_RAW read: ret=%d bytes=%02x %02x %02x %02x"
+               " (bit23=%u)\n",
+               SDIO_TAG, ret, data[0], data[1], data[2], data[3],
+               (unsigned)(((uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+                           ((uint32_t)data[2] << 16) |
+                           ((uint32_t)data[3] << 24)) >> 23 & 1u));
+        seen++;
+      }
+  }
 
   xfer_guard_disarm();
 

@@ -12145,3 +12145,62 @@ $ ./build.sh <board> --cmake -j8      # CONFIG_ESPRESSIF_HOSTED_WIFI=y（Kconfig
 `CONFIG_ESPRESSIF_HOSTED_WIFI` 同时 `select NETDEV_IOCTL`，所以打开它 = **scan/connect RPC + wlan0
 的 SIOCSIW\* 处理一起就位**。目标④的软件侧到这里是**完整的**：数据面（netdev ↔ channel）+
 控制面（ioctl ↔ eh_host_wifi_*），只剩真机链路。
+
+### 附录 BM —— 路线 B 第 18 步：整镜像（含 Wi-Fi 控制面）真机复验 + 两个新发现（2026-11-01）
+
+#### BM.1 干净重配 + 整镜像构建（验收）
+
+```
+$ ./build.sh <board> --cmake -j8        # CONFIG_ESPRESSIF_HOSTED_WIFI=y（Kconfig 默认），NETDEV_IOCTL=y
+#### build completed successfully (26:49) ####   0 error
+目标文件 67；镜像里能看到
+  eh_host_wifi_scan_start / eh_host_wifi_connect / eh_host_wifi_set_config / eh_host_wifi_get_config
+  （4/4 符号在 ELF 里）
+nuttx.bin md5 9b726371…（Wi-Fi 关时是 0b53f2c1…）
+```
+
+即**目标④的软件侧（数据面 + 控制面）已经完整地编进镜像**。
+
+#### BM.2 真机复验（Tabby 掉线，改用串口直读）
+
+本轮 Tabby 的 MCP 端口拒绝连接，于是直接开 `/dev/ttyUSB0` 读（115200）——
+**新工具用法记一笔**：`python3 -c "serial.Serial('/dev/ttyUSB0',115200,timeout=1)"` + OpenOCD 复位，
+抓 200 s 存文件再过滤。抓到的仍然是同一条链：
+
+```
+eh_sdio: SDIO Host operating in PACKET MODE
+eh_sdio: Open data path at slave
+eh_sdio: --- Wait for SDIO intr ---
+eh_reconfigure: bring-up timed out; re-attempt 1/3 …
+```
+
+与附录 BH 完全一致：**软件侧一切就绪，等的是从机那一次中断**。
+
+#### BM.3 发现①：`esp_err_to_name` 缺失
+
+打开 Wi-Fi 控制面后链接报 `undefined reference to esp_err_to_name`（栈用它给错误码起名）。
+在端口 `port_stubs.c` 里补了一份（本端口会产生的错误码 → 名字，其余 `UNKNOWN ERROR`，与 IDF 同语义）。
+
+#### BM.4 发现②（**未闭环**）：传输配置里的队列深度读出来是 0
+
+栈启动时打印：
+
+```
+eh_sdio: provided sdio tx queue size is zero! Setting to 2
+eh_sdio: provided sdio rx queue size is zero! Setting to 2
+```
+
+追到 `eh_host_bus_sdio.c`：它从 `eh_host_sdio_get_config()` 取 `tx_queue_size`，而那份配置由
+`eh_host_transport_set_default_config()`（→ `eh_host_sdio_set_config(NULL)` → 默认值）填充，
+**没人调用它**。已在端口入口线程里于 `eh_host_init()` 之前补上这次调用。
+
+但**实测警告仍在**（17:13 的抓包）：说明默认值要么没填进去、要么随后被零覆盖。
+`EH_HOST_PORT_SDIO_TX_Q` 在 master config 里是 `CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE`（我们给了 20），
+所以这是**下一步要查的开放项**——影响仅限于队列深度（2 而不是 20，栈自己降级并继续跑），
+不阻塞功能。查法：在 `eh_host_sdio_set_config()` 前后打印该结构，看是谁把它清零。
+
+#### BM.5 状态
+
+- 选项打开：干净构建 0 error，镜像 md5 `9b726371…`（下一条提交后为 `6a3f464a…`，含 BM.3/BM.4 的改动）；
+- 真机：仍停在同一处（从机不拉中断），附录 BH 的判据不变；
+- 目标④软件侧：完整。

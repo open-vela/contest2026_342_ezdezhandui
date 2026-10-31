@@ -24,6 +24,7 @@
 #include <nuttx/kthread.h>
 
 #include "eh_host_core.h"
+#include "eh_host_transport_config.h"
 
 #include "eh_hosted_nuttx.h"
 
@@ -48,6 +49,22 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
   int ret;
 
   syslog(LOG_INFO, "%s: starting official esp-hosted host stack\n", ENTRY_TAG);
+
+  /* Resolve the transport configuration before anything reads it.
+   *
+   * The transport reads its queue sizes (and the rest of the SDIO wiring) out of
+   * the config module; nothing else calls the setter, and without this the
+   * struct is all zeros -- measured on hardware: the stack logged "provided sdio
+   * tx queue size is zero! Setting to 2" and fell back to a two-deep queue,
+   * which is a fraction of the port's configured 20.
+   */
+
+  ret = (int)eh_host_transport_set_default_config();
+  if (ret != 0)
+    {
+      syslog(LOG_WARNING, "%s: default transport config failed: %d\n",
+             ENTRY_TAG, ret);
+    }
 
   ret = eh_host_init(NULL);
   if (ret != 0)

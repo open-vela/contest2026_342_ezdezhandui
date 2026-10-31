@@ -1,0 +1,13 @@
+分析: 通道 0=CMD 1=CLK 2=DAT0 3=DAT1 4=DAT2 5=DAT3（与 SD2_CMD/CLK/D0-D3 同序）
+方法: evidence.py --reset --analyzer 150（1 MHz），逐 1 s 窗口统计跳变数与 DAT1 低电平微秒数
+
+窗口(s)  CMD跳变  CLK跳变  DAT1低(µs/s)  DAT0/2/3跳变
+   0       933      813         64        1/5/1     ← 上电/启动
+  15        96    72664          0        0/0/0     ← SDIO bring-up（枚举/寄存器）
+20–145      0     99997    1000000        0/0/0     ← 车停着、时钟仍在跑、DAT1 全程为低
+
+结论（与附录 BH/AU 一致，本轮由**官方主机栈**驱动复现）：
+1) bring-up 之后总线上没有任何命令、没有任何数据阶段（DAT0/2/3 零跳变）；
+2) DAT1 每一整秒都是低电平 → 从机把 SDIO 卡中断**永久置位**；
+3) 主机因此在 `Open data path at slave` 之后一直等 `--- Wait for SDIO intr ---`，
+   超时重试 3 次后 `TRANSPORT_FAILURE`（串口同批抓取，见 console.txt）。

@@ -12248,3 +12248,43 @@ eh_sdio: --- Wait for SDIO intr ---
 ```
 
 与附录 BH 一致：**软件侧全部就绪，等的仍是从机那一次中断**（需要整板断电）。
+
+### 附录 BP —— 路线 B 第 20 步：用官方主机栈复现「已知不良」的 SDIO 数据通路（目标①的取证）（2026-11-01）
+
+目标①要求"以官方主机栈为基准复现数据通路并留证"。本轮用新工具一次跑完
+**USB-JTAG 复位 + Tabby 串口 + pxview 分析仪**，产物在 `logs/20261031-172514_stage1-official/`。
+
+#### BP.1 串口（同一批抓取，`console.txt`）
+
+```
+eh_hosted_nuttx: transport config: sdio tx_q=20 rx_q=20 width=4 clk=40000
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512
+eh_sdio: SDIO Host operating in PACKET MODE
+eh_sdio: Open data path at slave
+eh_sdio: --- Wait for SDIO intr ---
+nsh> eh_reconfigure: bring-up timed out; re-attempt 1/3 after 1000ms back-off
+eh_host_xport: TRANSPORT_FAILURE: aborting host process
+```
+
+#### BP.2 分析仪（1 MHz × 150 s，逐 1 s 窗口统计；通道 0=CMD 1=CLK 2=DAT0 3=DAT1 4=DAT2 5=DAT3）
+
+| 窗口(s) | CMD 跳变 | CLK 跳变 | **DAT1 低(µs/秒)** | DAT0/2/3 跳变 | 说明 |
+|---|---|---|---|---|---|
+| 0 | 933 | 813 | 64 | 有 | 上电/启动 |
+| 15 | 96 | 72664 | 0 | 0 | SDIO bring-up（枚举、寄存器访问） |
+| **20–145** | **0** | 99997 | **1000000** | **0/0/0** | 总线无命令、无数据阶段；**DAT1 全程为低** |
+
+#### BP.3 判决（本轮由**官方主机栈**驱动，与附录 BH 完全一致）
+
+1. bring-up 之后总线上**没有任何命令、没有任何数据阶段**（DAT0/2/3 零跳变）；
+2. **DAT1 每一整秒都是低** → 从机把 SDIO 卡中断**永久置位**；
+3. 主机因此在 `Open data path at slave` 之后一直等 `--- Wait for SDIO intr ---`，
+   按策略重试 3 次后 `TRANSPORT_FAILURE`。
+
+即目标①的"已知良好通路"在本板**当前硬件状态下无法复现**：软件侧（官方栈 + 移植层）已经走到
+能走的最远处，**唯一缺的是从机把数据阶段驱动起来**——而这需要一个真正的整板断电（附录 BH.4 判据）。
+
+#### BP.4 工具
+
+`tools/test/evidence.py`：`--reset`（USB-JTAG）+ `--seconds N`（Tabby 串口）+ `--analyzer N`（pxview），
+产物含 `console.txt` / `meta.txt` / `analyzer_analysis.txt`。本轮即用它一次跑出上面两张表。

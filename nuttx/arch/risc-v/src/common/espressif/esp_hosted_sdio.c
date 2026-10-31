@@ -344,6 +344,8 @@ static void hosted_cmd53_read_sweep(FAR struct sdio_dev_s *sdio,
          HOSTED_TAG, seq, out->max_ok, out->ret1, out->ret4, out->ret20,
          out->ret60);
 
+    esp_sdmmc_dump_state("ladder-done");
+
   /* CMD53 reads of registers whose contents CMD52 already told us.
    *
    * The ladder above reads FN1 0x60 with CMD53 and never returns the value

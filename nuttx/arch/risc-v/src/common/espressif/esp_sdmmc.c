@@ -3252,6 +3252,31 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
  *
  ****************************************************************************/
 
+/****************************************************************************
+ * Name: esp_sdmmc_dump_state
+ *
+ * Description:
+ *   Print the controller registers that decide how a transfer behaves.
+ *
+ *   The same transfer completes from the bring-up thread and hangs once the
+ *   stack has run (appendices BV.11/BW.2), so the difference has to be in these
+ *   registers.  Called at both moments to compare them field by field.
+ *
+ ****************************************************************************/
+
+void esp_sdmmc_dump_state(FAR const char *where)
+{
+  FAR struct esp_sdmmc_dev_s *priv = &g_sdmmc;
+
+  syslog(LOG_INFO,
+         "esp_sdmmc: state @%s: ctrl=%08" PRIx32 " bmod=%08" PRIx32
+         " idsts=%08" PRIx32 " rintsts=%08" PRIx32 " status=%08" PRIx32
+         " fifoth=%08" PRIx32 " tmout=%08" PRIx32 "\n",
+         where, priv->hw->ctrl.val, priv->hw->bmod.val, priv->hw->idsts.val,
+         priv->hw->rintsts.val, priv->hw->status.val, priv->hw->fifoth.val,
+         priv->hw->tmout.val);
+}
+
 uint32_t esp_sdmmc_last_error_bits(void)
 {
   return g_last_error_bits;

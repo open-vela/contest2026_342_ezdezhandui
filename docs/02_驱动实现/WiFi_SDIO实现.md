@@ -12766,3 +12766,36 @@ eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
 
 下一步就查 `sendcmd()` 的响应等待在任务上下文与启动线程里的差异
 （候选：`priv->timeout` 看门狗在任务上下文里被 `wd_start` 失败、或等待被卡中断的 ISR 干扰）。
+
+### 附录 BW —— 用 OpenOCD 的 telnet 口"停住看现场"（新增 tools/test/ocd.py）（2026-11-01）
+
+目标里点名了 "openocd 调试"。GDB 连这块 P4 会掉线（`Target disconnected`），
+但 **OpenOCD 自己的 telnet 口（4444）一直可用**，所以做了个小工具走 telnet：
+
+```sh
+python3 tools/test/ocd.py pc       # 停住 → 两核 PC + halt 原因 → 用 ELF 解析符号 → 放行
+python3 tools/test/ocd.py halt|resume|regs
+```
+
+（前提：OpenOCD 在跑：`openocd -f board/esp32p4-builtin.cfg -c init`。）
+
+一次实测：
+
+```
+[esp32p4.hp.cpu0] Target halted, PC=0x400309E4, debug_reason=00000000
+[esp32p4.hp.cpu1] Target halted, PC=0x4FC02938, debug_reason=00000000
+0x400309e4 -> up_mdelay          ← cpu0 在忙等延时里：正是驱动的传输等待循环
+0x4fc02938 -> ??（空闲/未映射）  ← cpu1 空闲
+```
+
+**这条信息很有价值**：卡住时 cpu0 停在 `up_mdelay`，即**驱动 `eventwait()` 的轮询循环里**
+（那个循环每 20 µs 调一次 `up_udelay(20)`），而不是卡在命令响应的等待里——
+修正了附录 BV.13 的猜测。
+
+#### BW.1 顺带核对的超时算术
+
+`SDMMC_LONGTIMEOUT = 5000 / MSEC_PER_TICK`，而本板 `CONFIG_USEC_PER_TICK=10000` →
+`MSEC_PER_TICK = 10` → 500 tick = **5 秒**（算术没问题，`start` 也在循环外取的）。
+所以外层循环**应该**在 5 s 后退出——那么长期不退出就只可能是**内层排空循环**
+（`while (idle && bytes > 0 && g_pio_rxdone < g_pio_rxlen)`，没有超时保护）在打转。
+下一步就给它加超时并把现场打印出来。

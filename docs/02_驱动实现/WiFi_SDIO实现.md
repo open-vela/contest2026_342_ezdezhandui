@@ -12012,3 +12012,50 @@ typedef**，继续补 shim 只会把 IDF 的 Wi-Fi 类型系统在交付树里�
 2. 把 `eh_host_wifi_scan_start()` / `eh_host_wifi_connect()` 接到 NuttX 的
    `SIOCSIWSCAN` / `SIOCSIWESSID`（以及 DHCP 客户端）；
 3. 真机验收（需先断电恢复，附录 BH）。
+
+### 附录 BK —— 路线 B 第 15 步：WiFi 特性编进固件（目标④的 RPC 面就位）（2026-11-01）
+
+上一轮卡在"找不到 IDF 头的挂法"。本轮解决了。
+
+#### BK.1 找对了变量：`ESP_HAL_3RDPARTY_REPO`
+
+上一轮试的 `esp_hal_3rdparty_SOURCE_DIR`（FetchContent 的常规命名）**在这个作用域里不可见**。
+真正能用的是父级 CMakeLists 自己解析出来的 **`ESP_HAL_3RDPARTY_REPO`**：
+
+```cmake
+if(DEFINED ESP_HAL_3RDPARTY_REPO AND IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}/components")
+  file(GLOB EH_HOSTED_IDF_INCS "${ESP_HAL_3RDPARTY_REPO}/components/*/include")
+  target_include_directories(eh_hosted_nuttx PRIVATE ${EH_HOSTED_IDF_INCS})
+endif()
+```
+
+配置日志确认生效：`esp-hosted: <...>/esp-hal-3rdparty IDF headers on the port's include path`。
+
+同时把**自己写的 Wi-Fi 头 shim 全部删掉**（`esp_wifi.h`/`esp_wifi_types.h`/`esp_wifi_he_types.h`）——
+树里有真头就用真头，`wifi_config_t`、`wifi_ps_type_t`、HE 类型一次到位，不必也不该在交付树里重抄。
+
+#### BK.2 结果
+
+```
+$ ./build.sh <board> --cmake -j8      # CONFIG_ESPRESSIF_HOSTED_OFFICIAL=y
+#### build completed successfully ####   0 error
+目标文件 51 → 70；其中新增：
+  eh_host_feat_wifi.c.o / eh_host_wifi.c.o
+  eh_host_feat_wifi_v2_req.c.o / eh_host_feat_wifi_v2_resp_evt.c.o
+  eh_host_mcu_wifi_remote_glue.c.o
+nuttx.bin md5 f7062833…（上一版 0207bb03…）
+```
+
+即：**目标④要用的 scan/connect RPC 面（`eh_host_wifi_scan_start()`、`eh_host_wifi_connect()`）
+已经编进固件并链接成功**。
+
+`esp_wifi_stub.c` 保留：树里只编了 IDF 的 Wi-Fi **头**，没有本地 Wi-Fi 实现（`esp_wifi_remote` 不在），
+所以 `esp_wifi_start()`/`esp_wifi_scan_start()` 由端口给出定义并返回 `ESP_ERR_NOT_SUPPORTED`
+——这正是"本地没有射频"的诚实表达（若树里将来有实现，会出现重复定义，那时删掉即可）。
+
+#### BK.3 目标④剩下的**最后一段**
+
+1. 把 `eh_host_wifi_scan_start()` / `eh_host_wifi_connect()` 接到 NuttX 的
+   `SIOCSIWSCAN` / `SIOCSIWESSID`（`eh_hosted_netdev.c` 里加 ioctl 处理即可，与 wlan0 同一个文件）；
+2. DHCP 交给 NuttX 自己的客户端；
+3. 真机验收：**需要先整板断电**（附录 BH 的波形判决）。

@@ -28,6 +28,7 @@ file(GLOB EH_HOSTED_STACK_SRCS
   ${EH_HOSTED_DIR}/host/eh_host_autoinit/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc_ext_v2/src/*.c
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/src/*.c
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/src/*.c
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/src/*.c
   ${EH_HOSTED_DIR}/common/serializers/third_party/msg_codec/protobuf-c/protobuf-c/*.c
@@ -81,6 +82,8 @@ target_include_directories(eh_hosted_nuttx PRIVATE
   ${EH_HOSTED_DIR}/host/eh_host_core/src
   ${EH_HOSTED_DIR}/host/eh_host_autoinit/include
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/include
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/include
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_wifi/src
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/include
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/include
   ${EH_HOSTED_DIR}/common/serializers/eh_proto_v2/include
@@ -88,14 +91,17 @@ target_include_directories(eh_hosted_nuttx PRIVATE
   ${EH_HOSTED_DIR}/port/os/posix/include
 )
 
-# NOTE: the Wi-Fi feature (host/features/eh_host_feat_wifi) is vendored but not
-# compiled yet.  Its headers expect the whole ESP-IDF Wi-Fi surface
-# (wifi_config_t, wifi_ps_type_t, esp_wifi_he_types.h, ...), which lives in the
-# tree's esp-hal-3rdparty fetch; handing this library those include directories
-# is the next step -- esp_hal_3rdparty_SOURCE_DIR was not visible from here
-# (measured: the paths never reached the compile line), so the right variable
-# still has to be found.  Shimming that surface is not the answer: it is a real
-# API, not a set of typedefs.
+# The ESP-IDF header surface comes from the tree's own esp-hal-3rdparty
+# checkout, not from shims: the Wi-Fi feature needs the real esp_wifi.h family
+# (wifi_config_t, wifi_ps_type_t, esp_wifi_he_types.h, ...), and re-typing that
+# in this port would be both wrong and pointless.  ESP_HAL_3RDPARTY_REPO is the
+# variable the parent CMakeLists already resolved (esp_hal_3rdparty_SOURCE_DIR,
+# the FetchContent name, is not visible here -- measured).
+if(DEFINED ESP_HAL_3RDPARTY_REPO AND IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}/components")
+  file(GLOB EH_HOSTED_IDF_INCS "${ESP_HAL_3RDPARTY_REPO}/components/*/include")
+  target_include_directories(eh_hosted_nuttx PRIVATE ${EH_HOSTED_IDF_INCS})
+  message(STATUS "esp-hosted: ${ESP_HAL_3RDPARTY_REPO} IDF headers on the port's include path")
+endif()
 
 # Configuration of the official stack, in the symbols its own
 # eh_host_port_master_config.h reads (board wiring from appendices AK/AN).

@@ -11361,3 +11361,60 @@ GPIO54 能让 C6 芯片重启，但**重启后它的 SDIO slave 数据阶段依�
 - 默认配置（选项关闭）构建 **0 error**，`nuttx.bin` md5 **`e7be71a0…` 前后一致**；
 - 端口自带 shim 的 4 个头 + 端口源 + 4 个叶子模块，全部用真实工具链编过；
 - 下一轮：补 `esp_netif_types.h` 类型壳 + 把 16 个模块的 include 配全，然后接 CMake 变量映射。
+
+### 附录 AW —— 路线 B 第 4 步：官方栈 **17/17 模块全部编过**（2026-11-01）
+
+上一轮的 6 个失败全部消掉。做法不是"多写 shim"，而是找到官方栈自己的配置面：
+
+#### AW.1 关键修正：用官方 `eh_host_port_master_config.h`，不要自己再写一个
+
+入仓的官方栈**自带**一份 master config（`host/eh_host_config/include/eh_host_port_master_config.h`），
+它按 **Kconfig 符号**取值（`CONFIG_ESP_HOSTED_HOST_SDIO_*` 等）。我第一次在端口目录里又写了一份
+同名头去覆盖它，结果把整套配置面（slave target、netif flag、mempool…）都挡掉了。
+
+正确做法：**删掉端口自己那份**，在 CMake 里把这些符号作为编译定义给出（"同名变量映射"）：
+
+```cmake
+target_compile_definitions(arch PRIVATE
+  CONFIG_ESP_HOSTED_HOST_TRANSPORT_MCU_READY=1
+  CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO_READY=1
+  CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=1
+  CONFIG_ESP_HOSTED_HOST_SDIO_SLOT=1            # slot 1（GPIO 矩阵）
+  CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH=4
+  CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ=40000
+  CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK=18  ... PIN_CMD=19  PIN_D0..D3=14..17
+  CONFIG_ESP_HOSTED_HOST_SDIO_EN_GPIO=54        # C6 复位
+  CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=1         # 从机型号（决定 SDIO 中断位）
+  CONFIG_ESP_HOSTED_USE_MEMPOOL=1
+  EH_HOST_HOST_USES_STATIC_NETIF=0              # 路线 B 不搬 esp_netif
+)
+```
+
+#### AW.2 顺带补齐的四个小件
+
+| 缺什么 | 补在哪 | 说明 |
+|---|---|---|
+| `esp_netif_types.h` | 端口 `include/` | 只给 typedef（传输层无条件 include 它）；`esp_netif_*` 函数是**空壳**（`port_stubs.c`） |
+| `ESP_ERR_NOT_ALLOWED` 等 6 个错误码 | `esp_err.h` | 与 IDF 数值一致（0x108–0x10D） |
+| `LOG_LOCAL_LEVEL` / `ESP_LOG_*` 级别 | `esp_log.h` | 编译期日志级别 |
+| `EH_HOST_PORT_TEST_RAW_TP_DIR` 等 | 官方 master config（已有） | 由 `CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6` 带出来 |
+
+#### AW.3 覆盖度（真实构建 flags 逐个语法编译）
+
+```
+eh_host_mcu_transport/src/*.c（10 个，含 eh_host_bus_sdio.c）
+host/eh_host_config/src/*.c
+common/eh_mempool/src/*.c（含 eh_mempool_ll.c）
+common/eh_common/src/*.c
+common/eh_frame/src/*.c
+→ 合计 17 个源文件：OK=17  FAIL=0
+```
+
+#### AW.4 验收与下一步
+
+- 默认配置（选项关闭）构建 0 error，`nuttx.bin` md5 **`e7be71a0…` 前后一致**（产物不变）；
+- 打开 `CONFIG_ESPRESSIF_HOSTED_OFFICIAL` 的**整栈 CMake 接线**还没做：官方各模块的
+  `CMakeLists.txt` 用的是 `add_library(...)/target_link_libraries(...)` 体系，要在 NuttX 的
+  `arch` 目标里接进来（下一步）；接完就能做"选项打开时能编过"的验收；
+- 真机验收（`companion enumerated` → FN1 ready → RX/TX 任务）仍然只在**整板断电之后**才可能，
+  见附录 AU。

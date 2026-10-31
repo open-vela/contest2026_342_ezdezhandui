@@ -26,6 +26,12 @@ typedef int esp_err_t;
 #define ESP_ERR_NOT_FOUND               0x105
 #define ESP_ERR_NOT_SUPPORTED           0x106
 #define ESP_ERR_TIMEOUT                 0x107
+#define ESP_ERR_INVALID_RESPONSE        0x108
+#define ESP_ERR_INVALID_CRC             0x109
+#define ESP_ERR_INVALID_VERSION         0x10A
+#define ESP_ERR_INVALID_MAC             0x10B
+#define ESP_ERR_NOT_FINISHED            0x10C
+#define ESP_ERR_NOT_ALLOWED             0x10D
 
 /* esp-hosted cites 0x107 as "SDIO unresponsive", i.e. the same code as
  * ESP_ERR_TIMEOUT, which is what the ESP-IDF error table has there.

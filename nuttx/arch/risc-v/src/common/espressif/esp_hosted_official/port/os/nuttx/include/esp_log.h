@@ -11,6 +11,20 @@
 
 #include <syslog.h>
 
+/* Compile-time log level, and the level constants the sources compare against.
+ */
+
+#define ESP_LOG_NONE                    0
+#define ESP_LOG_ERROR                   1
+#define ESP_LOG_WARN                    2
+#define ESP_LOG_INFO                    3
+#define ESP_LOG_DEBUG                   4
+#define ESP_LOG_VERBOSE                 5
+
+#ifndef LOG_LOCAL_LEVEL
+#  define LOG_LOCAL_LEVEL               ESP_LOG_INFO
+#endif
+
 #define ESP_LOGE(tag, fmt, ...)  syslog(LOG_ERR,  "%s: " fmt, tag, ##__VA_ARGS__)
 #define ESP_LOGW(tag, fmt, ...)  syslog(LOG_WARNING, "%s: " fmt, tag, ##__VA_ARGS__)
 #define ESP_LOGI(tag, fmt, ...)  syslog(LOG_INFO, "%s: " fmt, tag, ##__VA_ARGS__)

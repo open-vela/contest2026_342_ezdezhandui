@@ -41,6 +41,45 @@
 
 #define SDIO_TAG "eh_host_port_sdio"
 
+#include <nuttx/wdog.h>
+
+/* Transfer guard.
+ *
+ * A stuck transfer is invisible from the outside: the call simply never
+ * returns, and the transport's own watchdog path cannot be reached.  This pair
+ * of helpers makes it visible: the watchdog sets a flag after a second, and the
+ * next port call reports that the previous one never came back.  It cannot
+ * unblock the stuck call (the driver's wait does not consult this flag), but it
+ * turns "silence" into a countable, datable event.
+ */
+
+static volatile bool g_xfer_stuck;
+static struct wdog_s  g_xfer_wd;
+
+static void xfer_guard_expire(wdparm_t arg)
+{
+  (void)arg;
+  g_xfer_stuck = true;
+}
+
+static void xfer_guard_arm(void)
+{
+  if (g_xfer_stuck)
+    {
+      syslog(LOG_WARNING, "%s: previous transfer never returned\n", SDIO_TAG);
+      g_xfer_stuck = false;
+    }
+
+  wd_start(&g_xfer_wd, MSEC2TICK(1000), xfer_guard_expire, 0);
+}
+
+static void xfer_guard_disarm(void)
+{
+  wd_cancel(&g_xfer_wd);
+  g_xfer_stuck = false;
+}
+
+
 /* Entry/exit tracing for the port's transfer entry points.
  *
  * When the transport stalls, the question is which call never returned: a task
@@ -294,6 +333,8 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
       port_trace("read_reg", trace_id, 0, reg, size, 1);   /* locked */
     }
 
+  xfer_guard_arm();
+
   if (size == 1)
     {
       ret = sdio_io_rw_direct(c->dev, false, 1, reg, 0, data);
@@ -352,6 +393,8 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
     {
       nxmutex_unlock(&c->lock);
     }
+
+  xfer_guard_disarm();
 
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }

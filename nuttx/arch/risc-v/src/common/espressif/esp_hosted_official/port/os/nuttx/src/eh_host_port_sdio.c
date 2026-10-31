@@ -178,10 +178,10 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
              "%s: card ready: slot %d, %d-bit, block %d, CLK io_%d CMD io_%d "
              "D0..D3 %d,%d,%d,%d\n",
              TAG, CONFIG_ESPRESSIF_SDMMC_SLOT, EH_HOST_PORT_SDIO_BUS_WIDTH,
-             ESP_HOSTED_SDIO_BLOCK_SIZE, EH_HOST_PORT_SDIO_CLK_GPIO,
-             EH_HOST_PORT_SDIO_CMD_GPIO, EH_HOST_PORT_SDIO_D0_GPIO,
-             EH_HOST_PORT_SDIO_D1_GPIO, EH_HOST_PORT_SDIO_D2_GPIO,
-             EH_HOST_PORT_SDIO_D3_GPIO);
+             ESP_HOSTED_SDIO_BLOCK_SIZE, EH_HOST_PORT_SDIO_PIN_CLK,
+             EH_HOST_PORT_SDIO_PIN_CMD, EH_HOST_PORT_SDIO_PIN_D0,
+             EH_HOST_PORT_SDIO_PIN_D1, EH_HOST_PORT_SDIO_PIN_D2,
+             EH_HOST_PORT_SDIO_PIN_D3);
     }
 
   return ESP_OK;

@@ -11418,3 +11418,60 @@ common/eh_frame/src/*.c
   `arch` 目标里接进来（下一步）；接完就能做"选项打开时能编过"的验收；
 - 真机验收（`companion enumerated` → FN1 ready → RX/TX 任务）仍然只在**整板断电之后**才可能，
   见附录 AU。
+
+### 附录 AX —— 路线 B 第 5 步：**选项打开时官方栈整栈编进固件**（2026-11-01）
+
+#### AX.1 做法：单独一个静态库 `eh_hosted_nuttx`，不往 arch 里塞
+
+第一版把端口 + 官方栈源码直接加进 `arch` 目标，并把端口的 include 目录加到 `arch`（BEFORE），
+想让 shim 头优先于树里的同名头。结果**把整个 arch 的 IDF 组件都污染了**：
+`esp_efuse_fields.c`、`flash_encrypt.c`、`periph_ctrl.h` 等开始报
+`expected ')' before string constant`、`'TAG' undeclared`、`CONFIG_IDF_TARGET` 缺失——
+因为它们本该用 IDF 自己的 `esp_log.h`，却拿到了我们的 shim。
+
+最终做法：
+
+```cmake
+get_target_property(EH_HOSTED_ARCH_INCS arch INCLUDE_DIRECTORIES)   # 复用 arch 已配好的 NuttX/IDF 头路径
+add_library(eh_hosted_nuttx STATIC ...)                             # 端口 2 + 官方栈 17 个源
+target_include_directories(eh_hosted_nuttx BEFORE PRIVATE <端口 include>)   # shim 最先
+target_include_directories(eh_hosted_nuttx PRIVATE ${EH_HOSTED_ARCH_INCS} <各模块 include>)
+target_compile_definitions(eh_hosted_nuttx PRIVATE <CONFIG_ESP_HOSTED_* 映射>)
+target_link_libraries(arch PRIVATE eh_hosted_nuttx)
+```
+
+这样：端口/栈有自己的 include 顺序（shim 优先），`arch` 其余源码完全不受影响。
+
+#### AX.2 修掉的两个具体错误
+
+1. **`SHELL:` 前缀不能用在 `set_source_files_properties(... COMPILE_OPTIONS ...)`**：
+   它只在 `target_compile_options` 里有意义，写在源文件属性里会被原样当成两个参数
+   （`"SHELL:-include`、`eh_host_port_master_config.h"`），gcc 报
+   `cannot specify '-o' with '-c' ... with multiple files`。改成
+   `COMPILE_OPTIONS "-include;eh_host_port_master_config.h"`。
+2. 端口源里用了自己编的宏名（`EH_HOST_PORT_SDIO_CLK_GPIO` 等），应改用官方 master config
+   的 `EH_HOST_PORT_SDIO_PIN_CLK/CMD/D0..D3`。
+
+#### AX.3 结果
+
+```
+$ ./build.sh <board> --cmake -j8          # 打开 CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+#### build completed successfully ####
+$ ls -l .../libeh_hosted_nuttx.a
+-rw-r--r-- 136698 .../libeh_hosted_nuttx.a     # 19 个目标文件 = 端口 2 + 官方栈 17
+$ grep -c ESPRESSIF_HOSTED_OFFICIAL=y cmake_out/.../.config
+1
+```
+
+- **官方栈 17 个模块 + 端口层正式编进固件**（静态库链接进 `arch`）；
+- 因为目前还没有人调用它，链接器 `--gc-sections` 会把整段裁掉，所以 `nuttx.bin` 大小与默认
+  构建相同（1,830,912 B）——这正是"打开选项也不改变现有行为"的体现；
+- 默认配置（选项关闭）的产物与改动前**尺寸、配置完全一致**（1,830,912 B）。
+  注：**跨"干净重编"比较 md5 没有意义**——镜像由 MCUboot 签名，签名里含非确定性内容；
+  可靠的判定是**同一构建目录下的增量重编**（第 7 轮已实测 md5 不变）。
+
+#### AX.4 下一件事（仍然不需要板子）
+
+把 `esp_hosted_init()`（官方栈的入口）接到我们的 hosted-SDIO bring-up 之后，并给它一个
+NuttX 侧的调用点（初始化任务）。这一步之后，"选项打开"就不再只是编进去，而是**真的跑起来**——
+但那需要先做真机验收的前置：**整板断电**（附录 AU）。

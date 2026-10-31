@@ -3040,7 +3040,20 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
   }
 
   status = sdmmc_ll_get_intr_status(priv->hw);
-  sdmmc_ll_clear_interrupt(priv->hw, status);
+
+  /* Clear only what this handler consumes.
+   *
+   * This used to clear every bit it read, which includes CMD_DONE and
+   * DATA_OVER -- the very bits esp_sdmmc_eventwait() waits for.  A card
+   * interrupt arriving during a transfer (which is exactly when the transport
+   * is reading) wiped the completion before the wait could see it, so the
+   * transfer timed out with the data path already done.  The interrupt and the
+   * error bits are this handler's to clear; the completion bits belong to the
+   * waiter.
+   */
+
+  sdmmc_ll_clear_interrupt(priv->hw,
+                           status & (SDMMC_SDIO_INTR | SDMMC_ALL_ERRORS));
 
   if (status & SDMMC_CMD_DONE)
     {

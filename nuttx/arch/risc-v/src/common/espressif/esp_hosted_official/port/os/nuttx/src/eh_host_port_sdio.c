@@ -251,6 +251,22 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
       return ESP_FAIL;
     }
   (void)lock_required;
+  /* Serialise port access with a bounded wait.
+   *
+   * The transport does have its own SDIO_DRV_LOCK, but the receive and transmit
+   * tasks both reach these functions and an interleaved transfer is what hangs
+   * (measured: the bring-up ladder's four-byte read of INT_RAW works while the
+   * same call from the transport context never completes).  A bounded wait keeps
+   * that from turning into the deadlock an unbounded lock produced earlier
+   * (appendix BV.3): on timeout the call proceeds and says so.
+   */
+
+  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+    {
+      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+             SDIO_TAG, __func__);
+    }
+
   /* Mask the address to the slave's register window.
    *
    * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
@@ -319,6 +335,11 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
       }
   }
 
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
+
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }
 
@@ -334,6 +355,22 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
       return ESP_FAIL;
     }
   (void)lock_required;
+  /* Serialise port access with a bounded wait.
+   *
+   * The transport does have its own SDIO_DRV_LOCK, but the receive and transmit
+   * tasks both reach these functions and an interleaved transfer is what hangs
+   * (measured: the bring-up ladder's four-byte read of INT_RAW works while the
+   * same call from the transport context never completes).  A bounded wait keeps
+   * that from turning into the deadlock an unbounded lock produced earlier
+   * (appendix BV.3): on timeout the call proceeds and says so.
+   */
+
+  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+    {
+      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+             SDIO_TAG, __func__);
+    }
+
   /* Mask the address to the slave's register window.
    *
    * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
@@ -383,6 +420,11 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
         }
     }
 
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
+
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }
 
@@ -415,6 +457,22 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
   nblocks = (size + ESP_HOSTED_SDIO_BLOCK_SIZE - 1) /
             ESP_HOSTED_SDIO_BLOCK_SIZE;
   (void)lock_required;
+  /* Serialise port access with a bounded wait.
+   *
+   * The transport does have its own SDIO_DRV_LOCK, but the receive and transmit
+   * tasks both reach these functions and an interleaved transfer is what hangs
+   * (measured: the bring-up ladder's four-byte read of INT_RAW works while the
+   * same call from the transport context never completes).  A bounded wait keeps
+   * that from turning into the deadlock an unbounded lock produced earlier
+   * (appendix BV.3): on timeout the call proceeds and says so.
+   */
+
+  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+    {
+      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+             SDIO_TAG, __func__);
+    }
+
   /* Mask the address to the slave's register window.
    *
    * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
@@ -462,6 +520,11 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
       }
   }
 
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
+
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }
 
@@ -485,6 +548,22 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
   nblocks = (size + ESP_HOSTED_SDIO_BLOCK_SIZE - 1) /
             ESP_HOSTED_SDIO_BLOCK_SIZE;
   (void)lock_required;
+  /* Serialise port access with a bounded wait.
+   *
+   * The transport does have its own SDIO_DRV_LOCK, but the receive and transmit
+   * tasks both reach these functions and an interleaved transfer is what hangs
+   * (measured: the bring-up ladder's four-byte read of INT_RAW works while the
+   * same call from the transport context never completes).  A bounded wait keeps
+   * that from turning into the deadlock an unbounded lock produced earlier
+   * (appendix BV.3): on timeout the call proceeds and says so.
+   */
+
+  if (lock_required && nxmutex_timedlock(&c->lock, 100) < 0)
+    {
+      syslog(LOG_WARNING, "%s: %s: port lock busy, proceeding unlocked\n",
+             SDIO_TAG, __func__);
+    }
+
   /* Mask the address to the slave's register window.
    *
    * The transport passes the *slave's* absolute address (e.g. 0x3ff55050 for
@@ -509,6 +588,11 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
 
   ret = sdio_io_rw_extended(c->dev, true, 1, reg, true, data,
                             ESP_HOSTED_SDIO_BLOCK_SIZE, nblocks);
+
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
 
   return (ret < 0) ? ESP_FAIL : ESP_OK;
 }

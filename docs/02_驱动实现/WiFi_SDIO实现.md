@@ -12689,3 +12689,33 @@ esp_hosted_sdio: INT_RAW=00cc7800 new_packet(bit23)=1
 `read_reg enter` 之后没有完成打印。梯子（诊断阶段、自研路径）4 字节读成功、
 端口（官方栈调用、后期）4 字节读挂住，两者的差别就是下一个要查的点。
 先回退成"能返回的单次传输"，把这条差别记下来。
+
+#### BV.10 又修一个真 bug：ISR 清掉了 `DATA_OVER`/`CMD_DONE`
+
+ISR 原来是：
+
+```c
+status = sdmmc_ll_get_intr_status(priv->hw);
+sdmmc_ll_clear_interrupt(priv->hw, status);      // ← 清掉了所有位
+```
+
+而 `CMD_DONE` / `DATA_OVER` 正是 `eventwait()` 在等的完成位。**卡中断在传输期间到达时**
+（正是传输层读寄存器的时刻），完成位被 ISR 先清掉，等待方永远看不到 → 传输超时。
+修法：ISR 只清它自己消费的位（`SDMMC_SDIO_INTR | SDMMC_ALL_ERRORS`），完成位留给等待方。
+
+同时把端口的锁改成**有界等待**（`nxmutex_timedlock(100ms)`，超时打印并继续），
+避免再出现 BV.3 那种死锁。
+
+#### BV.11 仍未解开：同一条 4 字节读，启动线程成功、任务上下文挂住
+
+修完 ISR 之后，端口里那条 `read_reg addr=0x3ff55050 size=20` 仍然"进入后不返回"。
+而同样形状的调用（`sdio_io_rw_extended(dev, false, 1, 0x50, true, buf, 4, 0)`）：
+
+| 调用上下文 | 结果 |
+|---|---|
+| bring-up 梯子（启动线程、官方栈启动前） | 成功，读到 `INT_RAW=00cc7800`（bit23=1） |
+| 端口（官方栈的 RX 任务里） | **挂住**，连 5 s 的超时都没返回 |
+
+这个"同调用、异上下文"的差别是下一步唯一要查的东西。候选方向：
+驱动 `eventwait` 等待的对象在任务上下文与启动线程里不同（信号量/看门狗）、
+或卡中断在传输期间改变了 `xfrmask` 的语义。已把这一现象与两种上下文都记进文档。

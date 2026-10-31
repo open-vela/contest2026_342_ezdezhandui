@@ -66,6 +66,29 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
              ENTRY_TAG, ret);
     }
 
+  /* Report what the transport will actually see.  The bus driver reads its
+   * queue sizes from this structure, and on hardware it logged them as zero
+   * (appendix BM.4); printing them here says whether the defaults are in place
+   * before init, which is where the discrepancy has to be settled.
+   */
+
+  {
+    FAR struct eh_host_sdio_config *cfg = NULL;
+
+    if (eh_host_sdio_get_config(&cfg) == EH_HOST_TRANSPORT_RC_OK && cfg != NULL)
+      {
+        syslog(LOG_INFO,
+               "%s: transport config: sdio tx_q=%u rx_q=%u width=%u clk=%u kHz\n",
+               ENTRY_TAG, (unsigned)cfg->tx_queue_size,
+               (unsigned)cfg->rx_queue_size, (unsigned)cfg->bus_width,
+               (unsigned)cfg->clock_freq_khz);
+      }
+    else
+      {
+        syslog(LOG_WARNING, "%s: cannot read the transport config\n", ENTRY_TAG);
+      }
+  }
+
   ret = eh_host_init(NULL);
   if (ret != 0)
     {

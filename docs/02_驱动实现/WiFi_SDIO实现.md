@@ -12204,3 +12204,47 @@ eh_sdio: provided sdio rx queue size is zero! Setting to 2
 - 选项打开：干净构建 0 error，镜像 md5 `9b726371…`（下一条提交后为 `6a3f464a…`，含 BM.3/BM.4 的改动）；
 - 真机：仍停在同一处（从机不拉中断），附录 BH 的判据不变；
 - 目标④软件侧：完整。
+
+### 附录 BN —— 路线 B 第 19 步：队列深度问题**闭环**；新增一键取证工具（2026-11-01）
+
+#### BN.1 BM.4 的那个开放项：查清了，也修好了
+
+上一轮怀疑"默认值没填进去或被清零"。本轮在入口里把**配置读出来打印**，一次定位：
+
+```
+eh_hosted_nuttx: transport config: sdio tx_q=20 rx_q=20 width=4 clk=40000
+```
+
+- 说明 `eh_host_transport_set_default_config()` → `eh_host_sdio_set_config(NULL)` 这条链**是通的**，
+  配置里队列深度就是 20；
+- 而 `eh_sdio: provided sdio tx queue size is zero!` 在**本次抓包里 0 次出现**——
+  那条警告来自**修好之前的旧镜像**（抓到的是上一版启动缓存）。
+- 结论：`BM.4` 关闭。剩余的那点"栈只看 2 深队列"的现象随修复一起消失。
+
+#### BN.2 新增 `tools/test/evidence.py`：一次真机取证的统一入口
+
+真机结论必须留证，而取证要同时协调三样东西，之前每轮都在手工拼：
+
+| 环节 | 约定 | 工具里的做法 |
+|---|---|---|
+| P4 复位 | **USB-JTAG**（OpenOCD），不是 esptool 软复位 | `--reset` 调 `board/esp32p4-builtin.cfg` 的 `reset halt` + `reset run` |
+| 串口日志 | console 在 `/dev/ttyUSB0`，**但被 Tabby 独占** | 默认经 Tabby MCP 读（`--watch <regex>` 过滤）；Tabby 不在时退回直接读串口 |
+| 分析仪（可选） | pxview | `--analyzer N` 同时抓 N 秒 1 MHz 波形 |
+
+产物落在 `logs/<时间戳>_<tag>/{console.txt,meta.txt}`，`meta.txt` 记复位结果、串口来源、会话 id。
+
+**踩过的坑（写进工具注释）**：串口是独占的——Tabby 开着时 `board.py reset`、直接读
+`/dev/ttyUSB0` 都会报 `device reports readiness to read but returned no data`；这不是板子的问题。
+要么用 Tabby 的 MCP，要么先让 Tabby 放开端口。
+
+#### BN.3 本轮真机结果（`logs/20261031-172149_hosted-rpc/`）
+
+```
+eh_hosted_nuttx: transport config: sdio tx_q=20 rx_q=20 width=4 clk=40000
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512
+eh_sdio: SDIO Host operating in PACKET MODE
+eh_sdio: Open data path at slave
+eh_sdio: --- Wait for SDIO intr ---
+```
+
+与附录 BH 一致：**软件侧全部就绪，等的仍是从机那一次中断**（需要整板断电）。

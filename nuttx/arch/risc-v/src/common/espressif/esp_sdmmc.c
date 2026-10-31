@@ -168,8 +168,19 @@
                                SDMMC_ERR_FRUN | SDMMC_ERR_HLE | \
                                SDMMC_ERR_SBE | SDMMC_ERR_EBE)
 
+/* The SDIO card interrupt (DAT1) is deliberately *not* enabled here.
+ *
+ * It is level-triggered and cannot be cleared by writing RINTSTS, so while the
+ * companion holds DAT1 low the controller re-interrupts immediately: with the
+ * official stack running, the ISR fired hundreds of thousands of times and its
+ * trace buried every other log (measured, 800k+ interrupts).  ESP-IDF waits on
+ * the pin instead (sdmmc_host_io_int_wait), and so does this driver's
+ * esp_sdmmc_wait_card_intr(); masking the controller source costs nothing the
+ * pin check does not already provide.
+ */
+
 #define SDMMC_INT_ENABLE      (SDMMC_CMD_DONE | SDMMC_DATA_OVER | \
-                               SDMMC_SDIO_INTR | SDMMC_ALL_ERRORS)
+                               SDMMC_ALL_ERRORS)
 
 /****************************************************************************
  * Private Types
@@ -2957,7 +2968,7 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
     static volatile uint32_t isr_count;
 
     isr_count++;
-    if (isr_count <= 5 || (isr_count % 20) == 0)
+    if (isr_count <= 5)
       {
         syslog(LOG_INFO, "esp_sdmmc: ISR #%" PRIu32 "\n", isr_count);
       }

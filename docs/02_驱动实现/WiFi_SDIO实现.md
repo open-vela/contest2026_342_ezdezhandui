@@ -11841,3 +11841,45 @@ caps 交换所依赖的从机数据阶段——与附录 AU/AY 的硬件判决�
 
 断电恢复后重烧本镜像（md5 `4bbfb1b9…`），预期越过的就是 BF.2 的第 3 条：
 caps 交换完成 → 目标③（RPC 往返）；之后才是目标④（wlan0 netdev）。
+
+### 附录 BG —— 路线 B 第 12 步：清掉中断风暴，失败点收敛到「等从机第一次中断」（2026-11-01）
+
+#### BG.1 中断风暴：800k 次中断把日志全埋了
+
+上一轮之后串口被 `esp_sdmmc: ISR #794200` 这类行刷满（`totalLines=25032`，ISR 计数到 79 万+）。
+原因：**SDIO 卡中断（DAT1）是电平触发、写 RINTSTS 清不掉**——从机把 DAT1 拉低期间就会一直重触发。
+
+修法（与 ESP-IDF 一致）：把 `SDMMC_SDIO_INTR` **从 `SDMMC_INT_ENABLE` 里去掉**，
+改由 `esp_sdmmc_wait_card_intr()` 读 D1 引脚判断（它本来就是先读引脚再等中断）。
+顺带把 ISR 的周期打印改成只打前 5 次。
+
+#### BG.2 修完之后的完整串口（可读了）
+
+```
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512, CLK io_-1 CMD io_-1 D0..D3 -1,-1,-1,-1
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: SDIO Host operating in PACKET MODE
+eh_sdio: Open data path at slave
+eh_sdio: --- Wait for SDIO intr ---
+eh_reconfigure: bring-up timed out; re-attempt 1/3 after 1000ms back-off
+eh_reconfigure: bring-up timed out; re-attempt 2/3 after 1000ms back-off
+eh_reconfigure: bring-up timed out; re-attempt 3/3 after 1000ms back-off
+eh_reconfigure: bring-up failed after 3 re-attempts; restarting host
+eh_host_xport: TRANSPORT_FAILURE: aborting host process
+nsh>                                  ← 系统照常进 shell（栈在自己的线程里）
+```
+
+#### BG.3 这个失败点说明了什么
+
+- 卡初始化、传输层、**包模式**、**"打开从机数据通路"命令**——**全部成功**；
+- 之后主机在等**从机的第一次中断**（DAT1），从机始终不拉低 → 超时 → 按策略重试 → abort；
+- 这与附录 AU/AY/BF 的硬件判决是同一条：**从机数据阶段不驱动**（退化态），
+  所以它既不回 caps、也不报告"数据通路已打开"。
+
+即：软件链路能走到的最远处已经到达了（目标③之前的最后一步），**剩下的确实只有硬件状态**。
+
+#### BG.4 断电恢复后要看的第一行
+
+重烧本镜像（md5 `2331f213…`）后，串口应从 `Open data path at slave` 继续出现
+`--- SDIO intr received ---`（从机拉 DAT1）→ caps 交换 → RPC 往返（目标③）。
+若仍停在 BG.2 的 `Wait for SDIO intr`，则用分析仪抓 DAT1（通道 3）确认从机是否真的没拉低。

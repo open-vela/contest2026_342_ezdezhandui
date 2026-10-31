@@ -3005,6 +3005,17 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
   if ((status & SDMMC_SDIO_INTR) != 0)
     {
       priv->cardintr = true;
+
+      /* Mask the source now.
+       *
+       * DAT1 is level-triggered and cannot be cleared by writing RINTSTS, so
+       * with the source enabled the controller re-interrupts for as long as the
+       * companion holds the line (measured: ~800k interrupts, appendix BG).
+       * Masking here means one interrupt per assertion; the wait re-enables it,
+       * by which time the host has serviced the card.
+       */
+
+      priv->hw->intmask.val &= ~SDMMC_SDIO_INTR;
     }
 
   if (status & SDMMC_ALL_ERRORS)
@@ -3108,6 +3119,15 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
    * relies on: if D1 is high at entry, the coming negedge is guaranteed to
    * raise the CIU interrupt.
    */
+
+  /* Let the controller raise the card interrupt again.
+   *
+   * The ISR masks this source after each assertion (see there), so it has to be
+   * re-armed before waiting -- otherwise the status bit is never latched and the
+   * wait can only ever time out.
+   */
+
+  priv->hw->intmask.val |= SDMMC_SDIO_INTR;
 
   /* Ask the controller first.
    *

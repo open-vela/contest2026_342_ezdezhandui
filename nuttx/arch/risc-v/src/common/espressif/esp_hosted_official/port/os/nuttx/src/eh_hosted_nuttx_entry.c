@@ -78,6 +78,19 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
     syslog(LOG_INFO, "%s: D1 test: driven high -> readback %d (1 = nothing else pulls it low)\n",
            ENTRY_TAG, esp_gpioread(d1));
 
+    /* Toggle it slowly so the analyser can confirm both the pad control and the
+     * channel mapping (ch3 is DAT1): low, high, low, one second each.
+     */
+
+    for (int i = 0; i < 3; i++)
+      {
+        esp_configgpio(d1, OUTPUT);
+        esp_gpiowrite(d1, (i & 1) == 0 ? false : true);
+        syslog(LOG_INFO, "%s: D1 toggle %d -> wrote %d, read %d\n",
+               ENTRY_TAG, i, (i & 1) == 0 ? 0 : 1, esp_gpioread(d1));
+        nxsig_usleep(1000000);
+      }
+
     esp_configgpio(d1, INPUT | OUTPUT | PULLUP | DRIVE_3);
     nxsig_usleep(2000);
     syslog(LOG_INFO, "%s: D1 test: restored -> %d\n",

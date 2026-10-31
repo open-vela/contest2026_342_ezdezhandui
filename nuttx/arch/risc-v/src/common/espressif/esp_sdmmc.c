@@ -3131,19 +3131,17 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
 
   status = sdmmc_ll_get_intr_status(priv->hw);
 
-  /* Clear only what this handler consumes.
+  /* Clear every bit that was read, after translating it below.
    *
-   * This used to clear every bit it read, which includes CMD_DONE and
-   * DATA_OVER -- the very bits esp_sdmmc_eventwait() waits for.  A card
-   * interrupt arriving during a transfer (which is exactly when the transport
-   * is reading) wiped the completion before the wait could see it, so the
-   * transfer timed out with the data path already done.  The interrupt and the
-   * error bits are this handler's to clear; the completion bits belong to the
-   * waiter.
+   * A note in this file once argued the completion bits should be left for the
+   * waiter; that is wrong for this driver.  The waiter does not read RINTSTS --
+   * the handler translates it into priv->xfrmask events, so the handler must
+   * clear what it read.  Leaving CMD_DONE set made the controller re-interrupt
+   * forever: measured, a storm of "ISR raw status=00000004" (CMD_DONE) that
+   * starved the system until it reset.
    */
 
-  sdmmc_ll_clear_interrupt(priv->hw,
-                           status & (SDMMC_SDIO_INTR | SDMMC_ALL_ERRORS));
+  sdmmc_ll_clear_interrupt(priv->hw, status);
 
   if (status & SDMMC_CMD_DONE)
     {

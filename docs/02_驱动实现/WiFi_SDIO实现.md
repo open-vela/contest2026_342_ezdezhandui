@@ -12904,3 +12904,32 @@ esp_sdmmc: waitresponse enter cmd=00 rintsts=0000…  esp_sdmmc: ISR #1   ×3
 即：命令确实在发、`waitresponse` 在被等、ISR 也在跑——**"等到没等到"现在可以从容地从串口里读了**。
 下一轮直接用这个干净的通道把 `waitresponse` 的 in/out 两行、以及 `ISR` 里清了哪些位，
 一起对齐时间线看。
+
+#### BW.8 重大发现：**ISR 在 CMD_DONE 上风暴，把整机饿死到复位**
+
+串口安静下来之后，把复位前的那段日志一读，真相很直接：
+
+```
+esp_sdmmc: ISR raw status=00000004 intmask=0000bfce      ← 反复、成百上千次
+esp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+...
+ESP-ROM:esp32p4-eco7-20260109                            ← 随后整机重启
+```
+
+`status=0x00000004` 就是 **CMD_DONE**。而本轮之前（附录 BV.10）我把 ISR 的清理改成了
+"只清 SDIO 中断与错误位，完成位留给等待方"——**这个判断是错的**：本驱动里等待方**不读 RINTSTS**，
+是 ISR 把状态翻译成 `priv->xfrmask` 事件；ISR 既然读了就该清。结果 `CMD_DONE` 一直挂着 →
+控制器无限重触发 → ISR 风暴 → 系统被饿死 → 复位。这解释了多轮来"传输不返回"的真正表现。
+
+修法：恢复 `sdmmc_ll_clear_interrupt(priv->hw, status)`（读到的都清），
+并在注释里写清"为什么不能留给等待方"。
+
+实测（`logs/…_isr-clear-fix`）：**ISR 风暴消失**，传输层恢复成正常的
+"等中断 → 读 INT_RAW → 清中断 → 再等"循环（115 次 `Intr:` 打印）。
+
+#### BW.9 当前状态
+
+- ISR 风暴/整机复位：**已消除**；
+- 传输层循环起来了，但读到的 `INT_RAW` 值仍不稳定（有时 `1C1C1C1C`、有时 `00000000`），
+  而 bring-up 梯子用 **4 字节**读同一寄存器能拿到 `00cc7800`（bit23=1）——
+  所以下一步是把端口的窗口读改成 4 字节一段（此前试过会挂，但那是风暴造成的，值得重试）。

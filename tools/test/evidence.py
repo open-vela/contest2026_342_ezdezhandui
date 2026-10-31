@@ -72,7 +72,7 @@ def tabby_read(seconds):
     while time.time() - t0 < seconds:
         p = sh([sys.executable, os.path.join(REPO, "tools/engineering/tabby_mcp.py"),
                 "text", "get_terminal_buffer",
-                json.dumps({"sessionId": sid, "lastNLines": 4000})])
+                json.dumps({"sessionId": sid, "lastNLines": 30000})])
         try:
             t = json.loads(p.stdout).get("content", p.stdout)
         except Exception:

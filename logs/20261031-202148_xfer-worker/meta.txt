@@ -1,0 +1,5 @@
+stamp: 20261031-202148
+reset: True
+seconds: 200
+openocd rc=1 ['Error: [esp32p4.hp.cpu1] Could not identify target type.']
+console: Tabby session 7873fd30-2a04-497a-ad2e-9c79dc3f89ff

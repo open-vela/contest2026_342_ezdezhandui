@@ -12838,3 +12838,26 @@ eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
 
 下一步：把 dump 的调用点放在**确定会走到的位置**（例如 `esp_sdmmc_recvsetup()` 入口），
 并改成传 `priv` 而不是用全局，再对比两组寄存器。
+
+#### BW.4 决定性的一步：**两个 setup 都没被调用** → 卡在命令发送
+
+把状态转储放到 `esp_sdmmc_dmarecvsetup()`（每次接收必过的位置），并**同时**在
+非 DMA 的 `esp_sdmmc_recvsetup()`（本来是个空桩）里加了打印。实测：
+
+```
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: Open data path at slave
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+（recvsetup(stub) 没有打印，state @ 也没有打印）
+```
+
+**两个 setup 都没被调用**，说明 `sdio_io_rw_extended()` 根本没走到"准备数据"那一步——
+它卡在**更前面：命令发送/响应等待**。这与附录 BW 的现场（cpu0 停在 `up_mdelay`，
+即 `waitresponse()` 的轮询循环）完全吻合。
+
+#### BW.5 结论与下一步
+
+- 卡点从"数据传输"进一步缩小为**CMD53 的命令响应等待**；
+- 同一个命令在 bring-up 线程里能完成（梯子）、在栈起来之后不能——所以差异在**控制器命令状态**；
+- 下一步：在 `esp_sdmmc_sendcmd()` 里加打印（命令号、`rintsts`、`ctrl/status`），
+  看清"命令发出去没有、响应位有没有置起、被谁清掉"。

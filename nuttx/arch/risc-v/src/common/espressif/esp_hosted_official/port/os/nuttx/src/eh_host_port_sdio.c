@@ -335,16 +335,6 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
 
   xfer_guard_arm();
 
-  {
-    static bool dumped;
-
-    if (!dumped)
-      {
-        esp_sdmmc_dump_state("port-first-read");
-        dumped = true;
-      }
-  }
-
   if (size == 1)
     {
       ret = sdio_io_rw_direct(c->dev, false, 1, reg, 0, data);

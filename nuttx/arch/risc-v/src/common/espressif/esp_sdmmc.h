@@ -199,8 +199,6 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms);
 
 uint32_t esp_sdmmc_last_error_bits(void);
 
-void esp_sdmmc_dump_state(FAR const char *where);
-
 /****************************************************************************
  * Name: esp_sdmmc_debug
  *

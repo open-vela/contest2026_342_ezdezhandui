@@ -2087,9 +2087,26 @@ static int esp_sdmmc_setup_desc(struct esp_sdmmc_dev_s *priv,
 static int esp_sdmmc_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
                                size_t nbytes)
 {
+  static int n;
+
+  /* Which setup does NuttX call?
+   *
+   * SDIO_CAPS_DMASUPPORTED is advertised, so the data path should be armed by
+   * esp_sdmmc_dmarecvsetup().  This stub is the non-DMA entry point; if it is
+   * the one being called, no transfer is ever armed and a read waits forever --
+   * which is exactly the symptom being chased.  Logging here (and in
+   * dmarecvsetup) settles it.
+   */
+
+  if (n < 4)
+    {
+      syslog(LOG_INFO, "esp_sdmmc: recvsetup(stub) called nbytes=%u\n",
+             (unsigned)nbytes);
+      n++;
+    }
+
   UNUSED(dev);
   UNUSED(buffer);
-  UNUSED(nbytes);
   return OK;
 }
 
@@ -2120,11 +2137,25 @@ static int esp_sdmmc_cancel(struct sdio_dev_s *dev)
 
 #if defined(CONFIG_ESPRESSIF_SDMMC_DMA) && defined(CONFIG_SDIO_DMA)
 
+static void esp_sdmmc_dump_state(FAR struct esp_sdmmc_dev_s *priv,
+                                 FAR const char *where);
+
 static int esp_sdmmc_dmarecvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
                                   size_t buflen)
 {
   struct esp_sdmmc_dev_s *priv = (struct esp_sdmmc_dev_s *)dev;
   int ret;
+  static int dumps;
+
+  /* Every receive goes through here, so this is where the "working" and
+   * "hanging" moments can be compared from (appendix BW.3).
+   */
+
+  if (dumps < 6)
+    {
+      esp_sdmmc_dump_state(priv, dumps == 0 ? "first-recv" : "recv");
+      dumps++;
+    }
 
   /* Reset before arming, never after: a previous transfer may have left the
    * data path busy (see esp_sdmmc_reset_data_path()).
@@ -3264,10 +3295,9 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
  *
  ****************************************************************************/
 
-void esp_sdmmc_dump_state(FAR const char *where)
+static void esp_sdmmc_dump_state(FAR struct esp_sdmmc_dev_s *priv,
+                                 FAR const char *where)
 {
-  FAR struct esp_sdmmc_dev_s *priv = &g_sdmmc;
-
   syslog(LOG_INFO,
          "esp_sdmmc: state @%s: ctrl=%08" PRIx32 " bmod=%08" PRIx32
          " idsts=%08" PRIx32 " rintsts=%08" PRIx32 " status=%08" PRIx32

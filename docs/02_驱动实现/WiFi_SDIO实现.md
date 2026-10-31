@@ -12553,3 +12553,16 @@ esp_hosted_sdio: sweep[0] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
   `esp_gpioread()` 不可靠、`RINTSTS` 的 SDIO 位在本 CIU 上需要某种使能），不是数据通路问题；
 - 下一步就在这一环上：把 CIU 的卡中断检测路径弄清（或用 CCCR/INT_RAW 的轮询绕开中断）。
 
+
+#### BU.5 针对"看不见中断"的补救（本轮已实现，尚未生效）
+
+既然数据通路已经能读寄存器，就会想到**绕开中断**：让 `wait_slave_intr` 不要再"等到天荒地老"，
+而是以固定间隔返回"有中断"，这样传输层就会去**读从机的 INT_RAW**（它本来就在 wait 之后这么做）。
+
+实现：`EH_HOST_PORT_WAIT_FOREVER` 时按 **20 ms** 轮询一次并返回 `ESP_OK`
+（`EH_SDIO_INTR_POLL_MS`），有限超时仍按原来的语义返回 `ESP_ERR_TIMEOUT`。
+
+实测（`logs/…_poll-mode`）：串口里仍只见 `Wait for SDIO intr` + 超时重试，
+**没有出现 read_reg 的打印** —— 说明这一版里传输层没有走到读那一步。
+下一轮要确认的是：我们的 wait 到底有没有被反复调用、返回值被谁吞了
+（在 wait 里加一个**计数心跳**打印即可判定），必要时改成"直接读 INT_RAW 再返回"的主动轮询。

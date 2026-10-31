@@ -405,6 +405,12 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
 
 #define EH_SDIO_INTR_SLICE_MS 1000
 
+/* Poll interval used when the caller asks to wait forever (see the fallback in
+ * eh_host_port_sdio_wait_slave_intr()).
+ */
+
+#define EH_SDIO_INTR_POLL_MS 20
+
 /****************************************************************************
  * Name: eh_host_port_sdio_wait_slave_intr
  *
@@ -443,6 +449,21 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
   forever   = (ticks_to_wait == EH_HOST_PORT_WAIT_FOREVER);
   remaining = ticks_to_wait;
 
+  /* "Forever" is answered by polling: see the fallback at the bottom of the
+   * loop.  A short slice keeps the poll rate useful (the transport's register
+   * read is cheap) without spinning.
+   */
+
+  if (forever)
+    {
+      if (esp_sdmmc_wait_card_intr(c->dev, EH_SDIO_INTR_POLL_MS))
+        {
+          return ESP_OK;
+        }
+
+      return ESP_OK;
+    }
+
   /* What the wait actually observes.
    *
    * The transport's log only says it is waiting; whether the line is asserted
@@ -476,6 +497,26 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
                        EH_SDIO_INTR_SLICE_MS : remaining;
 
       if (esp_sdmmc_wait_card_intr(c->dev, slice))
+        {
+          return ESP_OK;
+        }
+
+      /* Poll-mode fallback.
+       *
+       * The card-interrupt line is not observable from here on this board: the
+       * DAT1 pad belongs to the SDMMC peripheral once the slot is routed through
+       * the GPIO matrix (esp_gpioread() then reads a constant), and the CIU's own
+       * SDIO-interrupt status bit does not latch either (appendices BR/BS).
+       * Meanwhile the data path works -- the companion's registers read back
+       * correctly (appendix BU) -- so the transport can find out what the
+       * companion wants by *reading its interrupt register*, which is exactly
+       * what it does after this returns.
+       *
+       * Returning "interrupted" once per slice therefore turns a wait that can
+       * never be satisfied into a poll of the companion's INT_RAW at slice rate.
+       */
+
+      if (slice >= EH_SDIO_INTR_SLICE_MS)
         {
           return ESP_OK;
         }

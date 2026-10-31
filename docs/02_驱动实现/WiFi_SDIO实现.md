@@ -13671,6 +13671,62 @@ eh_init_evt: SDIO mode mismatch: slave is streaming mode, but host is packet mod
 下一轮：把驱动剩余的 `LOG_DEBUG`/`LOG_INFO` 逐条静音（NuttX 这里不按级别过滤），
 拿到**整行可读**的 caps/init-event 日志，确认 caps 交换完成并看到第一次真实 RPC 往返。
 
+#### BY.13 第 70 轮：**caps 握手完成、RPC 通道建立（验收③达成）**
+
+驱动日志用 `sdmmc_trace()` 编掉（`CONFIG_ESPRESSIF_SDMMC_TRACE` 控制）之后，官方的握手日志终于能整行读：
+
+**主机侧**：
+
+```
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: SDIO Host operating in STREAMING MODE
+eh_sdio: Open data path at slave
+eh_sdio: len_from_slave: 60        → read_block addr=0x1f7c4 ret=0 bytes=05 00 30 00 0c 00 …
+eh_init_evt: capabilities: 0x01
+eh_init_evt:  * WLAN over SDIO
+eh_init_evt: coprocessor firmware: 0x0003000a
+eh_init_evt: extended capabilities: 0x00000010  → * WLAN
+eh_init_evt: SDIO buf-config: e2h mode=0 bufsz=15872B, h2e mode=0 bufsz=15872B
+eh_init_evt: coprocessor transport size: 1536
+eh_init_evt: RPC version negotiated: V2
+eh_init_evt: esp-hosted fw versions: host=3.0.10 coprocessor=3.0.10 (match)
+eh_init_evt: SDIO SW_AGGR negotiated (e2h=15872B h2e=15872B)
+eh_init_evt: SDIO mode: slave=streaming host=streaming
+eh_rpc_ll: rx: kind=evt id=769 (ESPInit) uid=0
+eh_host_feat_rpc: evt_dispatch: msg_id=769 -> cb[0]=0x40042728 ctx=0
+eh_hosted_nuttx: companion connected, transport ready
+eh_hosted_netdev: eth1 registered (STA channel bound)
+```
+
+**从机侧（同一次运行，它自己的串口）**：
+
+```
+I (14607) ehcp_core: Slave init_config received from host     ← 我们发出去的第一帧，对端收到了
+I (14607) ehcp_core: Host capabilities: 44
+I (14631) ehcp_core: RPC version negotiated: V2
+I (14635) ehcp_core: Negotiation complete: wire_hdr=V1 (12-byte legacy), rpc=V1
+I (14644) ehcp_pcom_pserial: Set RPC endpoints: req=RPCRsp evt=RPCEvt
+I (14661) ehcp_event_handler: TX evt → host: event_id=1 msg_id=0x0301 len=0
+I (14668) ehcp_mcu_rpc_evt: event ESPInit
+```
+
+⇒ **caps 握手两侧都完成**（版本匹配、特性 WLAN、SW_AGGR 与 streaming 模式一致、
+传输上限 1536），**RPC 通道建立**（V2、端点已设），从机发来的 **ESPInit 事件被主机收到并派发**，
+transport 自报 `companion connected, transport ready`，网卡也已注册。**验收③达成。**
+
+本轮另外两处修复：
+
+| 位置 | 改动 |
+|---|---|
+| 端口 `write_block` | 发送方向也改 **CMD52 逐字节**（引擎路径报 `Failed to send data: -1 32 32`），同样钳到窗口末尾——这是"主机→从机"第一帧（`Slave init_config`）能送达的原因 |
+| `esp_sdmmc.c` | 所有 INFO/DEBUG 日志改走 `sdmmc_trace()`（默认编掉），错误仍走 `LOG_ERR`；否则控制台被逐字符交织，握手日志读不出来 |
+
+**下一步（验收④）**：
+1. 网卡现在叫 `eth1`（用 `NET_LL_ETHERNET` 注册，NuttX 给的前缀），目标要求 **`wlan0`** ——
+   注册后显式写 `d_ifname`（或按 802.11 类型注册）；
+2. 触发主机侧 Wi-Fi 初始化（发 `Req_WifiInit` 等真实 RPC 请求）并观察请求/响应成对出现；
+3. `scan / connect / 取 IP`。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

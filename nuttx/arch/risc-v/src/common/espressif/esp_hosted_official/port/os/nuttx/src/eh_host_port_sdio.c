@@ -1113,7 +1113,46 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
    * serialised by the transport's lock alone.
    */
 
-  ret = sdio_port_transfer(c, true, reg, data, size);
+  /* Byte by byte over CMD52, symmetric to read_block().
+   *
+   * The engine's path does not move bytes reliably on this build (a streaming
+   * send fails with "Failed to send data: -1 32 32" even though the port reports
+   * success, appendix BY.13), while CMD52 has never failed.  The payload window
+   * is memory-mapped, so writing it a byte at a time addresses the same bytes.
+   */
+
+  {
+    unsigned done  = 0;
+    unsigned limit = size;
+
+    if (reg < ESP_SLAVE_CMD53_END_ADDR)
+      {
+        unsigned room = (unsigned)(ESP_SLAVE_CMD53_END_ADDR - reg);
+
+        if (limit > room)
+          {
+            limit = room;
+          }
+      }
+    else
+      {
+        limit = 0;
+      }
+
+    ret = 0;
+    while (done < limit)
+      {
+        int r = sdio_io_rw_direct(c->dev, true, 1,
+                                  (uint32_t)(reg + done), data[done], NULL);
+        if (r < 0)
+          {
+            ret = r;
+            break;
+          }
+
+        done++;
+      }
+  }
 
   if (lock_required)
     {

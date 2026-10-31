@@ -85,6 +85,23 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/mutex.h>
 #include <nuttx/sdio.h>
+
+/* Driver tracing.
+ *
+ * NuttX's syslog does not filter by level in this configuration -- a LOG_DEBUG
+ * line reaches the console exactly like a LOG_INFO one -- so the driver's
+ * per-command trace runs interleaved, character by character, with the official
+ * stack's own log.  While the caps handshake is being brought up that stack log
+ * is the one that matters and it cannot be read through the interleaving, so the
+ * driver's trace is compiled out unless CONFIG_ESPRESSIF_SDMMC_TRACE is set.
+ * Error paths keep using syslog(LOG_ERR, ...) and are always visible.
+ */
+
+#ifdef CONFIG_ESPRESSIF_SDMMC_TRACE
+#  define sdmmc_trace(...)  sdmmc_trace( __VA_ARGS__)
+#else
+#  define sdmmc_trace(...)  do { } while (0)
+#endif
 #include <nuttx/semaphore.h>
 #include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
@@ -482,7 +499,7 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
    * from "it was issued and the controller dropped it".
    */
 
-  syslog(LOG_DEBUG,
+  sdmmc_trace(
          "esp_sdmmc: issue CMD%u arg=0x%08" PRIx32 " (cmd_word=%08" PRIx32 ")\n",
          (unsigned)(hwcmd.cmd_index), arg, hwcmd.val);
 
@@ -547,7 +564,7 @@ static int esp_sdmmc_ciu_sendcmd(sdmmc_hw_cmd_t hwcmd, uint32_t arg)
             }
         }
 
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: CLK during cmd=%08" PRIx32 ": %d high, %d low -- %s\n",
              hwcmd.val, hi, lo,
              (hi && lo) ? "clock IS running"
@@ -621,7 +638,7 @@ void esp_sdmmc_sample_idle(void)
       up_udelay(200);
       int pulled = esp_gpioread(pins[i]);
 
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: idle %s(GPIO%d): no-pull=%d pull-up=%d -- %s\n",
              names[i], pins[i], floating, pulled,
              (floating && pulled) ? "healthy (line has its own pull-up)"
@@ -659,7 +676,7 @@ void esp_sdmmc_identify_pins(void)
   int i;
   int n;
 
-  syslog(LOG_DEBUG, "esp_sdmmc: pin identification starting\n");
+  sdmmc_trace( "esp_sdmmc: pin identification starting\n");
 
   /* A one-pin probe that pulsed GPIO18 alone (three 50 ms pulses) was used to
    * settle which analyser channel carries CLK. Result: the pulses appeared on
@@ -670,7 +687,7 @@ void esp_sdmmc_identify_pins(void)
 
   for (i = 0; i < 6; i++)
     {
-      syslog(LOG_DEBUG, "esp_sdmmc: %s (GPIO%d) -> %d pulse(s)\n",
+      sdmmc_trace( "esp_sdmmc: %s (GPIO%d) -> %d pulse(s)\n",
              names[i], pins[i], i + 1);
 
       esp_configgpio(pins[i], OUTPUT);
@@ -687,7 +704,7 @@ void esp_sdmmc_identify_pins(void)
       up_mdelay(60);
     }
 
-  syslog(LOG_DEBUG, "esp_sdmmc: pin identification done\n");
+  sdmmc_trace( "esp_sdmmc: pin identification done\n");
 }
 
 /****************************************************************************
@@ -724,7 +741,7 @@ void esp_sdmmc_report_routing(void)
     {
       uintptr_t reg = GPIO_FUNC0_OUT_SEL_CFG_REG + 4 * (uintptr_t)pins[i];
       uint32_t got = (uint32_t)REG_GET_FIELD(reg, GPIO_FUNC0_OUT_SEL);
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: routing %s(GPIO%d): out_sel=%" PRIu32
              " want=%" PRIu32 " %s (256 = plain GPIO)\n",
              names[i], pins[i], got, want[i],
@@ -756,7 +773,7 @@ bool esp_sdmmc_try_cmd5_ocr(uint32_t ocr)
   clock_t start;
   bool got;
 
-  syslog(LOG_DEBUG, "esp_sdmmc: CMD5-OCR probe entered (hw=%p slot=%d)\n",
+  sdmmc_trace( "esp_sdmmc: CMD5-OCR probe entered (hw=%p slot=%d)\n",
          hw, g_sdmmc.slot);
 
   if (hw == NULL)
@@ -793,7 +810,7 @@ bool esp_sdmmc_try_cmd5_ocr(uint32_t ocr)
 
   got = (hw->cmd.start_command == 0);
 
-  syslog(LOG_DEBUG,
+  sdmmc_trace(
          "esp_sdmmc: CMD5 with OCR 0x%08" PRIx32 ": %s "
          "(rintsts=%08" PRIx32 " cmdarg=%08" PRIx32 " resp0=%08" PRIx32 ")\n",
          ocr, got ? "RESPONSE RECEIVED" : "no response",
@@ -821,7 +838,7 @@ void esp_sdmmc_dma_state(void)
       return;
     }
 
-  syslog(LOG_DEBUG,
+  sdmmc_trace(
          "esp_sdmmc: dma state: des0=%08" PRIx32 " des1=%08" PRIx32
          " buf=0%08" PRIx32 " ctrl=%08" PRIx32 " status=%08" PRIx32
          " idsts=%08" PRIx32 " dbaddr=%08" PRIx32 " bmod=%08" PRIx32 "\n",
@@ -891,7 +908,7 @@ static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
       esp_gpio_func_sel(d2_pin,  SDMMC_SLOT0_FUNC);
       esp_gpio_func_sel(d3_pin,  SDMMC_SLOT0_FUNC);
 
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: slot 0 pads attached via IO_MUX "
              "(CLK=%d CMD=%d D0..D3=%d,%d,%d,%d)\n",
              clk_pin, cmd_pin, d0_pin, d1_pin,
@@ -984,7 +1001,7 @@ static void esp_sdmmc_configpins(int slot, int clk_pin, int cmd_pin,
       esp_configgpio(d1_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
       esp_configgpio(d2_pin, INPUT | OUTPUT | PULLUP | DRIVE_3);
 
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: slot %d pads routed via the GPIO matrix "
              "(CLK=%d CMD=%d D0..D3=%d,%d,%d,%d)\n",
              slot, clk_pin, cmd_pin, d0_pin,
@@ -1071,7 +1088,7 @@ static bool esp_sdmmc_clk_update(sdmmc_dev_t *hw, int slot, const char *stage)
 
   done = (hw->cmd.start_command == 0);
 
-  syslog(LOG_DEBUG,
+  sdmmc_trace(
          "esp_sdmmc: clock update (%s): %s (wrote=%08" PRIx32
          " read=%08" PRIx32 " ctrl=%08" PRIx32 " rintsts=%08" PRIx32 ")\n",
          stage, done ? "completed" : "DID NOT COMPLETE",
@@ -1103,7 +1120,7 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
 
     if (clock_calls < 12)
       {
-        syslog(LOG_DEBUG,
+        sdmmc_trace(
                "esp_sdmmc: clock(%d) requested: status=%08" PRIx32
                " clkena=%08" PRIx32 " cmd=%08" PRIx32 " idsts=%08" PRIx32 "\n",
                (int)rate, *(volatile uint32_t *)&hw->status, hw->clkena.val,
@@ -1298,7 +1315,7 @@ static void esp_sdmmc_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
             }
         }
 
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: clock-update command %s (cmd=%08" PRIx32 ")\n",
              (hw->cmd.start_command == 0) ? "completed" : "timed out",
              hw->cmd.val);
@@ -1704,7 +1721,7 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
 
   if (traces < 200)
     {
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: sendcmd cmd=%02u arg=%08x ctrl=%08x status=%08x"
              " bmod=%08x intmask=%08x tmout=%08x\n",
              (unsigned)((cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT),
@@ -1877,7 +1894,7 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
        * what this controller reports.
        */
 
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: data cmd regs: blksiz=%08" PRIx32 " bytcnt=%08" PRIx32
              " cmdarg=%08" PRIx32 " cdetect=%08" PRIx32 " ctrl=%08" PRIx32
              " tmout=%08" PRIx32 "\n",
@@ -1900,7 +1917,7 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
        * widened to the same set to make the comparison line-by-line.
        */
 
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: regs2: ctrl=%08" PRIx32 " clkena=%08" PRIx32
              " tmout=%08" PRIx32 " cdetect=%08" PRIx32 " rintsts=%08" PRIx32
              " intmask=%08" PRIx32 " bmod=%08" PRIx32 " idinten=%08" PRIx32
@@ -2212,7 +2229,7 @@ static int esp_sdmmc_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
 
   if (n < 4)
     {
-      syslog(LOG_DEBUG, "esp_sdmmc: recvsetup(stub) called nbytes=%u\n",
+      sdmmc_trace( "esp_sdmmc: recvsetup(stub) called nbytes=%u\n",
              (unsigned)nbytes);
       n++;
     }
@@ -2477,7 +2494,7 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 
   if (waits < 24)
     {
-      syslog(LOG_DEBUG,
+      sdmmc_trace(
              "esp_sdmmc: waitresponse enter cmd=%02u rintsts=%08" PRIx32
              " ctrl=%08" PRIx32 " status=%08" PRIx32 "\n",
              (unsigned)((cmd & MMCSD_CMDIDX_MASK) >> MMCSD_CMDIDX_SHIFT),
@@ -2500,10 +2517,10 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 
   if ((cmd & MMCSD_RESPONSE_MASK) == MMCSD_NO_RESPONSE)
     {
-      syslog(LOG_DEBUG, "esp_sdmmc: waitresponse -> OK (no response phase)\n");
+      sdmmc_trace( "esp_sdmmc: waitresponse -> OK (no response phase)\n");
       if (waits < 24)
         {
-          syslog(LOG_DEBUG,
+          sdmmc_trace(
                  "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
                  " rintsts=%08x ctrl=%08x\n",
                  (int)(OK), (unsigned)priv->xfrmask,
@@ -2582,11 +2599,11 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
           }
       }
 
-    syslog(LOG_DEBUG,
+    sdmmc_trace(
            "esp_sdmmc: waitresponse exit xfrmask=%02x waitmask=%02x\n",
            (unsigned)p->xfrmask, (unsigned)p->waitmask);
 
-    syslog(LOG_DEBUG,
+    sdmmc_trace(
            "esp_sdmmc: CMD%.2u resp %08" PRIx32 " -> %08" PRIx32 " %s "
            "(rintsts=%08" PRIx32 ")\n",
            (unsigned)(cmd & MMCSD_CMDIDX_MASK), resp_before,
@@ -2601,10 +2618,10 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
                "(rintsts=%08" PRIx32 " resp0=%08" PRIx32 ")\n",
                *(volatile uint32_t *)&hw->rintsts,
                *(volatile uint32_t *)&hw->resp[0]);
-        syslog(LOG_DEBUG, "esp_sdmmc: waitresponse -> -ETIMEDOUT\n");
+        sdmmc_trace( "esp_sdmmc: waitresponse -> -ETIMEDOUT\n");
       if (waits < 24)
         {
-          syslog(LOG_DEBUG,
+          sdmmc_trace(
                  "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
                  " rintsts=%08x ctrl=%08x\n",
                  (int)(-ETIMEDOUT), (unsigned)priv->xfrmask,
@@ -2619,10 +2636,10 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
       {
         syslog(LOG_ERR, "esp_sdmmc: response error (rintsts=%08" PRIx32 ")\n",
                *(volatile uint32_t *)&hw->rintsts);
-        syslog(LOG_DEBUG, "esp_sdmmc: waitresponse -> -EIO (RE set)\n");
+        sdmmc_trace( "esp_sdmmc: waitresponse -> -EIO (RE set)\n");
       if (waits < 24)
         {
-          syslog(LOG_DEBUG,
+          sdmmc_trace(
                  "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
                  " rintsts=%08x ctrl=%08x\n",
                  (int)(-EIO), (unsigned)priv->xfrmask,
@@ -2642,10 +2659,10 @@ static int esp_sdmmc_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
    * bailed out before CMD3.
    */
 
-  syslog(LOG_DEBUG, "esp_sdmmc: waitresponse -> OK\n");
+  sdmmc_trace( "esp_sdmmc: waitresponse -> OK\n");
       if (waits < 24)
         {
-          syslog(LOG_DEBUG,
+          sdmmc_trace(
                  "esp_sdmmc: waitresponse out ret=%d xfrmask=%02x"
                  " rintsts=%08x ctrl=%08x\n",
                  (int)(OK), (unsigned)priv->xfrmask,
@@ -2667,7 +2684,7 @@ static int esp_sdmmc_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
    * only needed the OCR) still worked.
    */
 
-  syslog(LOG_DEBUG, "esp_sdmmc: R%u raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
+  sdmmc_trace( "esp_sdmmc: R%u raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
          (unsigned)((cmd & MMCSD_RESPONSE_MASK) == MMCSD_R5_RESPONSE ? 5 : 4),
          *(volatile uint32_t *)&priv->hw->resp[0], cmd);
 
@@ -2686,7 +2703,7 @@ static int esp_sdmmc_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
    * the block-size write is the first command that depends on those bits.
    */
 
-  syslog(LOG_DEBUG, "esp_sdmmc: short response raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
+  sdmmc_trace( "esp_sdmmc: short response raw=%08" PRIx32 " (cmd=%08" PRIx32 ")\n",
          *(volatile uint32_t *)&priv->hw->resp[0], cmd);
 
   return OK;
@@ -3332,7 +3349,7 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
    * raised DATA_OVER, and what the event set looks like on the way out.
    */
 
-  syslog(LOG_DEBUG,
+  sdmmc_trace(
          "esp_sdmmc: eventwait -> %02x (rintsts=%08" PRIx32
          " ctrl=%08" PRIx32 " status=%08" PRIx32 ")\n",
          (unsigned)wkupevent,
@@ -3422,12 +3439,12 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
     isr_count++;
     if (isr_count <= 5)
       {
-        syslog(LOG_DEBUG, "esp_sdmmc: ISR #%" PRIu32 "\n", isr_count);
+        sdmmc_trace( "esp_sdmmc: ISR #%" PRIu32 "\n", isr_count);
       }
 
     if (isr_count <= 12)
       {
-        syslog(LOG_DEBUG, "esp_sdmmc: ISR raw status=%08" PRIx32
+        sdmmc_trace( "esp_sdmmc: ISR raw status=%08" PRIx32
                " intmask=%08" PRIx32 "\n",
                sdmmc_ll_get_intr_status(priv->hw),
                *(volatile uint32_t *)&priv->hw->intmask);
@@ -3662,7 +3679,7 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
 static void esp_sdmmc_dump_state(FAR struct esp_sdmmc_dev_s *priv,
                                  FAR const char *where)
 {
-  syslog(LOG_DEBUG,
+  sdmmc_trace(
          "esp_sdmmc: state @%s: ctrl=%08" PRIx32 " bmod=%08" PRIx32
          " idsts=%08" PRIx32 " rintsts=%08" PRIx32 " status=%08" PRIx32
          " fifoth=%08" PRIx32 " tmout=%08" PRIx32 "\n",
@@ -3872,7 +3889,7 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
    * and fails loudly if they do not clear.
    */
 
-  syslog(LOG_DEBUG,
+  sdmmc_trace(
          "esp_sdmmc: after module reset: controller=%d dma=%d fifo=%d "
          "(ctrl=%08" PRIx32 ")\n",
          (int)(*(volatile uint32_t *)&hw->ctrl & 1u),
@@ -3953,7 +3970,7 @@ struct sdio_dev_s *esp_sdmmc_initialize(int slotno)
           }
       }
 
-    syslog(LOG_DEBUG,
+    sdmmc_trace(
            "esp_sdmmc: CIU liveness check: update command %s before any clock "
            "programming (cmd=%08" PRIx32 " ctrl=%08" PRIx32
            " rintsts=%08" PRIx32 ")\n",
@@ -4051,7 +4068,7 @@ void esp_sdmmc_bus_reset(void)
      * write, reports every clock enable as set, and still drives nothing.
      */
 
-    syslog(LOG_DEBUG,
+    sdmmc_trace(
            "esp_sdmmc: controller reset %s (ctrl=%08" PRIx32 ")\n",
            sdmmc_ll_is_controller_reset_done(g_sdmmc.hw) ? "completed"
                                                          : "*** TIMED OUT ***",

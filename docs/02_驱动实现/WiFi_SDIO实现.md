@@ -13596,6 +13596,41 @@ summary: CMD53 frames=2 with data=0 without data=2
 调用者的缓冲区**；而后续同地址的读连数据阶段都没有。要查的就是 PIO 读路径
 （`g_pio_rxlen` 的 20 字节 vs 实际搬入量）与"为什么从机对重复的 `0x50` 读不再应答"。
 
+#### BY.10 第 68 轮：**寄存器用 CMD52 绕开数据通路，传输层开始真正收到报文**
+
+诊断把两条路径都证伪了：CMD53 的**数据**阶段在这条链上不可靠（PIO 搬回来的是同一个字重复、
+DMA 干脆不搬），而 **CMD52 从来没有失败过**。于是把端口的寄存器访问改成**逐字节 CMD52**
+（CMD52 是寄存器访问：一条命令、没有数据阶段、不经过 FIFO/IDMAC）：
+
+```
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 40 cc 00 (bit23=1)   ← 真值，new-packet 置位
+eh_host_port_sdio: read_block addr=0x1f7c4 (masked would be 0x3c4) size=512 ret=0 ...
+eh_sdio: Intr: 008C0000
+eh_sdio: len_from_slave: 300                       ← 从机报的报文长度，读对了
+eh_sdio: --- Wait for SDIO intr ---
+```
+
+**这是里程碑**：`INT_RAW` 8/8 次读到真值、`len_from_slave` 读到 60/300/92、报文读落在
+**未掩码的报文窗口地址**（`0x1f7c4`、`0x1f6d4`、`0x1f7a4`，对应的"掩码后"是 `0x3c4/0x2d4/0x3a4`）——
+即根因修复（B1）在真机上生效，transport 的控制面已经跑起来。
+
+**新的唯一卡点：报文数据的搬运**。`read_block` 把 512 字节读回来后，缓冲区里是**同一个 4 字节重复**：
+
+```
+bytes=03 00 1d 01 03 00 1d 01 03 00 1d 01 03 00 1d 01     ← 从机发的是完整帧
+eh_sdio: len[80]>max[1524] OR offset[3] != exp[12], Drop
+eh_sdio: Dropping packet
+```
+
+对照：**IDF 参考主机在同一条链上用 block-mode 512 字节读，拿到了真实字节**
+（BZ.2 的 `payload: 03 00 1d 01 ...`），所以这不是"从机不支持 block mode"，而是我们驱动的
+PIO/DMA 数据搬运实现。本轮已试并排除：全 DMA（不搬，超时）、live-FIFO-count 重读（仍重复）、
+`FIFOTH` 已是 0、传输结束等 FSM 回 idle。
+
+下一轮从"为什么 FIFO 端口重复返回同一个字"入手（对照 IDF 的 DMA 描述符与 `bytcnt` 写法），
+判定标准很明确：`read_block` 的 `bytes=` 前 16 字节必须与从机帧一致（`03 00 1d 01 0c 00 00 00 …`），
+之后 `Dropping packet` 消失、caps 握手继续。
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

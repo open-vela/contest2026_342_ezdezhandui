@@ -1,0 +1,243 @@
+window 15-20 s: 19 frame(s)
+   15410870  CMD0  cmd arg=0x00000000
+   15519053  CMD5  cmd arg=0x00000000
+   15599136  CMD5  cmd arg=0x00000300
+   15659678  CMD3  cmd arg=0x00000000
+   15759241  CMD7  cmd arg=0x20ff0000
+   15839704  CMD52 cmd arg=0x00000e00
+   16200675  CMD0  cmd arg=0x00000000
+   16289078  CMD5  cmd arg=0x00000000
+   16369161  CMD5  cmd arg=0x00000300
+   16429703  CMD3  cmd arg=0x00000000
+   16430723  CMD3  rsp arg=0x00010000
+   16509605  CMD7  cmd arg=0x00010000
+   16510625  CMD7  rsp arg=0x00001e00
+   16589528  CMD52 cmd arg=0x00000e00
+   16590648  CMD52 rsp arg=0x00001040
+   16669511  CMD52 cmd arg=0x80000e42
+   16670631  CMD52 rsp arg=0x00001042
+   16769574  CMD52 cmd arg=0x80002000
+   16770694  CMD52 rsp arg=0x00001000
+window 30-35 s: 30 frame(s)
+   31769380  CMD52 cmd arg=0x00000000
+   31911137  CMD0  cmd arg=0x00000000
+   31979599  CMD5  cmd arg=0x00000000
+   32020101  CMD5  cmd arg=0x00000300
+   32079423  CMD3  cmd arg=0x00000000
+   32199766  CMD52 cmd arg=0x00000e00
+   32771225  CMD0  cmd arg=0x00000000
+   32839747  CMD5  cmd arg=0x00000000
+   32880148  CMD5  cmd arg=0x00000300
+   32939450  CMD3  cmd arg=0x00000000
+   32940470  CMD3  rsp arg=0x00010000
+   32980012  CMD7  cmd arg=0x00010000
+   32981032  CMD7  rsp arg=0x00001e00
+   33039594  CMD52 cmd arg=0x00000e00
+   33040714  CMD52 rsp arg=0x00001040
+   33080115  CMD52 cmd arg=0x80000e42
+   33081235  CMD52 rsp arg=0x00001042
+   33159738  CMD52 cmd arg=0x00000400
+   33160858  CMD52 rsp arg=0x00001000
+   33221320  CMD0  cmd arg=0x084fffff
+   33260201  CMD52 cmd arg=0x00000400
+   33261321  CMD52 rsp arg=0x00001002
+   33320143  CMD52 cmd arg=0x00000600
+   33321263  CMD52 rsp arg=0x00001002
+   33380165  CMD52 cmd arg=0x00000800
+   33381285  CMD52 rsp arg=0x00001000
+   33440147  CMD52 cmd arg=0x80000803
+   33441267  CMD52 rsp arg=0x00001003
+   33499929  CMD52 cmd arg=0x00000800
+   33501049  CMD52 rsp arg=0x00001003
+window 35-40 s: 4 frame(s)
+   39519684  CMD52 cmd arg=0x00000000
+   39520804  CMD52 rsp arg=0x00001032
+   39679689  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 0c 00
+   39680929  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+window 40-45 s: 3 frame(s)
+   44749853  CMD52 cmd arg=0x00000000
+   44750973  CMD52 rsp arg=0x00001032
+   44911079  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+window 45-50 s: 2 frame(s)
+   49980023  CMD52 cmd arg=0x00000000
+   49981143  CMD52 rsp arg=0x00001032
+window 50-55 s: 2 frame(s)
+   50140008  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=99 start=True bytes=00 00 3c 00 c0 03
+   50141248  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=99 start=False bytes=-
+window 55-60 s: 4 frame(s)
+   55210193  CMD52 cmd arg=0x00000000
+   55211313  CMD52 rsp arg=0x00001032
+   55370178  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 0c 00
+   55371418  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+window 60-65 s: 4 frame(s)
+   60440342  CMD52 cmd arg=0x00000000
+   60441462  CMD52 rsp arg=0x00001032
+   60600347  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 0c 00
+   60601587  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+window 65-70 s: 4 frame(s)
+   65670532  CMD52 cmd arg=0x00000000
+   65671652  CMD52 rsp arg=0x00001032
+   65810556  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 0c 00
+   65811796  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+window 70-75 s: 3 frame(s)
+   70880701  CMD52 cmd arg=0x00000000
+   70881821  CMD52 rsp arg=0x00001032
+   71020725  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 00 c0
+window 75-80 s: 4 frame(s)
+   76090870  CMD52 cmd arg=0x00000000
+   76091990  CMD52 rsp arg=0x00001032
+   76211474  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 0c 00
+   76212714  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+window 80-85 s: 4 frame(s)
+   81281038  CMD52 cmd arg=0x00000000
+   81282158  CMD52 rsp arg=0x00001032
+   81401122  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 0c 00
+   81402362  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+window 85-90 s: 37 frame(s)
+   85791345  CMD52 cmd arg=0x00000000
+   85792465  CMD52 rsp arg=0x00001032
+   86391524  CMD52 cmd arg=0x00000400
+   86392644  CMD52 rsp arg=0x00001002
+   86491447  CMD52 cmd arg=0x00000000
+   86493848  CMD52 cmd arg=0x80000402
+   86494968  CMD52 rsp arg=0x00001002
+   86591911  CMD52 cmd arg=0x00000400
+   86593031  CMD52 rsp arg=0x00001002
+   86692634  CMD52 cmd arg=0x00000600
+   86693754  CMD52 rsp arg=0x00001002
+   86695594  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=True bytes=00 00 03 c0 0c 00
+   86696834  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+   86851779  CMD52 cmd arg=0x00000600
+   86852899  CMD52 rsp arg=0x00001002
+   86891700  CMD52 cmd arg=0x00000000
+   86892820  CMD52 rsp arg=0x00001032
+   86952502  CMD52 cmd arg=0x00000800
+   86953622  CMD52 rsp arg=0x00001003
+   87053106  CMD53 cmd WRITE blk=0 fn=1 addr=0x000d4 count=4 op=1 arg=0x9401a804
+        data: clocks=100 start=False bytes=-
+   87054346  CMD53 rsp READ  blk=0 fn=0 addr=0x00008 count=0 op=0 arg=0x00001000
+        data: clocks=100 start=False bytes=-
+   87055766  CMD52 cmd arg=0x80000803
+   87056886  CMD52 rsp arg=0x00002003
+   87213291  CMD52 cmd arg=0x00000800
+   87214411  CMD52 rsp arg=0x00002003
+   87362336  CMD52 cmd arg=0x80002000
+   87363456  CMD52 rsp arg=0x00002000
+   87531541  CMD52 cmd arg=0x80002202
+   87532661  CMD52 rsp arg=0x00002002
+   87981756  CMD52 cmd arg=0x80022000
+   87982876  CMD52 rsp arg=0x00002000
+   88581415  CMD52 cmd arg=0x80022202
+   88582535  CMD52 rsp arg=0x00002002
+   88981928  CMD52 cmd arg=0x00002000
+   88983048  CMD52 rsp arg=0x00002000
+   89581588  CMD52 cmd arg=0x00002200
+   89582708  CMD52 rsp arg=0x00002002
+window 90-95 s: 12 frame(s)
+   90181627  CMD52 cmd arg=0x00022000
+   90182747  CMD52 rsp arg=0x00002000
+   90582140  CMD52 cmd arg=0x00022200
+   90583260  CMD52 rsp arg=0x00002002
+   91381306  CMD52 cmd arg=0x00000e00
+   91382426  CMD52 rsp arg=0x00002042
+   91781999  CMD52 cmd arg=0x80000e42
+   91783119  CMD52 rsp arg=0x00002042
+   92181352  CMD52 cmd arg=0x00000000
+   92182472  CMD52 rsp arg=0x00002032
+   92402019  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+   92403259  CMD53 rsp READ  blk=0 fn=0 addr=0x00010 count=0 op=0 arg=0x00002000
+        data: clocks=100 start=False bytes=-
+window 95-100 s: 2 frame(s)
+   97451683  CMD52 cmd arg=0x00000000
+   97692191  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+window 105-110 s: 2 frame(s)
+  108032027  CMD52 cmd arg=0x00000000
+  108252534  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+window 110-115 s: 2 frame(s)
+  113302198  CMD52 cmd arg=0x00000000
+  113522705  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+window 120-125 s: 2 frame(s)
+  123842560  CMD52 cmd arg=0x00000000
+  124063047  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+window 125-130 s: 2 frame(s)
+  129112711  CMD52 cmd arg=0x00000000
+  129333218  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+window 135-140 s: 2 frame(s)
+  139653053  CMD52 cmd arg=0x00000000
+  139873060  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+window 140-145 s: 1 frame(s)
+  143843229  CMD52 cmd arg=0x00000000
+window 145-150 s: 4 frame(s)
+  148716847  CMD0  cmd arg=0x00000000
+  148933654  CMD5  cmd arg=0x00000000
+  149333887  CMD5  cmd arg=0x00002000
+  149733760  CMD3  cmd arg=0x00000000
+window 150-155 s: 2 frame(s)
+  150133893  CMD7  cmd arg=0x00000000
+  150534046  CMD52 cmd arg=0x00000e00
+window 155-160 s: 16 frame(s)
+  155463602  CMD52 cmd arg=0x80000402
+  155864095  CMD52 cmd arg=0x00000400
+  156663661  CMD52 cmd arg=0x00000000
+  157865452  CMD0  cmd arg=0x00000000
+  158113700  CMD5  cmd arg=0x00000000
+  158514173  CMD5  cmd arg=0x00002000
+  158813783  CMD3  cmd arg=0x00000000
+  158855484  CMD52 cmd arg=0x00000000
+  158894385  CMD7  cmd arg=0x00000000
+  158953907  CMD52 cmd arg=0x00000e00
+  158994208  CMD52 cmd arg=0x80000e02
+  159093812  CMD52 cmd arg=0x00000400
+  159174714  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=100 start=False bytes=-
+  159225636  CMD52 cmd arg=0x80000402
+  159354100  CMD52 cmd arg=0x00000400
+  159983761  CMD52 cmd arg=0x00000000
+window 160-165 s: 14 frame(s)
+  161185553  CMD0  cmd arg=0x00000000
+  161633807  CMD5  cmd arg=0x00000000
+  162034280  CMD5  cmd arg=0x00002000
+  162434153  CMD3  cmd arg=0x00000000
+  162834286  CMD7  cmd arg=0x00000000
+  163234439  CMD52 cmd arg=0x00000e00
+  164224931  CMD52 cmd arg=0x00000400
+  164244672  CMD52 cmd arg=0x00000000
+  164305254  CMD52 cmd arg=0x80000402
+  164363876  CMD52 cmd arg=0x00000400
+  164484280  CMD53 cmd READ  blk=0 fn=1 addr=0x00050 count=20 op=1 arg=0x1400a014
+        data: clocks=99 start=False bytes=-
+  164554702  CMD52 cmd arg=0x00000000
+  164875721  CMD0  cmd arg=0x00000000
+  164944683  CMD5  cmd arg=0x00000000
+window 165-170 s: 5 frame(s)
+  165543943  CMD5  cmd arg=0x00002000
+  165944056  CMD3  cmd arg=0x00000000
+  166344349  CMD7  cmd arg=0x00000000
+  166744502  CMD52 cmd arg=0x00000e00
+  167343861  CMD52 cmd arg=0x80000e02
+total frames: 186

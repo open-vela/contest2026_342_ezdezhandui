@@ -691,8 +691,38 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
        * of one.
        */
 
-      ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data,
-                                (int)size, 0);
+      /* Byte by byte over CMD52, not one CMD53.
+       *
+       * CMD52 is a register access: one command, no data phase, no FIFO, no
+       * IDMAC.  CMD53 on this link is what keeps failing -- the transport's
+       * twenty-byte window read reported success with the data still in the
+       * FIFO (FRUN raised, data state machine still busy) and handed the caller
+       * stale bytes, and the reads after it got no data phase at all (appendix
+       * BY.10).  The bring-up's own register reads have always been CMD52 and
+       * have never failed: "slave PACKET_LEN [00060] = 3c (ret 0)".
+       *
+       * Twenty CMD52s at the identification clock cost about ten milliseconds,
+       * which is nothing for a window the transport reads about once a second,
+       * and it keeps the transport's control path independent of the data path
+       * while that is being fixed.  Payload transfers (read_block/write_block)
+       * still use CMD53, which is the only thing that can move them.
+       */
+
+      unsigned done = 0;
+
+      ret = 0;
+      while (done < size)
+        {
+          int r = sdio_io_rw_direct(c->dev, false, 1,
+                                    (uint32_t)(reg + done), 0, &data[done]);
+          if (r < 0)
+            {
+              ret = r;
+              break;
+            }
+
+          done++;
+        }
     }
 
   {
@@ -794,10 +824,23 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
     }
   else
     {
-      /* One transfer, symmetric to read_reg() (see the note there). */
+      /* Symmetric to read_reg(): CMD52 byte writes, no data phase. */
 
-      ret = sdio_io_rw_extended(c->dev, true, 1, reg, true, data,
-                                (int)size, 0);
+      unsigned done = 0;
+
+      ret = 0;
+      while (done < size)
+        {
+          int r = sdio_io_rw_direct(c->dev, true, 1,
+                                    (uint32_t)(reg + done), data[done], NULL);
+          if (r < 0)
+            {
+              ret = r;
+              break;
+            }
+
+          done++;
+        }
     }
 
   if (lock_required)
@@ -904,9 +947,14 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
       {
         syslog(LOG_INFO,
                "%s: read_block addr=0x%05x (masked would be 0x%03x) size=%u "
-               "ret=%d first=%02x %02x %02x %02x\n",
+               "ret=%d bytes=%02x %02x %02x %02x %02x %02x %02x %02x "
+               "%02x %02x %02x %02x %02x %02x %02x %02x\n",
                SDIO_TAG, (unsigned)reg, (unsigned)(reg & ESP_ADDRESS_MASK),
-               (unsigned)size, ret, data[0], data[1], data[2], data[3]);
+               (unsigned)size, ret,
+               data[0], data[1], data[2], data[3],
+               data[4], data[5], data[6], data[7],
+               data[8], data[9], data[10], data[11],
+               data[12], data[13], data[14], data[15]);
         traced++;
       }
   }

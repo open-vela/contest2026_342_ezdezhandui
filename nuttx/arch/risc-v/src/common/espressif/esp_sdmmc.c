@@ -2880,25 +2880,46 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
              * the phase as well, which is why the DMA path is kept for it.
              */
 
-            while (idle && bytes > 0 && g_pio_rxdone < g_pio_rxlen)
+            /* Drain on the LIVE FIFO count, one word per published word.
+             *
+             * Taking FIFO_COUNT once and then reading that many words assumes
+             * the FIFO has already published all of them.  When it has not, the
+             * reads come back with the last word repeated: measured on a
+             * 512-byte payload read, the caller received "03 00 1d 01" four
+             * times where the companion had sent a frame, and the transport
+             * dropped every packet with "offset[3] != exp[12]" (appendix
+             * BY.10).  Re-reading the count per word stops as soon as the FIFO
+             * has nothing new, and the next poll picks up where this one left
+             * off.
+             */
+
+            while (idle && g_pio_rxdone < g_pio_rxlen)
               {
-                uint32_t word =
-                  *(volatile uint32_t *)((uintptr_t)hw + ESP_SDMMC_FIFO_PORT);
-                size_t   left = g_pio_rxlen - g_pio_rxdone;
+                uint32_t qsts   = *(volatile uint32_t *)&hw->status;
+                unsigned qbytes = (unsigned)((qsts >> 17) & 0x1fff);
+                uint32_t word;
+                size_t   left;
+
+                if (qbytes == 0)
+                  {
+                    break;
+                  }
+
+                word = *(volatile uint32_t *)((uintptr_t)hw + ESP_SDMMC_FIFO_PORT);
+                left = g_pio_rxlen - g_pio_rxdone;
 
                 if (left > 4)
                   {
                     left = 4;
                   }
 
-                if (left > bytes)
+                if (left > qbytes)
                   {
-                    left = bytes;
+                    left = qbytes;
                   }
 
                 memcpy(g_pio_rxbuf + g_pio_rxdone, &word, left);
                 g_pio_rxdone += left;
-                bytes       -= left;
               }
 
             if (g_pio_rxdone >= g_pio_rxlen)

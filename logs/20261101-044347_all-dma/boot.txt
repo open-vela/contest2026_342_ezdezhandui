@@ -1,0 +1,1751 @@
+[esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***
+[esp32p4] [INF] [boot] chip revision: v3.2
+[esp32p4] [INF] [boot] efuse block revision: v1.2
+[esp32p4] [INF] [boot.esp32p4] SPI Speed      : 80MHz
+[esp32p4] [INF] [boot.esp32p4] SPI Mode       : DIO
+[esp32p4] [INF] [boot.esp32p4] SPI Flash Size : 4MB
+[esp32p4] [INF] [boot] Enabling RNG early entropy source...
+[esp32p4] [INF] Image index: 0, Swap type: none
+[esp32p4] [INF] Disabling RNG early entropy source...
+[esp32p4] [INF] br_image_off = 0x20000
+[esp32p4] [INF] ih_hdr_size = 0x20
+[esp32p4] [INF] Loading image 0 - slot 0 from flash, area id: 1
+[esp32p4] [INF] DRAM segment: start=0x20000, size=0x0, vaddr=0x4ff00000
+[esp32p4] [INF] IRAM segment: start=0x20080, size=0xb928, vaddr=0x4ff40000
+[esp32p4] [INF] LP_IRAM segment: paddr=0002b9a8h, vaddr=30100024h, size=00088h (   136) load
+[esp32p4] [INF] Mapped IROM: vaddr=0x40000000 paddr=0x30000 len=0x120000
+[esp32p4] [INF] start=0x4ff48620
+I (11566) hex_psram: vendor id    : 0x0d (AP)
+I (11566) hex_psram: Latency      : 0x01 (Fixed)
+I (11566) hex_psram: DriveStr.    : 0x00 (25 Ohm)
+I (11567) hex_psram: dev id       : 0x03 (generation 4)
+I (11572) hex_psram: density      : 0x07 (256 Mbit)
+I (11577) hex_psram: good-die     : 0x06 (Pass)
+I (11581) hex_psram: SRF          : 0x02 (Slow Refresh)
+I (11586) hex_psram: BurstType    : 0x00 ( Wrap)
+I (11590) hex_psram: BurstLen     : 0x03 (2048 Byte)
+I (11595) hex_psram: BitMode      : 0x01 (X16 Mode)
+I (11600) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)
+I (11605) hex_psram: DriveStrength: 0x00 (1/1)
+I (11609) MSPI Timing: Enter psram timing tuning
+I (11769) esp_psram: Found 32MB PSRAM device
+ABCDES8311: speaker PA enabled (GPIO53)
+ES8311 ready: I2S0 (MCLK=13 BCLK=12 WS=10 DOUT=9 DIN=11), I2C0 addr 0x18 -> /dev/audio/pcm0
+esp_sdmmc: idle CLK(GPIO18): no-pull=1 pull-up=1 -- healthy (line has its own pull-up)
+esp_sdmmc: idle CMD(GPIO19): no-pull=1 pull-up=1 -- healthy (line has its own pull-up)
+esp_sdmmc: idle D0(GPIO14): no-pull=1 pull-up=1 -- healthy (line has its own pull-up)
+esp_sdmmc: idle D1(GPIO15): no-pull=1 pull-up=1 -- healthy (line has its own pull-up)
+esp_sdmmc: idle D2(GPIO16): no-pull=1 pull-up=1 -- healthy (line has its own pull-up)
+esp_sdmmc: idle D3(GPIO17): no-pull=1 pull-up=1 -- healthy (line has its own pull-up)
+esp_sdmmc: pin identification starting
+esp_sdmmc: CLK (GPIO18) -> 1 pulse(s)
+esp_sdmmc: CMD (GPIO19) -> 2 pulse(s)
+esp_sdmmc: D0 (GPIO14) -> 3 pulse(s)
+esp_sdmmc: D1 (GPIO15) -> 4 pulse(s)
+esp_sdmmc: D2 (GPIO16) -> 5 pulse(s)
+esp_sdmmc: D3 (GPIO17) -> 6 pulse(s)
+esp_sdmmc: pin identification done
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_hosted_sdio: companion reset: GPIO54 held low 500 ms
+esp_hosted_sdio: companion enable held high (GPIO54), settling 1000 ms
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_sdmmc: after module reset: controller=0 dma=0 fifo=0 (ctrl=00000000)
+esp_sdmmc: CIU liveness check: update command COMPLETED before any clock programming (cmd=00212000 ctrl=00000030 rintsts=00000000)
+esp_sdmmc: clock(1) requested: status=00000106 clkena=00000000 cmd=00212000 idsts=00000000
+esp_sdmmc: clock update (clock disabled): completed (wrote=a0212000 read=20212000 ctrl=00000030 rintsts=00000000)
+esp_sdmmc: clock update (dividers programmed): completed (wrote=a0212000 read=20212000 ctrl=00000030 rintsts=00000000)
+esp_sdmmc: clock update (clock re-enabled): completed (wrote=a0212000 read=20212000 ctrl=00000030 rintsts=00000000)
+esp_sdmmc: clock-update command completed (cmd=00212000)
+esp_sdmmc: routing CLK(GPIO18): out_sel=0 want=0 OK (256 = plain GPIO)
+esp_sdmmc: routing CMD(GPIO19): out_sel=1 want=1 OK (256 = plain GPIO)
+esp_sdmmc: routing D0(GPIO14): out_sel=2 want=2 OK (256 = plain GPIO)
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: verid=5342270a status=00000106 cdetect=00000000 clkena=00000002
+esp_hosted_sdio: ctrl=00000030 bmod=00000000 rintsts=00000000 clkdiv=0000fa00
+esp_hosted_sdio: CIU reset bit clear -- CIU is running (bit0 of ctrl: 0)
+esp_hosted_sdio: clkrst sys=0e057038 peri01=01800601 peri02=388e6e00 ref2=00000115
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=00000106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse enter cmd=00 rintsts=00000000 ctrl=02000030 statesp_sdmmc: ISR #1
+esp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+us=00000106
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=00000106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse enter cmd=05 rintsts=00000000 ctrl=02000030 status=00000106
+esp_sdmmc: ISR #2
+esp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp 00000000 -> 20ffff00 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=20ffff00 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00000300 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000300 (cmd_word=a0010045)
+esp_sdmmc: waitresponse enter cmd=05 rintsts=00000000 ctrl=02000030 status=0001f906
+esp_sdmmc: ISR #3
+esp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD3 arg=0x00000000 (cmd_word=a0010043)
+esp_sdesp_sdmmc: ISR #4
+esp_sdmmc: ISR raw status=00000100 intmask=0000bfce
+esp_sdmmc: ISR error raw=00000104 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+mmc: waitresponse enter cmd=03 rintsts=00000000 ctrl=02000030 status=0001f906
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD03 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: R4 raw=20ffff00 (cmd=000001c3)
+esp_sdmmc: sendcmd cmd=07 arg=20ff0000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD7 arg=0x20ff0000 (cmd_word=a0010147)
+esp_sdmmc: waitresponse enter cmd=07 rintsts=00000000 ctrl=02000030 statusesp_sdmmc: ISR #5
+esp_sdmmc: ISR raw status=00000100 intmask=0000bfce
+esp_sdmmc: ISR error raw=00000104 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+=0001f906
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD07 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: R4 raw=20ffff00 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esesp_sdmmc: ISR raw status=00000100 intmask=0000bfce
+esp_sdmmc: ISR error raw=00000104 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+p_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001f906
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=20ffff00 (cmd=000001b4)
+esp_hosted_sdio: probe 1/4 -> -5, retrying
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse enter cmd=00 rintsts=00000000 ctrl=02000030 status=0001f906
+esp_sdmmc: waitreesp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+sponse -> OK (no response phase)
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse enter cmd=05 rintsts=00000000 ctrl=02000030 status=0001f906
+esp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp 20ffff00 -> a0ffff00 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=a0ffff00 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00000300 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000300 (cmd_word=a0010045)
+esp_sdmmc: waitresponse enter cmd=05 rintsts=00000000 ctrl=02000030 status=0001f906
+esp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp a0ffff00 -> a0ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD3 arg=0x00000000 (cmd_word=a0010043)
+esp_sdesp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+mmc: waitresponse enter cmd=03 rintsts=00000000 ctrl=02000030 status=0001f906
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD03 resp 00010000 -> 00010000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: R4 raw=00010000 (cmd=000001c3)
+esp_sdmmc: sendcmd cmd=07 arg=00010000 ctrl=02000030 status=00001906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD7 arg=0x00010000 (cmd_word=a0010147)
+esp_sdmmc: waitresponesp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+se enter cmd=07 rintsts=00000000 ctrl=02000030 status=00001906
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD07 resp 00001e00 -> 00001e00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: R4 raw=00001e00 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=00003906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=5esp_sdmmc: ISR raw status=00000004 intmask=0000bfce
+2 rintsts=00000000 ctrl=02000030 status=00003906
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001040 -> 00001040 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001040 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e42 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e42 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001042 -> 00001042 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001042 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)
+esp_sdmmc: sendcmd cmd=52 arg=80002000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80002000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80002202 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80002202 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001002 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000402 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000402 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001002 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000600 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000600 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001002 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000800 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000800 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a126
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000802 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000802 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001002 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000800 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000800 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001002 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000803 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000803 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001003 -> 00001003 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001003 (cmd=000001b4)
+esp_hosted_sdio: CCCR 0x04 interrupt enable 02 -> 03 (ret 0)
+esp_sdmmc: sendcmd cmd=52 arg=80022000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80022000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001003 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: waitresponse out ret=0 xfrmask=03 rintsts=00000000 ctrl=02000030
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80022202 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80022202 (cmd_word=a0010174)
+esp_sdmmc: waitresponse enter cmd=52 rintsts=00000000 ctrl=02000030 status=0001a106
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001042 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001042 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001042 -> 00001042 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001042 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e42 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e42 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001042 -> 00001042 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001042 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_hosted_sdio: card bus width requested 4 bit (CCCR 0x07 was 42, ret 0)
+esp_sdmmc: sendcmd cmd=52 arg=90011801 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x90011801 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001042 -> 00001001 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001001 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=10011800 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x10011800 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001001 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_hosted_sdio: host-ready mask 01 written (ret 0), readback 00 (ret 0)
+esp_hosted_sdio: leaving the card clock at the identification rate for the official stack
+esp_sdmmc: ISR error raw=00000104 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: clock(1) requested: status=0001a106 clkena=00000002 cmd=20010174 idsts=00000000
+esp_sdmmc: clock update (clock disabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (dividers programmed): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (clock re-enabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command completed (cmd=00212000)
+esp_hosted_sdio: controller reset + clock reprogrammed, now resetting the companion (500 ms low, then 10 s to come up)
+MIPI PHY LDO ch3 @ 2500mV enabled
+eh_hosted_nuttx: starting official esp-hosted host stack
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+Backlight disabled on GPIO26 (J1->J6 jumper requireh_hosted_nuttxe:d )D1
+ LtCeDs tp:o waesr /irnepsuett+ ppualtlhu pr e-a>d y1 (
+EK79007)
+SC2336 chip ID: 0xcb3a
+eh_hosted_nuttx: D1 test: driven high -> readback 0 (1 = nothing else pulls it low)
+eh_hosted_nuttx: D1 toggle 0 -> wrote 0, read 0
+Camera registered on /dev/video0
+MIPI-DSI host registered (2 lanes @ 900 Mbps)
+Configuring DPI 1024x600 @ 52 MHz...
+EK79007 panel init...
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+EK79007: panel initialized (2 lanes, 900 Mbps/lane)
+Starting DSI video...
+DSI-DMA[before-arm] fb=0x48000040 lli=0x4ff6b340 nc=0x8ff6b340 isr=0 rst=0 chen0=00000000 ist=00000000 cist=00000000 sar=00000000 dar=00000000 bts=00000000 ctl=00001200 llp=00000000 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[after-arm] fb=0x48000040 lli=0x4ff6b340 nc=0x8ff6b340 isr=0 rst=1 chen0=00000002 ist=00000000 cist=00000000 sar=48000240 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[t200ms] fb=0x48000040 lli=0x4ff6b340 nc=0x8ff6b340 isr=15 rst=16 chen0=00000002 ist=00000000 cist=00000000 sar=48000240 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+Backlight enabled on GPIO26 (J1->J6 jumper required)
+/dev/fb0 ready 1024x600 RGB565 @ 0x48000040 (1228800 bytes)
+/dev/fb0 registered (EK79007)
+I2C0 @400000 Hz: ACK from 0x18
+I2C0 @400000 Hz: ACK from 0x30
+I2C0 @400000 Hz: ACK from 0x5d
+I2C0 @400000 Hz: scan done, 3 device(s)
+I2C0 @100000 Hz: ACK from 0x18
+I2C0 @100000 Hz: ACK from 0x30
+I2C0 @100000 Hz: ACK from 0x5d
+I2C0 @100000 Hz: scan done, 3 device(s)
+GT911: raw ID at 0x5d = 39 31 31 00
+GT911: product ID "911" at 0x5d
+GT911: cfg x_max=1024 y_max=600 touch_num=5 (panel is 1024x600)
+GT911: no INT line routed; running in polling mode
+GT911 touchscreen registered at /dev/input0 (0x5d)
+eh_hosted_nuttx: D1 toggle 1 -> wrote 1, read 0
+DNS nameserver set to 192.168.1.1
+eh_hosted_nuttx: D1 toggle 2 -> wrote 0, read 0
+eh_hosted_nuttx: D1 test: restored -> 1
+eh_hosted_nuttx: transport config: sdio tx_q=20 rx_q=20 width=4 clk=40000 kHz
+eh_mcu_transport: transport_init: probing bus backend
+eh_sdio: transport[host]: SDIO 4-bit 40000 kHz CLK=-1 CMD=-1 D0=-1 D1=-1 D2=-1 D3=-1 RESET=0
+eh_sdio: SDIO clock freq set to [40000]KHz, Max possible (on PCB) is 50000KHz
+eh_sdio: sdio bus init done
+eh_mcu_transport: transport_init: bus backend ueh_sdiop: 
+seh_host_feat_rpcd:i oe_vdta_trae_gtios_trexr_:b umfs_gt_aisdk= 7s6t9a rctbe=d0x
+40042728 ctx=0
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: clock(1) requested: status=0001a106 clkena=00000002 cmd=20010174 idsts=00000000
+esp_sdmmc: clock update (clock disabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (dividers programmed): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (clock re-enabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command completed (cmd=00212000)
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp 00001000 -> 20ffff00 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=20ffff00 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00000300 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000300 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD3 arg=0x00000000 (cmd_word=a0010043)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD03 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=20ffff00 (cmd=000001c3)
+esp_sdmmc: sendcmd cmd=07 arg=20ff0000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD7 arg=0x20ff0000 (cmd_word=a0010147)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD07 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=20ffff00 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 20ffff00 -> 20ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=20ffff00 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp 20ffff00 -> a0ffff00 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=a0ffff00 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00000300 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000300 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp a0ffff00 -> a0ffff00 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001f906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD3 arg=0x00000000 (cmd_word=a0010043)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD03 resp a0ffff00 -> 00010000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00010000 (cmd=000001c3)
+esp_sdmmc: sendcmd cmd=07 arg=00010000 ctrl=02000030 status=00001906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD7 arg=0x00010000 (cmd_word=a0010147)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD07 resp 00010000 -> 00001e00 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001e00 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=00003906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001e00 -> 00001040 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001040 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e42 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e42 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001040 -> 00001042 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001042 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+eh_host_port_sdio: SDIO probe succeeded on try 2
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001042 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x02 IOEx before: 00
+esp_sdmmc: sendcmd cmd=52 arg=80000402 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000402 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001002 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x02 IOEx after: 02
+esp_sdmmc: sendcmd cmd=52 arg=00000600 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000600 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001002 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x03 IO_RDY=02 after 1 try/tries
+esp_sdmmc: sendcmd cmd=52 arg=00000800 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000800 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x04 INT_ENABLE before: 00
+esp_sdmmc: sendcmd cmd=52 arg=80000803 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000803 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001003 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001003 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000800 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000800 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001003 -> 00001003 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001003 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x04 INT_ENABLE after: 03 (want 03)
+esp_sdmmc: sendcmd cmd=52 arg=80002000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80002000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001003 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80002202 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80002202 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80022000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80022000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80022202 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80022202 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00002000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00002000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00002200 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00002200 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+eh_host_port_sdio: FN0 block size read back 512 (ret 0)
+esp_sdmmc: sendcmd cmd=52 arg=00022000 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00022000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00022200 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00022200 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001002 (cmd=000001b4)
+eh_host_port_sdio: FN1 block size read back 512 (ret 0)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001002 -> 00001042 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001042 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e42 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e42 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001042 -> 00001042 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001042 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512, CLK io_-1 CMD io_-1 D0..D3 -1,-1,-1,-1
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: SDIO Host operating in PACKET MODE
+eh_sdio: Open data path at slave
+esp_sdmmc: sendcmd cmd=52 arg=90011801 ctrl=02000030 statuseh_sdio=:0 0S0t1aar1t0i6n gb mSoDdI=O0 0p0r0o0c0e8s2s  irnxt mtaasskk=0
+000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x90011801 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001042 -> 00001001 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001001 (cmd=000001b4)
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #1)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: state @first-recv: ctrl=02000030 bmod=00000082 idsts=00000000 rintsts=00000000 status=0001a106 fifoth=00000000 tmout=ffffffff
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=90011801 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: FIFO has data: raw=00000020 rxdr=1 txdr=0 status=0003a4b1
+esp_sdmmc: FIFO has data: raw=00000020 rxdr=1 txdr=0 status=0007acc1
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: dwait[1] t=60ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #2)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=2 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: state @recv: ctrl=02000030 bmod=00000082 idsts=00000000 rintsts=00000000 status=0001a106 fifoth=00000000 tmout=ffffffff
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+
+NuttShell (NSH)
+nsh> esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #3)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=3 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: state @recv: ctrl=02000030 bmod=00000082 idsts=00000000 rintsts=00000000 status=0001a106 fifoth=00000000 tmout=ffffffff
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #4)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=4 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: state @recv: ctrl=02000030 bmod=00000082 idsts=00000000 rintsts=00000000 status=0001a106 fifoth=00000000 tmout=ffffffff
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #5)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=5 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: state @recv: ctrl=02000030 bmod=00000082 idsts=00000000 rintsts=00000000 status=0001a106 fifoth=00000000 tmout=ffffffff
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #6)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=6 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: state @recv: ctrl=02000030 bmod=00000082 idsts=00000000 rintsts=00000000 status=0001a106 fifoth=00000000 tmout=ffffffff
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #7)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=7 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: slave interrupt (hit #8)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=8 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_host_port_sdio: transport INT_RAW read: ret=-110 bytes=92 0a 62 45 (bit23=0)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=9 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: timeout with 5 byte(s) still in the FIFO: first=0x00cc4000 fifoth=0x00000000 idsts=00002000 des0=8000001c
+esp_sdmmc: eventwait -> 0f (rintsts=00020020 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00001000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00001032 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=10 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+eh_reconfigure: bring-up timed out; re-attempt 1/3 after 1000ms back-off
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00001000 -> 00001032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00001032 (cmd=000001b4)
+eh_host_port_sdio: card already enumerated (CCCR 0x00=32), skipping the re-probe
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a106 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00001032 -> 00001002 CHANGED e(srpi_nstdsmtmsc=:0 0e0v0e0n0t0w0a)it
+ e-s>p _0sbd m(mrci:n twsatist=r0e0s0p0o0n0s0e0  -c>t rOlK=0
+2e0s0p0_0s3d0m msct:a tsuhso=r0t0 0r1eas1p0o6n)se
+ ersapw_=s0d0m0m0c1:0 0s2h o(rctm dr=e0s0p0o0n0s1eb 4r)aw
+=eh_host_port_sdio0:0 0C0C1C0R0 20 x(0c2m dI=O0E0x0 0b0e5fbo5r)e:
+ e0s2p_
+sedsmpm_cs:d msmecn:d csmedn dccmmdd= 5c2m da=r5g2= 0a0r0g0=08000000 0c4t0r2l =c0t2r0l0=00023000 0s0t3a0t usst=a0t0u0s1=a0100061 ab1m0o6d =b0m0o0d0=00008020 0i0n8t2m aisnkt=m0a0s0k0=b0f0c0e0 btfmcoeu tt=mfofuftf=fffffffff
+fefsfp_
+sedsmpm_cs:d mimscs:u ei sCsMuDe5 2C MaDr5g2= 0axr0g0=000x08000000 0(4c0m2d _(wcomrdd_=wao0r0d1=0a107041)01
+7e4s)p_
+sedsmpm_cs:d mwmaci:t rweasiptornessep oenxsiet  exxfirtm axsfkr=m0a3s kw=a0i3t mwaasikt=m0a0sk
+=e0s0p_
+sedsmpm_cs:d mCmMcD:5 2C MrDe5s2p  r0e0s0p0 10000020 1-0>3 20 0-0>0 10003020 1CHANGED0 3(2r iunchangedn t(srtisn=t0s0t0s0=00000000)00
+0e0s)p_
+sedsmpm_cs:d mwmaci:t rweasiptornessep o-n>s eO K->
+ eOsKp_
+sedsmpm_cs:d mRm4c :r aswh=o0r0t0 0r1e0s0p2o n(scem dr=a0w0=000040007140)02
+ eh_sdio(:c mfda=i0l0e0d0 0t1ob 4r)ea
+de srpe_gsidsmtmecr:s s
+eeh_sdion:d c-m-d-  cWmadi=t5 2f oarr gS=D0I0O0 0i0n4t0r0  -c-t-rl
+=eh_sdio0:2 0-0-0-0 3S0D IsOt aitnutsr= 0r0e0c1eai1v0e6d  b-m-o-d=
+0e0h0_0h0o0s8t2_ pionrttm_assdki=o0:0 0read_reg0 benterf cied =t1m1o uatd=dfrf=f0fxf3fffff55
+0e5s0p _ssidzmem=c2:0  irsestu=e0 C
+MeDs5p2_ sadrmgm=c0:x 0s0e0n0d0c4m0d0  c(mcdm=d5_3w oarrdg==a10400100a107144) c
+terslp=_0s2d0m0m0c0:3 0w asittarteussp=o0n0s0e1 ae1x0i6t  bxmfordm=a0s0k0=00030 8w2a iitnmtamsaks=k1=400
+0e0sbpf_csed mtmmco:u tC=MfDf5f2f frfefsfp 
+0e0s0p0_1s0d0m2m c-:>  d0a0t0a0 1c0m0d2  runchangede g(sr:i nbtlsktssi=z0=00000000000001)4 
+beystpc_nstd=m0m0c0:0 0w0a1i4t rcemsdpaorngs=e0 0-0>0 0O4K00
+ ecsdpe_tsedcmtm=c0:0 0s0h0o0r0t0  rcetsrplo=n0s2e0 0r0a0w3=00 0t0m0o1u0t0=2f f(fcfmfdf=f0f00
+0e0s1pb_4s)dm
+meh_host_port_sdioc::  CrCeCgRs 20:x 0c2t rIlO=E0x2 0a0f0t0e3r0:  c0l2ke
+neas=p0_0s0d0m0m0c0:2  stemnoductm=df fcfmfdf=f5f2f  acrdge=t0e0c0t0=00600000 0c0t0r0l =r0i2n0t0s0t0s3=00 0s0t0a0t0u0s0= 0i0n0t1maa1s0k6= 0b0m0o0db=f0c0e0 0b0m0o8d2= 0i0n0t0m0a0s8k2= 0i0d0i0nbtfecne= 0t0m0o0u0t1=0f3f fifdfsftfsf=0
+0e0s0p0_0s0d0m mccl:k diisvs=u0e0 0C0MfDa5020 a
+regs=p0_xs0d0m0m0c0:6 0i0s s(ucem dC_MwDo5r3d =aar0g0=100x117440)0a
+0e1s4p _(scdmmdm_cw:o rwda=iat0r0e1s0p3o7n5s)e 
+eexsipt_ sxdfmrmmca:s kd=w0a3i tw[a1i]t mta=s5k0=m1s4 s
+teastpu_ss=d0m0m0cb:a 9C0M1D 5f2i froe=s5p  d0a0t0b0u1s0y0=20  -m>c =000 0i0d1s0t0s0= 0CHANGED0 0(0r2i0n0t0s tdse=s000=080000000000)1c
+ ecstpr_ls=d0m2m0c0:0 0w3a0it
+reesspp_osndsmem c-:>  dOwKai
+te[s2p]_ std=m1m0c0:m ss hsotratt urse=s0p0o0nbsae9 0r1a wf=i0f0o0=051 0d0a0t b(ucsmyd==00 0m0c0=001 bi4d)st
+s=00002000 edseps_0s=d8m0m0c0:0 0s1ecn dcctmrdl =c0m2d0=05020 3a0rg
+=e0s0p0_0s0d6m0m0c :c tervle=n0t2w0a0i0t0 3-0>  s0t7a t(ursi=n0t0s0t1sa=900060 2b0m0o2d0= 0c0t0r0l0=008220 0i0n0t3m0a sskt=a0t0u0s0=b0f0c0e1 at9m0o6u)t=
+fefsfpf_fsfdfmfmc
+:e ssph_osrdtm mrce:s piosnssuee  rCaMwD=5020 0a0r1g0=000x 0(0c0m0d0=600000 0(0c5mbd5_)wo
+reds=pa_0s0d1m0m1c7:4 )se
+nedscpm_ds dcmmmdc=:5 2w aairtgr=e0s0p0o0n0s0e0 0e xcittr lx=f0r2m0a0s0k0=3003  swtaaittumsa=s0k0=0010a9
+0e6s pb_msoddm=m0c0:0 0C0M0D8522  irnetsmpa s0k0=000010000b0f c-e>  t0m0o0u0t1=0f0f2f fCHANGEDf f(frfin
+tesstps_=s0d0m0m0c0:0 0i0s)su
+ee sCpM_Ds5d2m macr:g =w0axi0t0r0e0s0p0o0n0s e( c-m>d _OwKor
+de=sap0_0s1d0m1m7c4:) s
+heosrpt_ srdemsmpco:n swea irtarwe=s0p0o0n0s1e0 0e2x i(tc mxdf=r0m0a0s0k0=10b34 )wa
+ieh_host_port_sdiot:m aCsCkC=R0 00x
+0e3s pI_Os_dRmDmYc=:0 2C MaDf5t2e rr e2s pt r0y0/0t0r1i0e0s2 
+-e>s p0_0s0d0m1m0c3:2  sCHANGEDe n(drcimndt sctmsd==05020 0a0r0g0=00)00
+0e0s8p0_0s dcmtmrcl:= 0w2a0i0t0r0e3s0p osntsaet u-s>= 0O0K01
+ae1s0p6_ sbdmmomdc=:0 0R040 0r0a8w2= 0i0n0t0m1a0s3k2= 0(0c0m0db=f0c0e0 0t4m0o7u4t)=f
+fefsfpf_fsfdfmm
+ce:s ps_esnddmcmmcd:  cimsds=u5e3  CaMrDg5=29 4a0r1ga=800x40 0c0t0r0l8=0002 0(0c0m0d3_0w osrtda=tau0s0=100010714a)10
+6e sbpm_osdd=m0m0c0:0 0w0a8i2t rienstpmoansske= 0e0x0i0tb fxcfer mtamsoku=t0=3f fwfafiftfmfafsk
+=e1s4p_
+sedsmpm_cs:d mdmact:a  CcMmDd5 2r ergess:p  b0l0k0s0i1z0=3020 0-0>0 000040 0b1y0t0c3n tCHANGED= 0(0r0i0n0t0s0t4s =c0m0d0a0r0g0=0000)00
+0e8s0p0_ scddmemtce:c tw=a0i0t0r0e0s0p0o0n scet r-l>= 0O2K00
+0e0s3p0_ stdmmomuct:= fsfhfofrftf frfes
+peosnps_es drmamwc=:0 0r0e0g1s020:3  c(tcrmld==0020000000013b04 )cl
+keh_host_port_sdioe:n aC=C0C0R0 000x00042  ItNmTo_uEtN=AfBfLfEf fbfefffo rced:e t0e3ct
+=e0s0p0_0s0d0m0m0c :r isnetnsdtcsm=d0 0c0m0d0=05020  airngt=m8a0s0k0=00800030 bcftcrel =b0m2o0d0=00003000 0s0t8a2t uisd=i0n0t0e1na=100060 0b0m1o0d3= 0i0d0s0t0s0=8020 0i0n0t0m0a0s kc=l0k0d0i0vb=f0c0e0 0tfmao0u0t=
+fefsfpf_fsfdfmfmc
+:e sips_ssudem mCcM:D 5i3s saureg =C0MxD95420 1aar8g0=40 x(8c0m0d0_0w8o0r3d =(ac0m0d1_0w7o7r5d)=a
+0e0s1p0_1s7d4m)mc
+:e swpa_istdrmemscp:o nwsaei terxeistp oxnfsrem aesxki=t0 3x fwramiatsmka=s0k3= 1w4ai
+temsaps_ks=d1m4mc
+:e sCpM_Ds5d3m mrce:s pC M0D05020 1r0e0s3p  -0>0 000010000200 0-3>  CHANGED0 0(0r0i2n0t0s3t sCHANGED= 0(0r0i0n0t0s0t0s)=0
+0e0s0p0_0s0d0m)mc
+:e swpa_istdrmemscp:o nwsaei t-r>e sOpKon
+sees p-_>s dOmKmc
+:e ssph_osrdtm mrce:s psohnosret  rraews=p0o0n0s0e2 0r0a3w =(0c0m0d0=20000030 1(5cbm5d)=0
+0e0s0p0_1sbd4m)mc
+:e sdpw_asidtm[m1c]:  ts=e5n0dmcsm ds tcamtdu=s5=20 0a0r1ga=500060 0f0i8f0o0= 0c tdralt=b0u2s0y0=000 3m0c =s1t aitdusst=s0=000010a0500060 0b mdoeds=00=08000000008021 ci ncttmrals=k0=200000000b3f0ce
+ etsmpo_ustd=mfmfcf:f fdfwfafit
+[e2s]p _ts=d1m0m0cm:s  isstsauteu sC=M0D05021 aa5r0g6= 0fxi0f0o0=000 8d0a0t b(ucsmyd=_0w omrcd==1a 0i0d1s0t1s7=40)00
+0e0s0p0_0s ddmemsc0:= 8w0a0i0t0r0e1scp ocntsrel =e0x2i0t0 0x0f3r0ma
+sk=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002003 -> 00002003 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: shorets pr_essdpmomncs:e  drwaawi=t0[030]0 2t0=0135 0(mcsm ds=t0a0t0u0s0=10b040)1a
+5eh_host_port_sdio0:6  CfCiCfRo =00x 0d4a tIbNuTs_yE=N0A BmLcE= 1a fitdesrt:s =0030 0(0w0a0n0t0  0d3e)s0
+=e8s0p0_0s0d0m1mcc :c tsreln=d0c2m0d0 0c0m3d0=5
+2e sapr_gs=d8m0m0c0:2 0d0w0a ictt[r4l]= 0t2=0200000m3s0  ssttaattuuss==00000011aa550066  fbimfood==00 0d0a0t0b0u8s2y =i0n tmmca=s1k =i0d0s0t0sb=f0c0e0 0t0m0o0u0t =dfefsf0f=f8f0f0f00
+0e1scp _cstdrmlm=c0:2 0i0s0s0u3e0 C
+MeDs5p2_ sadrmgm=c0:x 8d0w0a0i2t0[050]  (tc=m2d5_0wmosr ds=taa0t0u1s0=107040)1a
+5e0s6p _fsidfmom=c0:  dwaatibturseys=p0o nmsce= 1e xiidts txsf=r0m0a0s0k0=00030  wdaeist0m=a8s0k0=010401
+ce scpt_rsld=m0m2c0:0 0C0M3D052
+ erseps_ps d0m0m0c0:2 0d0w3a i-t>[ 60]0 0t0=2300000m sCHANGED  s(traitnutss=t0s0=0010a0500060 0f0i)fo
+=e0s pd_astdbmumscy:= 0w amict=r1e sipdosntsse= 0-0>0 0O0K00
+0e sdpe_ss0d=m8m0c0:0 0s0h1ocr tc trrels=p0o2n0s0e0 0r3a0w=
+0e0s0p0_2s0d0m0m c(:c mddw=a0i0t0[070]1 bt4=)35
+0emssp _sstdamtmucs:= 0s0e0n1dac5m0d6  cfmidf=o5=20  adragt=b8u0s0y0=202 0m2c =c1t rild=s0t2s0=0000003000 0s0t0a tduess=00=080010a0500061 cb mcotdr=l0=00020000008023 0in
+temsaps_ks=d0m0m0c0:b fdcwea ittm[o8u]t =tf=f4f0f0fmfsf fst
+aetsups_=s0d0m0m1ca:5 0i6s sfuief oC=M0D 5d2a tabrugs=y0=x08 0m0c0=212 0i2d s(tcsm=d0_0w0o0r0d0=0a00 0d1e0s107=48)00
+0e0s0p1_cs dcmtmrcl:= 0w2a0i0t0r0e3s0po
+nse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80022000 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80022000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002002 -> 00002000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80022202 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80022202 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002002 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00002000 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00002000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002002 -> 00002000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00002200 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00002200 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002002 (cmd=000001b4)
+eh_host_port_sdio: FN0 block size read back 512 (ret 0)
+esp_sdmmc: sendcmd cmd=52 arg=00022000 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00022000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002002 -> 00002000 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00022200 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00022200 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002002 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002002 (cmd=000001b4)
+eh_host_port_sdio: FN1 block size read back 512 (ret 0)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002002 -> 00002042 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002042 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e42 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e42 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002042 -> 00002042 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=0000204e2s p(_csmddm=m0c0:0 0e0v1ebn4t)wa
+iets p-_>s d0mbm c(:r isnltostt s1= 0p0a0d0s0 0r1o0u tcetdr lv=i0a2 0t0h0e0 3G0P IsOt amtautsr=i0x0 0(1CaL5K0=61)8 
+CeMsDp=_1s9d mDm0c.:. Ds3e=n1d4c,m1d5 ,c1m6d,=1572) a
+reh_host_port_sdiog:= 0c0a0r0d0 0r0e0a dcyt:r ls=l0o2t0 010,0 340- bsitta,t ubsl=o0c0k0 15a1520,6  CbLmKo di=o0_0-010 0C0M8D2  iion_t-m1a sDk0=.0.0D030 b-f1c,e- 1t,m-o1u,t-=1ff
+ffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002042 -> 00002032 CHANGED (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002032 (cmd=00004074)
+eh_sdio: Intr: 45620A92
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#1)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=12 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a506 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000010 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000010 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#2)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=13 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#3)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=14 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#4)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=15 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#5)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=16 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#6)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=17 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#7)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=18 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: no card interrupt within 100 ms, polling the companion (#8)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=19 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=20 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00004074)
+eh_sdio: failed to read registers
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=21 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+eh_reconfigure: bring-up timed out; re-attempt 2/3 after 1000ms back-off
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: clock(1) requested: status=0001ad06 clkena=00000002 cmd=20010174 idsts=00000000
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001ad06)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: clock update (clock disabled): DID NOT COMPLETE (wrote=a0212000 read=a0212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: previous command still pending after 100 ticks (cmd=a0212000 status=0001ad06 rintsts=00000000)
+esp_sdmmc: R4 raw=00002000 (cmd=e0s0p0_0s4d0m7m4c): 
+ceh_sdiol:o cfka iulpedda tteo  (rdividers programmede)a:d  DID NOT COMPLETEr e(gwirsotteer=sa0
+2eh_sdio1:2 0-0-0-  rWeaaidt= af0o2r1 2S0D0I0O  citnrtlr= 0-2-0-00
+030 rintsts=00000000)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=22 addr=0x3ff55050 size=20 ret=0
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001ad06 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000000 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000000 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: clock update (clock re-enabled): DID NOT COMPLETE (wrote=a0212000 read=a0212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: previous command still pending after 100 ticks (cmd=a0212000 status=0001ad06 rintsts=00000000)
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=8000001c ctrl=02000030
+esp_sdmmc: clock-update command did NOT complete (cmd=a0212000 rintsts=00000000 ctrl=02000030) -- falling back to a controller reset
+esp_sedsmpm_cs:d mcmlco:c kd-wuapidta[t4e]  cto=m2m0a0nmds  completeds t(actmuds==200020112a090006) f
+iesp_sdmmcf:o =c0a rdda tcbluoscyk= 0w amsc =l0e fitd sotfsf= 0b0y0 0a0 0c0l0o cdke sc0h=a8n0g0e0 0(0c1tcr lc=t0r2l0=0002003000 0c3m0d=
+2e0s2p1_2s0d0m0m)c,:  rdew-aeinta[b5l]i ntg= 2i5t0m
+se sspt_astdumsm=c0:0 0c1lao9c0k6  ufpidfaot=e0  (dclock restoreda)t:b ucompleteds y(=w0r omtce==0a 0i2d1s2t0s0=00 0r0e0a0d0=0200 2d1e2s000=08 0c0t0r0l0=10c2 0c0t0r0l3=00 2r0i0n0t0s3t0s=
+0e0s0p0_0s0d0m0m)c:
+ edswpa_istd[m6m]c :t =s3e0n0dmcsm ds tcamtdu=s0=00 0a0r1ga=900060 0f0i0f0o0= 0c tdralt=b0u2s0y0=000 3m0c =s0t aitdusst=s0=000010a0900060 0b mdoeds=00=08000000008021 ci ncttmrals=k0=200000000b3f0ce
+ etsmpo_ustd=mfmfcf:f fdfwfafit
+[e7s]p _ts=d3m5m0cm:s  isstsauteu sC=M0D000 1aar9g0=60 xf0i0f0o0=000 0d0a t(bcumsdy_=w0o rmdc==a00 0i1d8s0t0s0=)00
+0e0s0p0_0s0d mdmecs:0 =w8a0i0t0r0e0s1pco ncster l-=>0 2O0K0 0(0n3o0 r
+eessppo_nssdem mpch:a sdew)ai
+te[s8p]_ std=m4m0c0:m ss esntdactmuds =c0m0d0=10a59 0a6r gf=i0f0o0=000 0d0a0t bcutsryl==00 2m0c0=000 3i0d ssttsa=t0u0s0=000000010a 9d0e6s 0b=m8o0d0=00000010c0 0c8t2r li=n0t2m0a0s0k0=30000
+0bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00002000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00002000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD3 arg=0x00000000 (cmd_word=a0010043)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD03 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=000001c3)
+esp_sdmmc: sendcmd cmd=07 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD7 arg=0x00000000 (cmd_word=a0010147)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD07 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e02 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e02 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x02 IOEx before: 00
+esp_sdmmc: sendcmd cmd=52 arg=80000402 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000402 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+eh_host_port_sdio: function 1 enable did not stick (CCCR 0x02=00)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 easrpg_=s0dxm0m0c0:0 0e0v0e0n t(wcamidt_ w-o>r d0=8a 0(0r1i0n1t7s4t)s=
+0e0s0p0_0s0d0m0m cc:t rwla=i0t2r0e0s0p0o3n0s es teaxtiuts =x0f0r0m1aas9k0=60)3 
+weasipt_msadsmkm=c0:0 s
+heosrpt_ srdemsmpco:n sCeM Dr5a2w =r0e0s0p0 20000000 2(0c0m0d =-0>0 00000050b250)00
+ eunchangeds p(_rsidnmtmsct:s =s0e0n0d0c0m0d0 0c)md
+=e5s2p _asrdgm=m0c0:0 0w0a0i0t0r ecstproln=s0e2 0-0>0 0O3K0 
+setsapt_ussd=m0m0c0:1 as9h0o6r tb mroeds=p0o0n0s0e0 0r8a2w =i0n0t0m0a2s0k0=00 0(0c0mbdf=c0e0 0t0m0o1ubt4=)ff
+fefsfpf_fsfdm
+mecs:p _csldomcmkc(:1 )i srseuqeu eCsMtDe5d2:  asrtga=t0uxs0=000000010a0900 6( ccmldk_ewnoar=d0=0a000001000127 4c)md
+=e2s0p0_1s0d1m7m4c :i dwsatist=r0e0s0p0o0n0s0e0 e
+xeistp _xsfdrmmmacs:k =c0l3o cwka iutpmdaastke= 0(0clock disabled)
+:e scompletedp _(swdrmomtce:= aC0M2D15220 0r0e srpe a0d0=020022010200 0-0>  c0t0r0l0=20020000 0unchanged0 3(0r irnitnsttsst=s0=00000000000000)0)
+e
+seps_ps_dsmdmmcm:c :w aciltorceks puopndsaet e- >( dividers programmedO)K: 
+completede s(pw_rsodtmem=ca:0 2R142 0r0a0w =r0e0a0d0=22000201 2(0c0m0d =c0t0r0l0=40027040)00
+3eh_sdio0:  rfianitlsetds =t0o0 0r0e0a0d0 0r)eg
+iesstpe_rssdm
+meh_sdioc::  -c-l-o cWka iutp dfaotre  S(Dclock re-enabledI)O:  icompletedn t(rw r-o-t-e=
+a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command completed (cmd=00212000)
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: weh_sdioa:i t-r-e-s pSoDnIsOe  i-n>t rO Kre
+ceesipv_esdd m-m-c-: 
+sehho_rhto srte_sppoornts_es driaow:= 0read_reg0 0enter0 2i0d0=02 3( camddd=r0=000x030f1f4555)05
+0e sspi_zsed=m2m0c :r este=n0dc
+meds pc_msdd=m0m5c :a rsge=n0d0c0m0d2 0c0m0d =c5t3r la=r0g2=010400003a00 1s4t acttursl==00020010a0900360  bsmtoadt=u0s0=000000018a29 0i6n tbmmaosdk==000000000b0f8c2e  itnmtomuats=kf=f0f0f0f0fbfffce
+ etsmpo_ustd=mfmfcf:f fifsfsfue
+ eCsMpD_5s damrmgc=:0 xd0a0t0a0 2c0m0d0  r(ecgmsd:_ wbolrkds=iaz0=001000004050)14
+ ebsypt_csndtm=m0c0:0 0w0a0i1t4r ecsmpdoanrsge= 0e0x0i0t0 0x0f0r mcadsekt=e0c3t =w0a0i0t0m0a0s0k0= 1c4tr
+le=s0p2_0s0d0m0m3c0:  tCmMoDu0t5= frfefsfpf f0f0f00
+2e0s0p0_ s-d>m m0c0:0 0r2e0g0s02 :unchanged  c(trriln=t0s2t0s0=00003000 0c0l0k0e)na
+=e0s0p0_0s0d0m0m2c :t mwoauitt=rfefsfpfofnfsfef  -c>d eOtKec
+te=s0p0_0s0d0m0m0c0:  rsienntdsctmsd= 0c0m0d0=00030 0a rign=t0m0a0s0k0=000000 0cbtfrcle= 0b2m0o0d0=003000 0s0t0a8t2u si=d0i0n0t1ean9=0060 0b0m0o1d0=30 0i0d0s0t0s8=20 0i0n0t0m0a0s0k =c0l0k0d0ibvf=c0e0 0t0mfoau0t0=f
+fefsfpf_fsfdfmm
+ce:s pi_sssdumem cC:M Di5s3s uaer gC=M0Dx31 4a0r0ga=001x40 0(0c0m0d0_0w0o r(dc=mad0_0w1o0r3d7=5a)00
+1e0s0p4_3s)dm
+mecs:p _dswdamimtc[:1 ]w ati=t5r0emssp osntsaet uesx=i0t0 0x1far9m0a6s kf=i0f3o =w0a idtamtabsuks=y1=40 
+mecs=p0_ siddmsmtcs:= 0C0M0D00230 0r0e sdpe s000=080020000000 1-c>  c0t0r0l0=20020000 0unchanged0 3(0ri
+netsspt_ss=d0m0m0c0:0 0d0w0a)it
+[e2s]p _ts=d1m0m0cm:s  wsatiattruess=p0o0n0s1ea 9-0>6  OfKif
+oe=s0p _dsadtmbmucs:y =R04  mrca=w0= 0i0d0s0t2s0=0000 0(0c2m0d0=00 0d0e0s001=c830)00
+0e0s1pc_ scdtmrmlc=:0 2s0e0n0d0c3m0d 
+cemsdp=_0s7d mamrcg:= 0d0w0a0i0t0[030]  ctt=r1l5=00m2s0 0s0t0a3t0u ss=t0a0t0u1sa=900060 1fai9f0o6= 0b mdoadt=b0u0s0y0=000 8m2c =i0n timdasstks==00000000b0f0c0e0  tdmeosu0t==8f0f0f0f0f0f1fcf c
+terslp=_0s2d0m0m0c0:3 0is
+seusep _CsMdDm7m ca:r gd=w0axi0t0[040]0 0t0=02 0(0cmmsd _swtoartdu=sa=000010011a4970)6 
+feisfpo_=s0d mdmact:b uwsayi=t0r emscp=o0n sied setxsi=t0 0x0f0r0m0a0s0k =d0e3s 0w=a8i0t0m0a0s0k1=c1 4ct
+rels=p0_2s0d0m0m0c3:0 C
+MD07 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00000087)
+esp_essdpm_mscd:m msce:n ddcwmadi tc[m5d]= 5t2= 2a5r0gm=s0 0s0t0a0teu0s0= 0c0t0r1la=900260 0f0i0f3o0= 0s tdaattubsu=s0y0=001 am9c0=60  bimdosdt=s0=00000000008020 0i ndtemsa0s=k8=000000000b1fcc ec ttrmlo=u0t2=0f0f0f0f3f0ff
+fes
+pe_sspd_msmdcm:m cd:w aiists[u6e]  CtM=D35020 masr gs=t0axt0u0s0=0000e0010a 9(0c6m df_iwfoor=d0= ad0a0t1b0u1s7y4=)0 
+mecs=p0_ siddmsmtcs:= 0w0a0i0t0r0e0s0p odnesse0 =e8x0i0t0 0x0f1rcm acstkr=l0=30 2w0a0i0t0m3a0sk
+=e1s4p_
+sedsmpm_cs:d mdmwca:i tC[M7D]5 2t =r3e5s0pm s0 0s0t0a2t0u0s0= 0-0>0 10a0900062 0f0i0f ounchanged= 0( rdianttbsutssy==000 0m0c0=000 0i)ds
+tess=p0_0s0d0m0m0c0:0  wdaeist0r=e8s0p0o0n0s0e1 c- >c tOrKl=
+0e2s0p0_0s0d3m0mc
+:e ssph_osrdtm mrce:s pdownasiet [r8a]w =t0=0400002m0s0 0s t(actmuds==000000010a19b046) f
+iefsop=_0s ddmamtcb:u ssye=n0d cmmcd= 0c midd=s5t2s =a0r0g0=0800000000 ed0e2s 0c=t8r0l0=00020010c0 0c3t0r ls=t0a2t0u0s0=0030001
+a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e02 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x02 IOEx before: 00
+esp_sdmmc: sendcmd cmd=52 arg=80000402 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000402 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+eh_host_port_sdio: function 1 enable did not stick (CCCR 0x02=00)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: clock(1) requested: status=0001a906 clkena=00000002 cmd=20010174 idsts=00000000
+esp_sdmmc: clock update (clock disabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (dividers programmed): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (clock re-enabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command completed (cmd=00212000)
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00002000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00002000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmeasspk_=s0d0m0m0cb:f ceev etnmtowuati=tf f-f>f f0fbf f(r
+ienstps_tssd=m0m0c0:0 0i0s0s0u ec tCrMlD=30 2a0r0g0=003x00 0s0t0a0t0u0s0= 0(0c0m1da_9w0o6r)d=
+ae0s0p1_0s0d4m3m)c:
+ esshpo_rstd mrmecs:p ownasiet rreaswp=o0n0s0e0 2e0x0i0t  (xcfmrdm=a0s0k0=00035 bw5a)it
+measspk_=s0d0mm
+ce:s ps_esnddmcmmcd:  cCmMdD=0532  raersgp= 0000000002000000  c-t>r l0=00020020000003 0unchanged  s(traitnutss=t0s0=0010a0900060 0b0m)od
+=e0s0p0_0s0d0m8m2c :i nwtamiatsrke=s0p0o0n0sbef c-e>  tOmKou
+te=sfpf_fsfdfmfmfcf: 
+Re4s pr_aswd=m0m0c0:0 2i0s0s0u e( cCmMdD=5020 0a0r0g1=c03x)00
+0e0s0p0_0s0d m(mccm:d _sweonrddc=mad0 0c1m0d1=7047) a
+regs=p0_0s0d0m0m0c0:0  wcatirtlr=e0s2p0o0n0s0e3 0e xsitta txufsr=m0a0s0k1=a0930 6w abimtomda=s0k0=000000
+8e2s pi_nstdmmamsck:= 0C0M0D05b2f cree stpm o0u0t0=0f2f0f0f0f f-f>f 0
+0e0s0p2_0s0d0m munchangedc :( riisnstuset sC=M0D070 0a0r0g0=00)x0
+0e0s0p0_0s0d0m m(cc:m dw_awiotrrde=sap0o0n1s0e1 4-7>) O
+Kes
+pe_sspd_msmdcm:m cw:a iRt4r ersapwo=n0s0e0 0e2x0i0t0  x(fcrmmda=s0k0=00034 0w7a4i)tm
+aeh_sdios:k =f0a0il
+eeds pt_os drmemacd:  rCeMgDi0s7t erressp
+ eh_sdio0:0 0-0-2-0 0W0a i-t>  f0o0r0 0S2D0I0O0  iunchangedn t(rr i-n-t-st
+s=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e02 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e02 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed veh_sdioi:a  -t-h-e  SGDPIIOO  imnattrr irxe c(eCiLvKe=d1 8- -C-MD
+=e1h9_ hDo0s.t._Dp3o=r1t4_,s1d5i,o1:6 ,read_reg1 7enter) i
+de=s2p4_ saddmdmrc=:0 xs3efnfd5c5m0d5 0c msdi=z5e2= 2a0r gr=e0t0=0000
+4e0s0p _cstdrmlm=c0:2 0s0e0n0d3c0m ds tcamtdu=s5=30 0a0r1ga=910460 0bam0o1d4= 0c0t0r0l0=008220 0i0n0t3m0a sskt=a0t0u0s0=b0f0c0e1 at9m0o6u tb=mfofdf=f0f0f0f0f00
+8e2s pi_nstdmmamsck:= 0i0s0s0ubef cCeM Dt5m2o uatr=gf=f0fxf0f0f0f0f04
+0e0s p(_csmddm_mwco:r dd=aat0a0 1c0m1d7 4r)eg
+se:s pb_lskdsmimzc=:0 0w0a0i0t0r1e4s pboyntscen te=x0i0t0 0x0f0r1m4a sckm=d0a3r gw=a8i0t0m0a0sek0=21 4cd
+eetsepc_ts=d0m0m0c0:0 0C0M0D 5c2t rrle=s0p2 000000003200 0t0m o-u>t =0f0f0f0f2f0f0f0f unchanged
+ e(srpi_nstdsmtmsc=:0 0r0e0g0s020:0 )ct
+rels=p0_2s0d0m0m0c3:0  wcalikterneas=p0o0n0s0e0 0-0>2  OtKmo
+uets=pf_fsfdfmfmfcf:f  schdoertte crte=s0p0o0n0s0e0 0r0a wr=i0n0t0s0t2s0=0000 0(0c0m0d0=00 0i0n0t0m1abs4k)=0
+0eh_host_port_sdio0:0 bCfCcCeR  b0mxo0d2= 0I0O0E0x0 0b8e2f oirdei:n t0e0n=
+0e0s0p0_0s1d0m3m ci:d sstesn=d0c0m0d0 0c0m0d0= 5c2l kadrigv==800000000f4a0020 c
+terslp=_0s2d0m0m0c0:3 0i ssstuaet uCsM=D05030 1aar9g0=60 xb1m4o0d0=a0001040 0(0c8m2d _iwnotrmda=sak0=001000307b5f)ce
+ etsmpo_ustd=mfmfcf:f fdfwfafit
+[e1s]p _ts=d5m0mmcs:  sitsastuues =C0M0D0512a 9a0r6g =f0ixf8o0=000 0d4a0t2b u(scym=d0_ wmocr=d0= ai0d0s1t0s1=7040)00
+2e0s0p0_ sddemsm0c=:8 0w0a0i0t0r1ecs pcotnrsle= 0e2x0i0t0 0x3f0rm
+aesskp=_0s3d mwmaci:t mdawsaki=t1[42]
+ ets=p1_0s0dmmsm cs:t aCtMuDs5=20 0r0e1sap9 0060 0f0i2f0o0=00  -d>a t0b0u0s0y2=000 0m cunchanged= 0( riidnsttsst=s0=00000020000000 0d)es
+0e=s8p0_0s0d0m0m1cc:  cwtarilt=r0e2s0p0o0n0s3e0 -
+> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=0000e0s0p8_2s dimnmtcm:a sdkw=a0i0t0[03b]f cte= 1t5m0omust =sftfaftfufsf=f0f00
+1eas9p0_6s dfmimfco:= 0i sdsauteb uCsMyD=502  macr=g0= 0ixd0s0t0s0=00400000 0(0c0m0d _dweosr0d==8a000001000117c4 )ct
+rels=p0_2s0d0m0m0c3:0 w
+aeistpr_essdpmomncs:e  dewxaiitt [x4f]r mta=s2k0=00m3s  wsatiattmuass=k0=01041a
+9e0s6p _fsidfmom=c0:  dCaMtDb5u2s yr=e0s pm c0=000 0i2d0s0t0s =-0>0 000000000200 0d0e sunchanged0 =(8r0i0n0t0s0t1sc= 0c0t0r0l0=000200)00
+0e3s0p_
+sedsmpm_cs:d mwmaci:t rdewsapiotn[s5e]  -t>= 2O5K0m
+se sspt_astdumsm=c0:0 0s1hao9r0t6  rfeisfpoo=n0s ed artabwu=s0y0=000 2m0c0=00  (icdmsdt=s0=0000000010b040)0 
+deh_host_port_sdioe:s 0f=u8n0c0t0i0o0n1 c1  cetnralb=l0e2 0d0i0d0 3n0ot
+ esstpi_cskd m(mCcC:C Rd w0axi0t2[=60]0 )t=
+300ms status=0001a906 fifo=0 datbusy=0 mc=0 idsts=00000000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001a906 fifo=0 datbusy=0 mc=0 idsts=00000000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001a906 fifo=0 datbusy=0 mc=0 idsts=00000000 des0=8000001c ctrl=02000030
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000000 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: clock(1) requested: status=0001a906 clkena=00000002 cmd=20010174 idsts=00000000
+esp_sdmmc: clock update (clock disabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (dividers programmed): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (clock re-enabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command completed (cmd=00212000)
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00000000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00002000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00002000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD3 arg=0x00000000 (cmd_word=a0010043)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD03 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=000001c3)
+esp_sdmmc: sendcmd cmd=07 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD7 arg=0x00000000 (cmd_word=a0010147)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD07 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e02 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e02 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19e sDp0_.s.dDm3m=c1:4 ,e1v5e,n1t6w,a1i7t) -
+>e s0pb_ s(drmimnct:s tsse=n0d0c0m0d0 0c0m0d =c5t2r la=r0g2=000000003004 0s0t acttursl==00020010a0900360) s
+teastpu_ss=d0m0m0c1:a 9s0h6o rbtm orde=s0p0o0n0s0e0 8r2a wi=n0t0m0a0s2k0=0000 0(0cbmfdc=e0 0t0m0o0u5tb=5f)ff
+fefsfpf_fsd
+memscp:_ ssdemnmdcc:m di scsmude= 5C2M Da5r2g =a0r0g0=000x000000 0c0t4r0l0= 0(2c0m0d0_0w3o0r ds=taa0t0u1s0=107040)1a
+9e0s6p _bsmdomdm=c0:0 0w0a0i0t8r2e sipnotnmsaes ke=x0i0t0 0xbffrcmea stkm=o0u3t =wfafiftfmfafsfkf=0
+0es
+pe_sspd_msmdcm:m ci:s sCuMeD 5C2M Dr5e2s pa r0g0=000x20000000 0-0>0 00 0(0c0m2d0_0w0o runchangedd =(ar0i0n1t0s1t7s4=)00
+0e0s0p0_0s0d)mm
+ce:s pw_asidtmrmecs:p ownasiet reexsipto nxsfer m-a>s kO=K03
+ ewsapi_tsmdamsmkc=:0 0sh
+oerstp _rsedsmpmocn:s eC MrDa5w2= 0r0e0s0p2 000000 0(2c0m0d0= 0-0>0 000010b042)00
+0eh_host_port_sdio :unchanged  C(CrCiRn t0sxt0s2= 0I0O0E0x0 0b0e0f)or
+ee:s p0_0sd
+memscp:_ swdamimtcr:e sspeonndscem d- >c mOdK=5
+2e sapr_gs=d8m0m0c0:0 4R042  rcatwr=l0=00020020000003 0( csmtda=t0u0s0=004000714a)90
+6eh_sdio :b mfoadi=l0e0d0 0t0o0 8r2e aidn trmeagsiks=t0e0r0s0b
+feh_sdioc:e  -t-m-o uWta=iftf fffofrf fSfDI
+Oe sipn_tsrd m-m-c-: 
+issue CMD52 arg=0x80000402 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=00
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+eh_host_port_sdio: function 1 enable did not stick (CCCR 0x02=00)
+eh_sdio: --- SDIO intr received ---
+esp_sdmmc: sendcmd cmd=53 arg=1400a014 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: data cmd regs: blksiz=00000014 bytcnt=00000014 cmdarg=00000400 cdetect=00000000 ctrl=02000030 tmout=ffffffff
+esp_sdmmc: regs2: ctrl=02000030 clkena=00000002 tmout=ffffffff cdetect=00000000 rintsts=00000000 intmask=0000bfce bmod=00000082 idinten=00000103 idsts=00000000 clkdiv=0000fa00
+esp_sdmmc: issue CMD53 arg=0x1400a014 (cmd_word=a0010375)
+esp_sdmmc: sendcmd cmd=52 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 easrpg_=s0dxm0m0c0:0 0d0w0a0i t([c1m]d _tw=o5r0dm=sa 0s0t1a0t1u7s4=)00
+0e1sap9_0s6d mfmicf:o =w0a idtartebsupsoyn=s0e  mecx=i0t  ixdfsrtmsa=s0k0=00030 0w0a0i tdmeass0k==810400
+0e0s1pc_ scdtmrmlc=:0 2C0M0D05023 0re
+seps p0_0s0d0m2m0c0:0  d-w>a i0t0[020]2 0t0=01 0unchanged0 m(sr isnttasttuss==000000010a090006) f
+iefsop=_0s ddmamtcb:u swya=i0t rmecs=p0o nisdes t-s>= 0O0K00
+0e0s0p0_ sddemsm0c=:8 0s0h0o0r0t1 cr ecstproln=s0e2 0r0a0w0=30000
+0e2s0p0_0s d(mcmmcd:= 0d0w0a0i0t1[b34]) t
+=e1s5p0_mssd msmtca:t ucsl=o0c0k0(11a)9 0r6e qfuiefsot=e0d :d asttbautsuys==00 0m0c1=a09 0i6d sctlsk=e0n0a0=0000000000 0d0e2s 0c=m8d0=0200000110c1 7c4t rild=s0t2s0=00000030000
+0e0sp
+_essdpm_mscd:m mdcw:a ictl[o4c]k  tu=p2d0a0tmes  (sclock disabledt)a:t ucompleteds =(0w0r0o1tae9=0a60 2f1i2f0o0=00  rdeaatdb=u2s0y2=102 0m0c0= 0c tirdls=t0s2=000000003000 0r0i ndtesst0s==80000000000010c0 )ct
+rels=p0_2s0d0m0m0c3:0 c
+leoscpk_ sudpmdmact:e  d(wdividers programmeda)i:t [completed5 ]( wtr=o2t5e0=mas0 2s1t2a0t0u0s =r0e0a0d1=a2900261 2f0i0f0o =c0t rdla=t0b2u0s0y0=003 0m cr=i0n tisdtsst=s0=00000000000000)0 
+deessp0_=s8d0m0m0c0:0 1ccl occtkr lu=p0d2a0t0e0 0(3clock re-enabled0):
+ ecompleteds p(_wsrdomtmec=:a 0d2w1a2i0t0[06 ]r eta=d3=0200m2s1 2s0t0a0t ucst=r0l0=0012a0900060 3f0i froi=n0t sdtast=b0u0s0y0=000 0m0c)=0
+ eisdps_tssd=m0m0c0:0 0c0l0o0c kd-eusp0d=a8t0e0 0c0o0m1mca ncdt rcompletedl =(0c2m0d0=000032012
+0e0s0p)_s
+demsmpc_:s ddmwmaci:t [s7e]n dtc=m3d5 0cmmsd =s0t0a taursg==00000010a0900060  fcitfrol==00 2d0a0t0b0u3s0y =s0t amtcu=s0= 0i0d0s1tas9=0060 0b0m0o0d0=00 0d0e0s000=8820 0i0n0t0m1acs kc=t0r0l0=00b2f0c0e0 0t3m0ou
+t=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 aersgp=_0sxd0m0m0c0:0 0d0w0a i(tc[m8d]_ wto=r4d4=0am0s0 1s0t0a4t5u)s=
+0e0s0p1_as9d0m6m cf:i fwoa=i0t rdeastpbounssye= 0e xmict= 0x firdmsatssk==00030 0w0a0i0t0m adseks=01=480
+0e0s0p0_1scd mcmtcr:l =C0M2D00050 0r3e0sp
+ 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=00000145)
+esp_sdmmc: sendcmd cmd=05 arg=00002000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 arg=0x00002000 (cmd_word=a0010045)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD05 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD3 arg=0x00000000 (cmd_word=a0010043)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD03 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=000001c3)
+esp_sdmmc: sendcmd cmd=07 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD7 arg=0x00000000 (cmd_word=a0010147)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD07 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: R4 raw=00002000 (cmd=00000087)
+esp_sdmmc: sendcmd cmd=52 arg=00000e00 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000e00 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=80000e02 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000e02 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: slot 1 pads routed via the GPIO matrix (CLK=18 CMD=19 D0..D3=14,15,16,17)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+eh_host_port_sdio: CCCR 0x02 IOEx before: 00
+esp_sdmmc: sendcmd cmd=52 arg=80000402 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x80000402 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+esp_sdmmc: sendcmd cmd=52 arg=00000400 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD52 arg=0x00000400 (cmd_word=a0010174)
+esp_sdmmc: waitresponse exit xfrmask=03 waitmask=14
+esp_sdmmc: CMD52 resp 00002000 -> 00002000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: short response raw=00002000 (cmd=000001b4)
+eh_host_port_sdio: function 1 enable did not stick (CCCR 0x02=00)
+esp_sdmmc: eventwait -> 0b (rintsts=00000000 ctrl=02000030 status=0001a906)
+esp_sdmmc: short response raw=00002000 (cmd=000005b5)
+esp_sdmemscp:_ ssdemnmdcc:m ds ecnmddc=m5d2  camrdg==5020 0a0r0g0=0000 0c0t0r0l0=00 2c0t0r0l0=3002 0s0t0a0t3u0s =s0t0a0t1uas9=0060 0b1mao9d0=60 0b0m0o0d0=8020 0i0n0t0m8a2s ki=n0t0m0a0sbkf=c0e0 0t0mbofucte= ftfmfofuftf=fffff
+fefsfpf_fsd
+memscp:_ sidsmsmuce:  CiMsDs5u2e  aCrMgD=502x 0a0r0g0=000x0000 0(0c0m0d0_0w o(rcdm=da_0w0o1r0d1=7a40)01
+0e1s7p4_)sd
+memscp:_ swdamimtcr:e swpaointsree sepxoints ex ferxmiats kx=f0r3m awsaki=t0m3a swka=i0t0ma
+seks=p0_0sd
+memscp:_ sCdMmDm5c2:  rCeMsDp5 20 0r0e0s2p0 0000 0-0>2 000000 0-2>0 0000 0unchanged0 2(0r0i0n tunchangeds t(sr=i0n0t0s0t0s0=0000)00
+0e0s0p0_)sd
+memscp:_ swdamimtcr:e swpaointsree s-p>o nOsKe 
+-e>s pO_Ksd
+memscp:_ sRd4m mrca:w =s0h0o0r0t2 0r0e0s p(ocnmsde= 0r0a0w0=40007040)20
+0eh_sdio0:  (fcamidl=e0d0 0t0o0 1rbe4a)d 
+reesgpi_sstdemrmsc:
+ eh_sdioc:l o-c-k-( 1W)a irte qfuoers tSeDdI:O  sitnattru s-=-0-00
+1a906 clkena=00000002 cmd=20010174 idsts=00000000
+esp_sdmmc: clock update (clock disabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (dividers programmed): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock update (clock re-enabled): completed (wrote=a0212000 read=20212000 ctrl=02000030 rintsts=00000000)
+esp_sdmmc: clock-update command completed (cmd=00212000)
+esp_sdmmc: sendcmd cmd=00 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD0 arg=0x00000000 (cmd_word=a0018000)
+esp_sdmmc: waitresponse -> OK (no response phase)
+esp_sdmmc: sendcmd cmd=05 arg=00000000 ctrl=02000030 status=0001a906 bmod=00000082 intmask=0000bfce tmout=ffffffff
+esp_sdmmc: issue CMD5 aeh_sdior:g =-0-x-0 0S0D0I0O0 0i0n t(rc mrde_cweoirvde=da 0-0-1-00
+4e5s)p_
+sedsmpm_cs:d msmecn:d cwmadi tcrmeds=p5o3n saer ge=x1i4t0 0xaf0r1m4a sckt=r0l3= 0w2a0i0t0m0a3s0k =s1t4at
+uess=p0_0s0d1mam9c0:6  CbMmDo0d5= 0r0e0s0p0 008020 0i2n0t0m0a s-k>= 00000000b2f0c0e0  tunchangedm o(urti=nftfsftfsf=f0f0f00
+0e0s0p0_)sd
+memscp:_ sddamtmac :c mwda irtergess:p obnlskes i-z>= 0O0K00
+0e0s1p4_ sbdymtmccn:t =s0h0o0r0t0 0r1e4s pcomndsaer gr=a0w0=000000000200 0c0d e(tcemcdt==0000000000104050) c
+terslp=_0s2d0m0m0c0:3 0s etnmdocumtd= fcfmfdf=f0f5f far
+ge=s0p0_0s0d2m0m0c0:  crtergls=20:2 0c0t0r0l3=00 2s0t0a0t0u3s0= 0c0l0k1ean9a0=60 0b0m0o0d0=0020 0t0m0o0u8t2= fifnftfmfafsfkf= 0c0d0e0tbefccte= 0t0m0o0u0t0=0f0f frfifnftfsfts
+=e0s0p0_0s0d0m0m0c :i nitsmsausek =C0M0D050 bafrcge= 0bxm0o0d0=0020000000 0(8c2m di_dwionrtde=na=00001000004150)3 
+iedsspt_ss=d0m0m0c0:0 0w0a0i tcrleksdpiovn=s0e0 0e0xfiat0 0xf
+remsaps_ks=d0m3m cw:a iitsmsausek =C1M4D5
+3e sapr_gs=d0mxm1c4:0 0CaM0D1045  (rcemsdp_ w0o0r0d0=2a000001 0-3>7 50)00
+02000 unchanged (rintsts=00000000)
+esp_sdmmc: waitresponse -> OK
+esp_sdmmc: sendcmd cmd=03 arg=00000000 ctrl=02000030 status=0001a906 bmeosdp=_0s0d0m0m0c0:8 2d wianittm[a1s]k =t0=05000mbsf cset attmuosu=t0=0f0f1faf9f0f6f ffi
+feos=p0_ sddamtmbcu:s yi=s0s umec =C0M Di3d satrsg==000x000000000000 0d0e s(0c=m8d0_0w0o0r0d1=ca 0c0t1r0l0=4032)00
+0e0s3p0_s
+demsmpc_:s dwmamict:r edswpaoints[e2 ]e xti=t1 0x0fmrsm asstka=t0u3s =w0a0i0t1maa9s0k6= 1f4if
+oe=s0p _dsadtmbmucs:y =C0M Dm0c3= 0r eisdps t0s0=000020000000 0-0>  d0e0s000=28000000 0unchanged0 1(cr icnttrslt=s0=200000000030000
+)es
+pe_sspd_msmdcm:m cd:w awiati[t3r]e stp=o1n

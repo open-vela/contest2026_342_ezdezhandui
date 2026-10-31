@@ -33,14 +33,15 @@ file(GLOB EH_HOSTED_STACK_SRCS
   ${EH_HOSTED_DIR}/common/serializers/third_party/msg_codec/protobuf-c/protobuf-c/*.c
   ${EH_HOSTED_DIR}/common/serializers/eh_proto_v2/src/*.c
   ${EH_HOSTED_DIR}/port/os/posix/src/*.c
+  ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_transport_config.c
+  ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_transport_defaults.c
 )
 
 set(EH_HOSTED_SRCS
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
-  ${EH_HOSTED_NUTTX_DIR}/src/esp_event_nuttx.c
-  ${EH_HOSTED_NUTTX_DIR}/src/esp_mac_nuttx.c
-  ${EH_HOSTED_NUTTX_DIR}/src/esp_timer_nuttx.c
+  ${EH_HOSTED_NUTTX_DIR}/src/esp_event_extra_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/eh_hosted_nuttx_entry.c
+  ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_task_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/port_stubs.c
   ${EH_HOSTED_STACK_SRCS}
 )
@@ -50,7 +51,12 @@ set(EH_HOSTED_SRCS
 # its own shims, prepended.
 get_target_property(EH_HOSTED_ARCH_INCS arch INCLUDE_DIRECTORIES)
 
-add_library(eh_hosted_nuttx STATIC ${EH_HOSTED_SRCS})
+# OBJECT, not STATIC: the port carries its own include order (shims first), but
+# as a separate archive it landed after libc.a on the link line, so its
+# references into libc (aligned_alloc, pthread_condattr_*) could not be resolved
+# -- a static archive is only searched when the linker walks past it.  Object
+# files join the arch link in one pass and keep the same isolation.
+add_library(eh_hosted_nuttx OBJECT ${EH_HOSTED_SRCS})
 
 target_include_directories(eh_hosted_nuttx BEFORE PRIVATE
   ${EH_HOSTED_NUTTX_DIR}/include
@@ -84,6 +90,8 @@ target_include_directories(eh_hosted_nuttx PRIVATE
 # eh_host_port_master_config.h reads (board wiring from appendices AK/AN).
 target_compile_definitions(eh_hosted_nuttx PRIVATE
   CONFIG_ESP_HOSTED_HOST_CORE=1
+  CONFIG_ESP_HOSTED_HOST_FEAT_SYSTEM=1
+  CONFIG_ESP_HOSTED_HOST_FEAT_SYSTEM_READY=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_MCU_READY=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO_READY=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=1
@@ -97,6 +105,8 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
   CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2=16
   CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3=17
   CONFIG_ESP_HOSTED_HOST_SDIO_EN_GPIO=54
+  CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE=20
+  CONFIG_ESP_HOSTED_HOST_SDIO_RX_Q_SIZE=20
   EH_HOST_HOST_USES_STATIC_NETIF=0
   CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=1
   CONFIG_ESP_HOSTED_USE_MEMPOOL=1
@@ -121,4 +131,4 @@ set_source_files_properties(
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/src/eh_host_feat_rpc_evt.c
   PROPERTIES COMPILE_DEFINITIONS "_Thread_local=")
 
-target_link_libraries(arch PRIVATE eh_hosted_nuttx)
+target_sources(arch PRIVATE $<TARGET_OBJECTS:eh_hosted_nuttx>)

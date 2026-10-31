@@ -11702,3 +11702,50 @@ CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=1
   链接只差 BC.2 的传输配置模块与一个 delay 函数；
 - 默认配置（选项关闭）保持关闭（defconfig 已还原）；
 - 板子侧不变：真机验收仍卡**整板断电**（附录 AU）。
+
+### 附录 BD —— 路线 B 第 9 步：**选项打开时整栈编译 + 链接 + 挂进 bring-up 全部跑通**（2026-11-01）
+
+#### BD.1 结果
+
+```
+$ ./build.sh <board> --cmake -j8     # CONFIG_ESPRESSIF_HOSTED_OFFICIAL=y
+#### build completed successfully ####
+$ riscv-none-elf-nm .../nuttx | grep -E "eh_host_init|esp_hosted_official_start"
+400400aa T eh_host_init
+40040024 T esp_hosted_official_start
+$ objdump 反汇编（esp_bringup 里）
+4003d664:  jal  40040024 <esp_hosted_official_start>     ← bring-up 真的调用它
+$ md5sum nuttx.bin   # 与默认构建不同
+7b7b1d8192528e8acf8618ba648f0d5d   （默认构建 e7be71a0…）
+```
+
+即：官方栈（transport + core + base RPC + system + vserial + protobuf-c + v2 序列化 + POSIX OS 端口）
+**已经编进固件、链接成功、并被板级 bring-up 调用**。
+
+#### BD.2 本轮修掉的四个真问题
+
+| 问题 | 根因与修法 |
+|---|---|
+| `aligned_alloc` / `pthread_condattr_*` 明明在 `libc.a` 里却"未定义" | **静态库链接顺序**：端口库作为 `STATIC` 附加在 libc.a **之后**，链接器走过 libc.a 后不会再回来。改成 **OBJECT 库**（`$<TARGET_OBJECTS:...>`）并入 arch，一次遍历即可解析，同时保留端口自己的 include 顺序（shim 优先） |
+| `multiple definition of esp_event_*` | **arch 里已经有 `esp_event`**（来自 esp-hal-3rdparty）→ 删掉我们那份实现 |
+| `multiple definition of esp_timer_*` | 同上：`esp_timer` 也已由树提供 → 删掉我们的实现，只保留**头文件**供栈编译 |
+| `multiple definition of esp_read_mac` | 同上 → 删掉我们的实现 |
+
+结论：**「树已经提供的 IDF 组件（esp_event / esp_timer / esp_mac）要复用，不能重写」**——
+我们只补树里**没有**的：`esp_event_loop_create_default()`（一个函数）、
+`esp_netif*`（类型 + 空壳）、`esp_log/esp_err/esp_check/sdkconfig` 四个头。
+
+#### BD.3 传输配置模块（500 行）直接复用官方 IDF 版
+
+`port/os/idf/src/eh_host_port_transport_config.c`（322 行）与
+`eh_host_port_transport_defaults.c`（182 行）拷进端口目录后**一行没改就能编**——
+它们只用 `esp_log`/`eh_check`/master config，UART 部分在 `#ifdef ...BUS_UART` 里（我们是 SDIO，不进）。
+配套补的定义：`CONFIG_ESP_HOSTED_HOST_SDIO_TX_Q_SIZE=20`、`_RX_Q_SIZE=20`（官方 Kconfig 默认值）。
+
+另外补了 POSIX 端口缺的 `eh_host_port_task_delay_us()`（NuttX `nxsig_usleep`，3 行）。
+
+#### BD.4 下一步
+
+真机验收：烧这版（选项打开）→ 看串口是否出现 `eh_hosted_nuttx: starting official esp-hosted host stack`
+→ `companion connected, transport ready`。
+**但这需要先整板断电恢复数据通路**（附录 AU），目前 `sweep[0]` 仍全 `-110`。

@@ -11475,3 +11475,49 @@ $ grep -c ESPRESSIF_HOSTED_OFFICIAL=y cmake_out/.../.config
 把 `esp_hosted_init()`（官方栈的入口）接到我们的 hosted-SDIO bring-up 之后，并给它一个
 NuttX 侧的调用点（初始化任务）。这一步之后，"选项打开"就不再只是编进去，而是**真的跑起来**——
 但那需要先做真机验收的前置：**整板断电**（附录 AU）。
+
+### 附录 AY —— 路线 B 第 6 步：补齐 core/features，并发现 **v2 RPC 需要 protobuf-c**（2026-11-01）
+
+上一轮编进固件的是官方栈的"传输 + 配置"部分。本轮把**上层**也搬进来，为的是能走到目标③（RPC）。
+
+#### AY.1 补进来的模块（来自 `~/p4official/.../esp_hosted/`）
+
+| 模块 | 规模 |
+|---|---|
+| `host/eh_host_core`（核心：连接/protocol/事件） | 7 个 .c / 769 行 |
+| `host/eh_host_autoinit` | 21 个文件里的 1 个模块 |
+| `host/features/eh_host_feat_rpc`（基础 RPC） | 5 个 .c / 1,524 行 |
+| `host/features/eh_host_feat_system`（系统信息/OTA） | 7 个 .c / 583 行 |
+| `host/features/eh_host_feat_rpc_ext_v2`（RPC v2 扩展） | 112 KB |
+| `common/serializers/eh_proto_v2`（**生成的** v2 序列化代码，`gen_v2.h` 14,044 行） | 1.8 MB |
+
+#### AY.2 新增的 NuttX 侧 shim
+
+| 头 | 实现 |
+|---|---|
+| `esp_timer.h` | `esp_timer_get_time()` → NuttX 系统 tick |
+| `esp_event_base.h` / `esp_event.h` | 固定表事件循环（`src/esp_event_nuttx.c`：注册/注销/投递，投递方上下文直接回调） |
+| `esp_mac.h` | `esp_read_mac()`/`esp_efuse_mac_get_default()` 返回 `ESP_ERR_NOT_SUPPORTED`（主机的 Wi-Fi MAC 不在本地，不能编一个） |
+| `esp_wifi_types.h` | 只给 `wifi_interface_t`/`wifi_mode_t`（数值与 IDF 一致） |
+
+#### AY.3 覆盖度实测（真实构建 flags）
+
+- `host/eh_host_core/src`、`host/features/eh_host_feat_rpc/src`、`host/features/eh_host_feat_system/src`
+  共 17 个源文件：**9 OK / 8 FAIL**。
+
+8 个失败里：
+
+| 原因 | 文件 | 结论 |
+|---|---|---|
+| **缺 `protobuf-c/protobuf-c.h`** | `eh_host_core.c`、`eh_host_cp_ota.c`、`*_v2_req.c`、`*_v2_resp_evt.c`（6 个） | **官方栈的 RPC v2 走 protobuf-c**，这是一个**新的外部依赖**，必须决定「vendor protobuf-c」还是「只走基础 RPC、把 v2 路径编掉」 |
+| `esp_timer` 句柄类型不够 | `eh_host_feat_rpc_uid.c` | 补 `esp_timer_handle_t`/创建/启动的 stub |
+
+#### AY.4 下一轮要做的决定（写在最前面，免得再绕）
+
+1. **v2 要不要**：目标③只要「caps 握手 + 一次 RPC 往返」，基础 RPC（`eh_host_feat_rpc`）可能就够；
+   如果是，就把 `eh_host_feat_rpc_ext_v2` + `eh_proto_v2` 从构建里排除（代码留着），
+   这能一下子去掉 6 个失败里的 4 个，也省掉 protobuf-c 依赖。
+2. 若必须要 v2：vendor protobuf-c（第三方库，进 manifest）并给 NuttX 编一份。
+3. 无论哪条，`esp_timer` 的 stub 都要补全。
+
+> 板子侧不变：真机验收仍然卡在**整板断电**（附录 AU），与这里的编译工作无关。

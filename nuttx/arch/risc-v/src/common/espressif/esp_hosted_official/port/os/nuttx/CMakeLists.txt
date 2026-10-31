@@ -23,10 +23,17 @@ file(GLOB EH_HOSTED_STACK_SRCS
   ${EH_HOSTED_DIR}/common/eh_tlv/src/*.c
   ${EH_HOSTED_DIR}/host/eh_host_config/src/*.c
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_transport/src/*.c
+  ${EH_HOSTED_DIR}/host/eh_host_core/src/*.c
+  ${EH_HOSTED_DIR}/host/eh_host_autoinit/src/*.c
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/src/*.c
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc_ext_v2/src/*.c
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/src/*.c
 )
 
 set(EH_HOSTED_SRCS
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
+  ${EH_HOSTED_NUTTX_DIR}/src/esp_event_nuttx.c
+  ${EH_HOSTED_NUTTX_DIR}/src/esp_mac_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/port_stubs.c
   ${EH_HOSTED_STACK_SRCS}
 )
@@ -54,6 +61,11 @@ target_include_directories(eh_hosted_nuttx PRIVATE
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_transport/src
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/include
   ${EH_HOSTED_DIR}/host/compat/include
+  ${EH_HOSTED_DIR}/host/eh_host_core/include
+  ${EH_HOSTED_DIR}/host/eh_host_autoinit/include
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/include
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc_ext_v2/include
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/include
 )
 
 # Configuration of the official stack, in the symbols its own

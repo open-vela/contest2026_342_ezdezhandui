@@ -1594,6 +1594,8 @@ static int esp_sdmmc_attach(struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
+static void esp_sdmmc_reset_data_path(struct esp_sdmmc_dev_s *priv);
+
 static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
                              uint32_t arg)
 {
@@ -1601,6 +1603,18 @@ static int esp_sdmmc_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
   sdmmc_hw_cmd_t hwcmd;
   uint32_t cmdidx;
   static int traces;
+
+  /* Put the data path back before every command.
+   *
+   * Measured: the transport's CMD53 is written to the controller and never
+   * completes, while the identical command completes during bring-up -- and the
+   * controller's IDMAC reports FSM = SUSPEND (idsts = 00002000) at that point.
+   * The data path reset exists for exactly this state but was only reached from
+   * the DMA transfer setup, which byte-mode register reads do not go through.
+   * Doing it here covers every command.
+   */
+
+  esp_sdmmc_reset_data_path(priv);
 
   if (traces < 200)
     {

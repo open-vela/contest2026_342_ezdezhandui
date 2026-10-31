@@ -13120,3 +13120,34 @@ NuttX 的 SDIO 层用**设备级互斥量**（`sdio_lock()`）串行化所有 SD
 下一步（很具体）：在 NuttX `sdio.c` 的 `sdio_io_rw_extended()` 入口/拿锁之后各加一个临时打印
 （该文件在 `nuttx/drivers/mmcsd/sdio.c`，属上游树，改动只作诊断、用完即回退），
 确认到底是"卡在拿锁"还是"过了锁但卡在别处"。
+
+#### BW.19 真相：命令**发出去了、就是不完**（NuttX SDIO 层 + 驱动都看得到）
+
+在 `nuttx/drivers/mmcsd/sdio.c` 的 `sdio_io_rw_extended()` 加了**临时**打印（入口 / 拿锁后），
+单次启动的现场：
+
+```
+eh_host_port_sdio: read_reg enter id=1 addr=0x3ff55050 size=20 ret=0
+sdio: iorw_ext enter addr=0x00050 len=4 nb=1        ← 请求到了 NuttX SDIO 层
+sdio: iorw_ext locked addr=0x00050                  ← 并且拿到了设备锁（不是锁问题！）
+esp_sdmmc: data cmd regs: blksiz=4 bytcnt=4 cmdarg=90011801 … ctrl=02000030
+esp_sdmmc: regs2: ctrl=02000030 … rintsts=00000020 intmask=0003bfce bmod=00000082 …
+esp_sdmmc: issue CMD53 arg=0x1400a004 (cmd_word=a0010375)
+（之后没有任何后续打印）
+```
+
+`arg=0x1400a004` 解码：fn=1、addr=0x50、count=4、byte 模式、**读**、地址递增 ✓ 与梯子的调用**完全一致**。
+
+所以现在的结论非常明确：**命令正确、已写入控制器（驱动打印在写命令之后）、然后永远等不到完成**；
+而同一形状的命令在 bring-up 阶段能完成。也就是说 BW.18 的"设备锁"假设**不成立**，
+问题落在**命令/响应的完成路径**上，而且差异来自"栈启动之后"的某种状态。
+
+（该临时打印已回退：`nuttx/drivers/mmcsd/sdio.c` 是上游树，只用于这次诊断。）
+
+#### BW.20 下一步（两个方向）
+
+1. **对比 bring-up 与栈启动后这两次"同一条 CMD53"的控制器寄存器**（`ctrl/bmod/intmask/tmout`
+   以及 `cmd` 寄存器写入后的 `rintsts`）——驱动里已有 `esp_sdmmc_dump_state()`，把它挂到
+   `sendcmd` 里（每次命令前打一次，封顶）即可；
+2. 若寄存器完全一致，则差异在**时序/中断**：卡在 `waitresponse()` 上说明
+   `CMD_DONE` 没被置起或没被看见；把 `intmask` 在两次调用时的值打出来即可判定。

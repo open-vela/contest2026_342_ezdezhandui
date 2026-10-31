@@ -270,7 +270,34 @@ int sdio_io_rw_extended(FAR struct sdio_dev_s *dev, bool write,
       arg.cmd53.byte_block_count = nblocks;
     }
 
+  /* Temporary instrumentation (round 58): does a request reach this layer at
+   * all, and does it get past the device lock?  Removed once the question is
+   * answered.
+   */
+
+  {
+    static int traces;
+
+    if (traces < 20)
+      {
+        syslog(LOG_INFO, "sdio: iorw_ext enter addr=0x%05x len=%u nb=%u\n",
+               (unsigned)address, blocklen, nblocks);
+        traces++;
+      }
+  }
+
   sdio_takelock(dev);
+
+  {
+    static int got;
+
+    if (got < 20)
+      {
+        syslog(LOG_INFO, "sdio: iorw_ext locked addr=0x%05x\n",
+               (unsigned)address);
+        got++;
+      }
+  }
 
   /* Send CMD53 command */
 

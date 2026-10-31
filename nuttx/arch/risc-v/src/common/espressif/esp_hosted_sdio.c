@@ -1072,7 +1072,18 @@ int esp_hosted_sdio_initialize(void)
      */
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
-    const int max_rounds = 2;
+    /* None at all when the official stack is selected.
+     *
+     * The loop reads INT_RAW (and INT_ST, and the token) to characterise the
+     * link, and those reads consume the companion's one-shot "slave up" event:
+     * measured, the companion sends it ~3 s after its boot, this loop saw it
+     * (INT_RAW=00cc7800, bit23=1), and by the time the transport started the
+     * register read back zero -- so the caps handshake never began (appendix
+     * BW.12).  Handing the transport a bus nobody has read from is the whole
+     * point of not running diagnostics.
+     */
+
+    const int max_rounds = 0;
 #else
     const int max_rounds = 400;
 #endif

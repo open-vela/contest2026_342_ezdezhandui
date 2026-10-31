@@ -442,16 +442,23 @@ int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
       unsigned i;
 
       ret = 0;
-      for (i = 0; i < size; i++)
-        {
-          int one = sdio_io_rw_direct(c->dev, true, 1,
-                                      (uint32_t)(reg + i), data[i], NULL);
-          if (one < 0)
-            {
-              ret = one;
-              break;
-            }
-        }
+        unsigned done = 0;
+
+        ret = 0;
+        while (done < size)
+          {
+            unsigned chunk = (size - done >= 4) ? 4 : (size - done);
+            int r = sdio_io_rw_extended(c->dev, true, 1,
+                                        (uint32_t)(reg + done), true,
+                                        &data[done], (int)chunk, 0);
+            if (r < 0)
+              {
+                ret = r;
+                break;
+              }
+
+            done += chunk;
+          }
     }
 
   if (lock_required)

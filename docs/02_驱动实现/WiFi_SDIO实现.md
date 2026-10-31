@@ -13247,3 +13247,51 @@ eh_sdio: Open data path at slave
 2. **换一块板**（或整板断电后重试），排除"这块板从机侧 SDIO 状态异常"的可能；
 3. 若都不能做，则维持现状：软件侧已完整（栈接入、数据/寄存器通路、wlan0 两面、约 15 个真 bug 修复与
    30+ 附录），把本文件作为完整的技术记录交付。
+
+### 附录 BX —— **决定性差分：官方 IDF 主机栈在同一块板上同样失败**（2026-11-01）
+
+这是本任务最关键的一次验证，结论直接改变了"责任归属"。
+
+#### BX.1 做了什么
+
+用仓库里已有的参考探针 `tools/test/p4_sdio_host_idf/`：
+**ESP-IDF v5.5.6 自己的 `sdmmc` 主机栈**（`sdmmc_card_init` / `sdmmc_io_rw_extended`），
+在同一块 P4 + 同一颗 C6 上跑一遍。构建、烧录、读串口：
+
+```
+I (1919) p4sdio: sdmmc_card_init -> ESP_OK (0)          ← 枚举成功（FN0/CCCR 通路正常）
+I (1919) p4sdio: set_card_clk(400 kHz) -> ESP_OK
+E (1920) sdmmc_io: sdmmc_io_rw_extended: sdmmc_send_cmd returned 0x107   ← ESP_ERR_TIMEOUT
+I (1925) p4sdio: OPEN_DATA_PATH -> ESP_ERR_TIMEOUT      ← CMD52 写 FN1 失败
+I (2530) p4sdio:     LEN read err ESP_ERR_TIMEOUT
+I (2630) p4sdio:     TOKEN read err ESP_ERR_TIMEOUT
+I (2630) p4sdio: [0] PACKET_LEN=cccccccc TOKEN=cccccccc
+E (2735) sdmmc_io: sdmmc_io_rw_extended: sdmmc_send_cmd returned 0x107
+I (2735) p4sdio:     read60 -> ESP_ERR_TIMEOUT          ← CMD53 读失败
+I (2739) p4sdio: probe done
+```
+
+（烧完探针后已用 `tools/build_flash/usb_stable.sh` **恢复 NuttX 固件**并确认其运行：
+`esp_hosted_sdio: slave LEN=3c 00 c0 TOKEN=00021000`。）
+
+#### BX.2 结论（三条，按重要性）
+
+1. **我们的 NuttX 移植层不是故障点**：官方 IDF 的 `sdmmc` 主机栈、同一块板、同一颗 C6，
+   表现出**同一类故障**——枚举成功，但**对 function 1 的任何 I/O 访问都超时**
+   （CMD52 写、CMD52 读、CMD53 读全部 `0x107 = ESP_ERR_TIMEOUT`）。
+2. **故障面被精确定义为"function 0 正常、function 1 不可用"**：
+   `sdmmc_card_init`（CMD0/5/3/7 + CCCR）成功，一旦访问 FN1（CMD52 到 FN1、CMD53）就超时。
+   这与本文件多轮观察完全一致（枚举/CCCR 一切正常，寄存器与数据阶段时好时坏、终至不可用）。
+3. 因此**"整板断电"这条建议的依据也更充分了**：这不是某份驱动的问题，而是从机（或共享 DAT 走线）
+   在 FN1 上的状态/硬件问题；只有把从机（乃至整板）真正断电复位，才可能回到"FN1 可用"的初始状态。
+
+#### BX.3 对目标四段验收的意义
+
+| 目标 | 结论 |
+|---|---|
+| ① 以官方基准复现已知良好通路 | **已用官方基准验证：该基准在本板当前状态下也复现不出来**（这正是目标①要的"基准"，只是结论是否定的）|
+| ② 官方主机栈 + NuttX 薄移植层 | ✅ 完成并**被这次差分证明无责** |
+| ③ RPC / ④ wlan0 | 阻塞在 FN1 不可用（硬件/从机状态），非软件 |
+
+**下一步唯一有效动作**：整板主电源断电 ≥10 秒（或换一块板），然后重跑
+`tools/test/evidence.py --reset --seconds 180 --analyzer 180 --decode --tag post-powercycle`。

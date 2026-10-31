@@ -1,29 +1,43 @@
 # WiFi（板载协处理器 / SDIO + ESP-Hosted）—— 现状调研与实现路线
 
-> 版本：**2026-10-28** · 状态：**主机侧已完整工作并逐条仪器验证；
-> 卡在从机（C6）不应答 —— 已定位到"C6 内部"这一层，主机侧无剩余可疑环节**
+> 版本：**2026-11-01（第 54 轮）** ·
+> 状态：**官方 esp-hosted 主机栈已完整接入 NuttX 并运行；
+> SDIO 数据通路与寄存器通道均已修通并留证；唯一未通的一环是"传输层的第一次寄存器读不返回"**
 >
 > ## 执行摘要（当前状态）
 >
-> | 层 | 状态 | 证据 |
+> | 层 | 状态 | 关键证据 |
 > |---|---|---|
-> | P4 SDMMC/SDIO host 驱动（`esp_sdmmc.c`）| ✅ **完整工作** | 时钟 25 MS/s 实测 **403 kHz**（在 100~400 kHz 规范内）；CIU 执行命令（`start_command` 自清）；`CMD0` 与 `CMD5` 均以 **CRC7 合法**的帧出现在线上（逻辑分析仪 + 自写的 48 位解码器验证）|
-> | 枚举层（`esp_hosted_sdio.c`）| ✅ 工作 | 从机使能/复位（GPIO54 实测有效，C6 console 每次复位都新增一次完整启动日志）、引脚路由、bring-up 状态机 |
-> | 从机（C6）| 🔴 **无应答** | 它被正常复位、启动日志零错误、`SDIO slave` 初始化完成，却对合法的 CMD0/CMD5 一条响应也没有 |
-> | 协议层 / WiFi netdev | ⛔ 未开始 | 阻塞于枚举 |
+> | 官方 esp-hosted 主机栈接入 NuttX | ✅ 编译 / 链接 / **运行** | 栈自己的日志出现在串口：`Card init success, TRANSPORT_RX_ACTIVE`、`Open data path at slave`（附录 AV–AX）|
+> | NuttX 薄移植层（端口层） | ✅ | POSIX 端口原样可用 + 我们的 SDIO 端口 + 3 个 IDF shim（附录 BA/BD）|
+> | SDIO 数据通路 | ✅ | 梯子全尺寸 `ret=0`，读到正确 `PACKET_LEN = 3c 00 c0 03`（附录 BU）|
+> | 寄存器通道 | ✅ | 4 字节一段读，形状与梯子一致（附录 BV/BW）|
+> | 卡中断检测 | ✅ 绕开 | 轮询兜底 + 控制器状态位 + 正确的中断清理（附录 BR/BS/BU）|
+> | ISR 风暴 / 整机复位 | ✅ 已消除 | 根因是 ISR 未清 `CMD_DONE`（附录 BW.8）|
+> | 从机（C6）方向 | ✅ 正常 | 从机日志：`Open Data Path` → `Send slave up event`（附录 BW.13）|
+> | wlan0 数据面 + 控制面（scan/connect/SSID）| ✅ 已实现并编入镜像 | `eh_hosted_netdev.c`（附录 BI/BL）|
+> | **caps 握手 / RPC / wlan0 运行时** | 🔴 **未通** | **传输层第一次寄存器读不返回**（附录 BW.14 的单次启动日志）|
 >
-> **本任务最有价值的两个发现**（附录 S.9、S.12）：
+> **本轮之后唯一剩下的问题**：传输层启动后第一次读寄存器
+> （`read_reg addr=0x3ff55050 size=20`）不返回，而 bring-up 梯子里同样形状的调用能成功。
+> 已经从多个角度排除：线程上下文（BV.11）、端口锁（BV.3）、ISR 风暴（BW.8）、
+> 缓存混用造成的假象（BW.14，已修正取证管道）。
 >
-> 1. **CIU 一直不执行命令的根因是 SDIO PLL 从未被 PMU 上电**
->    （`sdmmc_ll_enable_sdio_pll()` 从未被调用）；补上后 CIU 立刻开始执行、
->    时钟第一次出现在焊盘上；
-> 2. **`waitresponse()` 忽略了命令字里的响应标志**，导致 CMD0（无响应命令）
->    去等一个不存在的响应、超时退出 —— **CMD5 在此之前从未被发出过**。
->    此前几十轮观测到的 `-110` 其实都不是"等不到从机回应"。
+> ### 下一步（三条，按性价比）
 >
-> 下一步（需要人工）：按住板上 BOOT → 按一下 RESET → 松开 BOOT，
-> 然后运行 `tools/build_flash/c6_hosted_new/flash.sh` 烧入自建固件
-> （esp-hosted v3.0.10，配置逐项核对过），再复测。详见附录 S.19。
+> 1. **参数逐项对比**：把梯子里那次成功调用的完整参数（device 句柄、命令字、长度、块模式位）
+>    与端口这次调用逐项打印对比——取证管道已能只取"当前这次启动"，对比不会被缓存干扰；
+> 2. **写方向对称化后的复测**：端口写已改成 4 字节一段（附录 BW.13），配合从机日志再确认握手；
+> 3. **用分析仪解码这次读**：`tools/test/evidence.py --reset --analyzer 60 --decode` 会同时给
+>    串口与解码后的帧，能直接看出这条 CMD53 在线上发到哪一步。
+>
+> ### 真机取证的常用命令（本轮之后）
+>
+> ```sh
+> python3 tools/test/evidence.py --reset --seconds 180 --analyzer 180 --decode --tag <名字>
+> python3 tools/test/ocd.py pc     # OpenOCD telnet 停住看现场（GDB 连不上时用这个）
+> ```
+> 产物在 `logs/<时间戳>_<tag>/`：`boot.txt`（**只含当前这次启动**）、`console.txt`、`decoded.txt`。
 >
 > ---
 

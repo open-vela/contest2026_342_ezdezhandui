@@ -31,6 +31,7 @@ file(GLOB EH_HOSTED_STACK_SRCS
   ${EH_HOSTED_DIR}/host/features/eh_host_feat_system/src/*.c
   ${EH_HOSTED_DIR}/host/mcu/eh_host_mcu_vserial/src/*.c
   ${EH_HOSTED_DIR}/common/serializers/third_party/msg_codec/protobuf-c/protobuf-c/*.c
+  ${EH_HOSTED_DIR}/common/serializers/eh_proto_v2/src/*.c
   ${EH_HOSTED_DIR}/port/os/posix/src/*.c
 )
 
@@ -110,5 +111,14 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
 # this through an INTERFACE target).  Scoped to this library only.
 set_source_files_properties(${EH_HOSTED_STACK_SRCS} PROPERTIES
   COMPILE_OPTIONS "-include;eh_host_port_master_config.h")
+
+# NuttX provides neither TLS nor an emutls runtime on this target, so the one
+# _Thread_local variable in the stack (the RPC dispatcher's re-entrancy guard in
+# eh_host_feat_rpc_evt.c) cannot be honoured.  Emptying the storage class makes
+# it an ordinary static: equivalent while a single context dispatches RPC events,
+# which is what this port does.  Revisit when TLS support lands in the tree.
+set_source_files_properties(
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_rpc/src/eh_host_feat_rpc_evt.c
+  PROPERTIES COMPILE_DEFINITIONS "_Thread_local=")
 
 target_link_libraries(arch PRIVATE eh_hosted_nuttx)

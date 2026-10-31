@@ -11670,3 +11670,35 @@ CONFIG_ESP_HOSTED_HOST_CP_RESET_STRATEGY_ONLY_IF_NECESSARY=1
 - 已把 BB.1 的四个宏加进 `port/os/nuttx/CMakeLists.txt`；
 - 干净构建（选项打开）已重新跑起来验证（它会重新 clone MCUboot 的 mbedtls 子模块，耗时较久）；
 - 板子侧不变：真机验收仍卡整板断电（附录 AU）。
+
+### 附录 BC —— 链接推进：TLS/序列化层清掉了，露出「传输配置模块」缺口（2026-11-01）
+
+#### BC.1 本轮清掉的两个
+
+1. **`__emutls_get_address`**：本板既没有 TLS 也没有 emutls 运行时。栈里那一处
+   `static _Thread_local int tl_dispatch_depth`（`eh_host_feat_rpc_evt.c`）用**源文件级编译定义**
+   `_Thread_local=` 清空存储类 → 变成普通 static。语义只在"多个执行上下文同时派发 RPC 事件"时
+   才不同，本移植是单上下文派发，等价；注释里写明了等 TLS 支持落地再改回。
+2. **`rpc__unpack` / `eh_rpc_id_name_v2` 未定义**：v2 序列化层的**源码**没进构建
+   （只加了 include 目录）。补上 `common/serializers/eh_proto_v2/src/*.c`（`gen_v2.c`、
+   `gen_v2_names.c`、`eh_rpc_id_map_v2_asserts.c`）。
+
+#### BC.2 露出来的缺口：**传输配置模块**
+
+链接剩下的是端口层还缺的一整块模块（官方在 `port/os/idf/src/` 里有两个文件专门干这个）：
+
+| 未定义符号 | 官方实现位置 | 说明 |
+|---|---|---|
+| `eh_host_sdio_get_config` | `port/os/idf/src/eh_host_port_transport_config.c`（322 行）、`eh_host_port_transport_defaults.c`（182 行） | 传输配置的 get/set/默认值/合法性检查一整套 |
+| `eh_host_port_task_delay_us` | `port/os/idf/src/eh_host_port_task.c` | POSIX 端口里没有这个函数（IDF 端口有） |
+| `eh_host_sys_register_event_handlers` | `host/features/eh_host_feat_system/src/eh_host_sys.c`（已编） | 仍报未定义，需查是否有别的编译门（`#if`）把它裁掉了 |
+
+→ 下一轮把这 500 行左右的「传输配置模块」以 NuttX 版落地（多数是配置结构体与默认值，
+不涉及硬件），再补 `eh_host_port_task_delay_us`，然后就能跑完最终链接。
+
+#### BC.3 验收现状
+
+- 选项打开：**栈本体（transport/core/RPC/system/vserial/protobuf-c/v2 序列化）全部编过**，
+  链接只差 BC.2 的传输配置模块与一个 delay 函数；
+- 默认配置（选项关闭）保持关闭（defconfig 已还原）；
+- 板子侧不变：真机验收仍卡**整板断电**（附录 AU）。

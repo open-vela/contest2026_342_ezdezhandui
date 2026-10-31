@@ -11204,3 +11204,55 @@ port/os/  include/（20 个端口契约头）  idf/src/（IDF 端口实现）  p
 
 > 一句话：路线 B 的前三步（shim + 端口 + 钩子）**不依赖板子**，可以先做完并只用构建验收；
 > 第 4 步起才需要真机。
+
+### 附录 AT —— 路线 B 第 2 步：叶子模块已能用 NuttX shim 编过；发现两个结构性坑（2026-11-01）
+
+用真实构建 flags（`riscv-none-elf-gcc` + 本板 include 路径）对入仓的官方栈做逐个语法编译，
+结论如下。
+
+#### AT.1 已经能编过的（用现有 shim，0 error）
+
+| 源文件 | 结果 |
+|---|---|
+| `common/eh_mempool/src/eh_mempool.c` | ✅ |
+| `common/eh_common/src/eh_check.c` | ✅ |
+| `common/eh_frame/src/eh_frame.c` | ✅ |
+| `port/os/nuttx/src/eh_host_port_sdio.c`（上轮新增） | ✅ |
+
+shim 清单（`port/os/nuttx/include/`）：`esp_err.h`、`esp_check.h`、`esp_log.h`、`sdkconfig.h`。
+即「日志 / 错误码 / 参数检查 / sdkconfig 占位」这四块就够叶子模块用了。
+
+#### AT.2 坑一：树里已有一层 FreeRTOS 兼容层，但它**不全**
+
+`nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/`
+（`FreeRTOS.h`、`queue.h`、`task.h`、`idf_additions.h`，在构建 include 路径里）已经定义了
+`SemaphoreHandle_t`、`xQueue*`、`vTaskDelay` 等，**不要再定义一份**（我第一版 shim 就撞在这，
+`conflicting types for SemaphoreHandle_t`）。
+
+但它**缺 `freertos/semphr.h`**，而 `common/eh_mempool/src/eh_mempool_ll.c` 需要
+`xSemaphoreCreateMutex/xSemaphoreTake/xSemaphoreGive`。正确做法是**往这一层补 `semphr.h`**，
+而不是在端口目录里另起一套。
+
+#### AT.3 坑二（重要）：那层兼容层依赖**未被 git 跟踪**的子树
+
+`freertos_compat/freertos/queue.h` 的实现走 `platform/os.h` + `esp_os_*`，而这些实现位于
+`bootloader/esp-hal-3rdparty-mcuboot/nuttx/src/platform/os.c` ——
+**正是附录 AI 警告过的「未被任何 git 仓库跟踪」的那棵子树**。评审环境重建时它不存在。
+
+→ 端口层**不能依赖** `esp_os_*`。补 `semphr.h` 时应直接写 NuttX 原语（`nxmutex_t` /
+`nxsem_t`），让互斥量句柄是**独立类型**，不要复用 `SemaphoreHandle_t`（那被兼容层定义成
+队列句柄）。
+
+#### AT.4 坑三：官方模块的 CMakeLists 用的是 IDF 的 Kconfig 符号
+
+`host/mcu/eh_host_mcu_transport/CMakeLists.txt` 里用
+`CONFIG_ESP_HOSTED_HOST_TRANSPORT_MCU_READY`、`CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO_READY`、
+`ESP_PLATFORM`，并 `target_link_libraries(... eh_host_port_api)` —— 这些是 IDF 组件体系的约定，
+NuttX 这边要么在 CMake 层给出同名变量映射，要么在端口目录里自己组织构建。下一轮定。
+
+#### AT.5 状态
+
+- 本轮成果：4 个源文件用 shim 编过（含端口层），三个结构性坑定位清楚、结论明确；
+- 板子：仍在退化态（`sweep[0]` 全 `-110`），需要**整板断电**才能做真机验收；
+- 下一轮（不需要板子）：① 补 `semphr.h`（NuttX 原语、独立句柄类型）；② 用同名 CMake 变量把
+  `eh_host_mcu_transport` + `common/*` 接进构建；③ 以 POSIX 端口为底写 sync/task/queue 端口。

@@ -1,0 +1,379 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* SDIO port of the official esp-hosted host stack, on NuttX.
+ *
+ * This is the only place where the official stack touches the SDIO host: the
+ * nine functions declared in port/os/include/eh_host_port_sdio.h, implemented
+ * on top of this tree's SDIO device (esp_sdmmc.c) instead of ESP-IDF's
+ * sdmmc_host/sdmmc_card pair.
+ *
+ * Why it is a port and not a copy of port/os/idf/src/eh_host_port_sdio.c: that
+ * file is written against sdmmc_card_t/sdmmc_host_t, which do not exist here.
+ * What it does have in common with this file is the sequence, and that is worth
+ * keeping identical: the card is initialised as plain SDIO, function 1 is
+ * enabled in CCCR, the block size is set to 512 on both functions, and the bus
+ * is widened.  The bring-up below mirrors 附录 AK/AN, which is where the data
+ * path was measured to work on this board.
+ *
+ * The data transfers themselves go through sdio_io_rw_direct()/extended(),
+ * which is the path every working measurement in this project used -- including
+ * the CPU-drained FIFO of appendix AK.3.
+ */
+
+#include <nuttx/config.h>
+
+#include <errno.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+
+#include <nuttx/mmcsd.h>
+#include <nuttx/mutex.h>
+#include <nuttx/sdio.h>
+#include <syslog.h>
+
+#include "esp_sdmmc.h"
+
+#include "eh_host_port_config.h"
+#include "eh_host_port_sdio.h"
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+
+#define TAG "eh_host_port_sdio"
+
+/* CCCR/FBR registers used here; the values are the SDIO specification's. */
+
+#define CCCR_IO_ENABLE        0x02
+#define CCCR_BUS_IF           0x07
+#define CCCR_FN1_BLKSIZE      0x110
+#define CCCR_FN0_BLKSIZE      0x10
+#define FN1_ENABLE_MASK       0x02          /* BIT(1) */
+
+#define ESP_HOSTED_SDIO_BLOCK_SIZE 512
+
+struct eh_host_port_sdio_ctx_s
+{
+  struct sdio_dev_s *dev;
+  mutex_t            lock;
+  bool               ready;
+};
+
+static struct eh_host_port_sdio_ctx_s g_sdio_ctx;
+static bool g_sdio_ctx_init;
+
+/****************************************************************************
+ * Name: eh_host_port_sdio_init
+ *
+ * Description:
+ *   Take the SDIO host device for the configured slot.  The controller itself
+ *   is brought up by esp_sdmmc_initialize(); this only remembers the handle and
+ *   creates the bus lock the port's lock_required parameter refers to.
+ *
+ ****************************************************************************/
+
+void *eh_host_port_sdio_init(void)
+{
+  if (!g_sdio_ctx_init)
+    {
+      nxmutex_init(&g_sdio_ctx.lock);
+      g_sdio_ctx_init = true;
+    }
+
+  g_sdio_ctx.dev = esp_sdmmc_initialize(CONFIG_ESPRESSIF_SDMMC_SLOT);
+
+  if (g_sdio_ctx.dev == NULL)
+    {
+      syslog(LOG_ERR, "%s: no SDIO device on slot %d\n",
+             TAG, CONFIG_ESPRESSIF_SDMMC_SLOT);
+      return NULL;
+    }
+
+  return &g_sdio_ctx;
+}
+
+int eh_host_port_sdio_deinit(void *ctx)
+{
+  g_sdio_ctx.ready = false;
+  return ESP_OK;
+}
+
+/****************************************************************************
+ * Name: eh_host_port_sdio_card_init
+ *
+ * Description:
+ *   Enumerate the companion and put function 1 into the state esp-hosted
+ *   expects: I/O enabled in CCCR, 512-byte blocks on FN0 and FN1, and the bus
+ *   widened to what eh_host_port_master_config.h asks for.
+ *
+ ****************************************************************************/
+
+int eh_host_port_sdio_card_init(void *ctx, bool show_config)
+{
+  struct eh_host_port_sdio_ctx_s *c =
+    (struct eh_host_port_sdio_ctx_s *)ctx;
+  uint8_t  value;
+  int      ret;
+
+  if (c == NULL || c->dev == NULL)
+    {
+      return ESP_FAIL;
+    }
+
+  ret = sdio_probe(c->dev);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "%s: sdio_probe failed: %d\n", TAG, ret);
+      return ESP_FAIL;
+    }
+
+  /* Function 1 I/O enable (CCCR 0x02, BIT(1)). */
+
+  ret = sdio_io_rw_direct(c->dev, false, 0, CCCR_IO_ENABLE, 0, &value);
+  if (ret < 0)
+    {
+      return ESP_FAIL;
+    }
+
+  value |= FN1_ENABLE_MASK;
+
+  ret = sdio_io_rw_direct(c->dev, true, 0, CCCR_IO_ENABLE, value, NULL);
+  if (ret < 0)
+    {
+      return ESP_FAIL;
+    }
+
+  /* 512-byte blocks on both functions.  FN0's copy lives at 0x10, function 1's
+   * at 0x110 (FBR offset 0x10) -- reading 0x100/0x101 returns a different,
+   * read-as-zero FBR byte, which cost a round of debugging in appendix AB.
+   */
+
+  ret  = sdio_io_rw_direct(c->dev, true, 0, CCCR_FN0_BLKSIZE,
+                           ESP_HOSTED_SDIO_BLOCK_SIZE & 0xff, NULL);
+  ret |= sdio_io_rw_direct(c->dev, true, 0, CCCR_FN0_BLKSIZE + 1,
+                           (ESP_HOSTED_SDIO_BLOCK_SIZE >> 8) & 0xff, NULL);
+  ret |= sdio_io_rw_direct(c->dev, true, 0, CCCR_FN1_BLKSIZE,
+                           ESP_HOSTED_SDIO_BLOCK_SIZE & 0xff, NULL);
+  ret |= sdio_io_rw_direct(c->dev, true, 0, CCCR_FN1_BLKSIZE + 1,
+                           (ESP_HOSTED_SDIO_BLOCK_SIZE >> 8) & 0xff, NULL);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "%s: block size setup failed: %d\n", TAG, ret);
+      return ESP_FAIL;
+    }
+
+  if (EH_HOST_PORT_SDIO_BUS_WIDTH == 4)
+    {
+      ret = sdio_set_wide_bus(c->dev);
+      if (ret < 0)
+        {
+          return ESP_FAIL;
+        }
+    }
+
+  c->ready = true;
+
+  if (show_config)
+    {
+      syslog(LOG_INFO,
+             "%s: card ready: slot %d, %d-bit, block %d, CLK io_%d CMD io_%d "
+             "D0..D3 %d,%d,%d,%d\n",
+             TAG, CONFIG_ESPRESSIF_SDMMC_SLOT, EH_HOST_PORT_SDIO_BUS_WIDTH,
+             ESP_HOSTED_SDIO_BLOCK_SIZE, EH_HOST_PORT_SDIO_CLK_GPIO,
+             EH_HOST_PORT_SDIO_CMD_GPIO, EH_HOST_PORT_SDIO_D0_GPIO,
+             EH_HOST_PORT_SDIO_D1_GPIO, EH_HOST_PORT_SDIO_D2_GPIO,
+             EH_HOST_PORT_SDIO_D3_GPIO);
+    }
+
+  return ESP_OK;
+}
+
+int eh_host_port_sdio_card_deinit(void *ctx)
+{
+  struct eh_host_port_sdio_ctx_s *c =
+    (struct eh_host_port_sdio_ctx_s *)ctx;
+
+  if (c != NULL)
+    {
+      c->ready = false;
+    }
+
+  return ESP_OK;
+}
+
+/****************************************************************************
+ * Name: eh_host_port_sdio_read_reg / write_reg
+ *
+ * Description:
+ *   Scratch-register access.  One byte is a CMD52; anything wider is a
+ *   byte-mode CMD53, which is what esp-hosted's own host uses for the 4-byte
+ *   registers (INT_RAW, PACKET_LEN).
+ *
+ ****************************************************************************/
+
+int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
+                               uint16_t size, bool lock_required)
+{
+  struct eh_host_port_sdio_ctx_s *c =
+    (struct eh_host_port_sdio_ctx_s *)ctx;
+  int ret;
+
+  if (c == NULL || c->dev == NULL || data == NULL)
+    {
+      return ESP_FAIL;
+    }
+
+  if (lock_required)
+    {
+      nxmutex_lock(&c->lock);
+    }
+
+  if (size == 1)
+    {
+      ret = sdio_io_rw_direct(c->dev, false, 1, reg, 0, data);
+    }
+  else
+    {
+      ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data, size, 0);
+    }
+
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
+
+  return (ret < 0) ? ESP_FAIL : ESP_OK;
+}
+
+int eh_host_port_sdio_write_reg(void *ctx, uint32_t reg, uint8_t *data,
+                                uint16_t size, bool lock_required)
+{
+  struct eh_host_port_sdio_ctx_s *c =
+    (struct eh_host_port_sdio_ctx_s *)ctx;
+  int ret;
+
+  if (c == NULL || c->dev == NULL || data == NULL)
+    {
+      return ESP_FAIL;
+    }
+
+  if (lock_required)
+    {
+      nxmutex_lock(&c->lock);
+    }
+
+  if (size == 1)
+    {
+      ret = sdio_io_rw_direct(c->dev, true, 1, reg, data[0], NULL);
+    }
+  else
+    {
+      ret = sdio_io_rw_extended(c->dev, true, 1, reg, true, data, size, 0);
+    }
+
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
+
+  return (ret < 0) ? ESP_FAIL : ESP_OK;
+}
+
+/****************************************************************************
+ * Name: eh_host_port_sdio_read_block / write_block
+ *
+ * Description:
+ *   Payload transfers out of / into the companion's window, in block mode with
+ *   the 512-byte block size configured above.
+ *
+ ****************************************************************************/
+
+int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
+                                 uint16_t size, bool lock_required)
+{
+  struct eh_host_port_sdio_ctx_s *c =
+    (struct eh_host_port_sdio_ctx_s *)ctx;
+  unsigned nblocks;
+  int ret;
+
+  if (c == NULL || c->dev == NULL || data == NULL || size == 0)
+    {
+      return ESP_FAIL;
+    }
+
+  nblocks = (size + ESP_HOSTED_SDIO_BLOCK_SIZE - 1) /
+            ESP_HOSTED_SDIO_BLOCK_SIZE;
+
+  if (lock_required)
+    {
+      nxmutex_lock(&c->lock);
+    }
+
+  ret = sdio_io_rw_extended(c->dev, false, 1, reg, true, data,
+                            ESP_HOSTED_SDIO_BLOCK_SIZE, nblocks);
+
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
+
+  return (ret < 0) ? ESP_FAIL : ESP_OK;
+}
+
+int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
+                                  uint16_t size, bool lock_required)
+{
+  struct eh_host_port_sdio_ctx_s *c =
+    (struct eh_host_port_sdio_ctx_s *)ctx;
+  unsigned nblocks;
+  int ret;
+
+  if (c == NULL || c->dev == NULL || data == NULL || size == 0)
+    {
+      return ESP_FAIL;
+    }
+
+  nblocks = (size + ESP_HOSTED_SDIO_BLOCK_SIZE - 1) /
+            ESP_HOSTED_SDIO_BLOCK_SIZE;
+
+  if (lock_required)
+    {
+      nxmutex_lock(&c->lock);
+    }
+
+  ret = sdio_io_rw_extended(c->dev, true, 1, reg, true, data,
+                            ESP_HOSTED_SDIO_BLOCK_SIZE, nblocks);
+
+  if (lock_required)
+    {
+      nxmutex_unlock(&c->lock);
+    }
+
+  return (ret < 0) ? ESP_FAIL : ESP_OK;
+}
+
+/****************************************************************************
+ * Name: eh_host_port_sdio_wait_slave_intr
+ *
+ * Description:
+ *   Block until the companion raises its SDIO interrupt (DAT1) or the wait
+ *   expires.  esp_sdmmc_wait_card_intr() takes milliseconds, and the stack's
+ *   ticks_to_wait is passed straight through -- the caller only distinguishes
+ *   "interrupted" from "timed out", so the unit does not change behaviour, and
+ *   the value it passes is a few tens of ticks.
+ *
+ ****************************************************************************/
+
+int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
+{
+  struct eh_host_port_sdio_ctx_s *c =
+    (struct eh_host_port_sdio_ctx_s *)ctx;
+
+  if (c == NULL || c->dev == NULL)
+    {
+      return ESP_FAIL;
+    }
+
+  return esp_sdmmc_wait_card_intr(c->dev, ticks_to_wait) ? ESP_OK : ESP_FAIL;
+}
+
+#endif /* CONFIG_ESPRESSIF_HOSTED_OFFICIAL */

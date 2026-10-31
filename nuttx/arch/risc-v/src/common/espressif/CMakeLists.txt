@@ -610,6 +610,13 @@ if(CONFIG_ESPRESSIF_HOSTED_SDIO)
     ${CMAKE_CURRENT_LIST_DIR}/eh_frame/shim)
 endif()
 
+# NuttX port layer of the official esp-hosted host stack (appendix AS).
+# Selected only by CONFIG_ESPRESSIF_HOSTED_OFFICIAL, so the default product is
+# unchanged; the port's own sources and include paths live in its CMakeLists.
+if(CONFIG_ESPRESSIF_HOSTED_OFFICIAL)
+  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/esp_hosted_official/port/os/nuttx)
+endif()
+
 # The reference implementation from contest2026_031 was compiled in here during
 # the cross-check that showed it fails identically on this board. Its finding is
 # written up in docs/02_驱动实现/WiFi_SDIO实现.md appendix K; the code itself is not needed any more.

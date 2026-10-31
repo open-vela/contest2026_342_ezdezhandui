@@ -2205,6 +2205,29 @@ config ESPRESSIF_HOSTED_SDIO
 		The ESP-Hosted protocol layer is not implemented yet; see
 		docs/02_驱动实现/WiFi_SDIO实现.md.
 
+config ESPRESSIF_HOSTED_OFFICIAL
+	bool "Official esp-hosted host stack on the NuttX port layer"
+	depends on ESPRESSIF_HOSTED_SDIO
+	default n
+	---help---
+		Compile the vendored official esp-hosted host stack
+		(esp_hosted_official/, the same sources the workspace's reference
+		project runs) together with the NuttX port layer under
+		esp_hosted_official/port/os/nuttx/.
+
+		Default n keeps the product byte-for-byte identical to what it is
+		without this option: the port layer and the stack sources are only
+		added to the build when this is selected.
+
+		The port layer is being brought up in the order written down in
+		docs/02_驱动实现/WiFi_SDIO实现.md appendix AS.4.  The SDIO port
+		(port/os/nuttx/src/eh_host_port_sdio.c) is the first slice; the
+		remaining port groups and the stack's own build entries follow.
+
+		Requires a working SDIO data path: appendix AO records the board
+		state that has to be recovered (a full power cycle of the board,
+		not a JTAG reset) before the link can move payload again.
+
 config ESPRESSIF_HOSTED_SDIO_EN_GPIO
 	int "Companion module enable GPIO (-1 = no enable line)"
 	default 54

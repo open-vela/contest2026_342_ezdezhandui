@@ -12494,3 +12494,62 @@ sweep[0] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
 `bmod`（SWR/FB/DE 位）、`ctrl`（DMA 使能/内部 DMA 位）、`idsts`（IDMAC 状态）、
 以及数据超时寄存器 `tmout`——`idsts=00002000`（FSM 停在某个非 IDLE 状态）在每次超时里都是一样的，
 这条线可以顺下去。
+
+### 附录 BU —— **数据通路修好了**：排空条件不该等 `DATA_OVER`（2026-11-01）
+
+#### BU.1 根因（本轮定位并修复）
+
+附录 BT 发现"卡的数据已经进 FIFO（`first=0x0000003c`），但 `DATA_OVER` 不置起 → 超时"。
+本轮顺下去看排空条件，发现它要求 **`DATA_OVER`**：
+
+```c
+idle = (st & SDMMC_DATA_OVER) != 0 && bytes > 0 && idle;
+```
+
+而 `DATA_OVER` 属于**内部 DMA** 路径：CPU 搬运（PIO）的传输里"引擎从不取数"，
+`DATA_OVER` 本来就不会来；文件里更早的注释其实写过正确规则
+（"the data phase *does* complete (DATA_STATE_MC_BUSY = 0) and the received bytes sit in the FIFO
+holding the right values"）。也就是说：**是这条判据把已经到达的数据判成了超时**。
+
+修法（一行判据 + 说明）：PIO 传输以**数据状态机空闲**为"相位结束"，
+`DATA_OVER` 只对 DMA 路径有意义：
+
+```c
+idle = ((st & SDMMC_DATA_OVER) != 0 || g_pio_rxbuf != NULL) && bytes > 0 && idle;
+```
+
+（`pio_settle` 那几毫秒静默计数仍在，防止相位开始前误排空。）
+
+#### BU.2 修完的实测（同一台次串口）
+
+```
+esp_hosted_sdio: sweep[0] FN1@0x60 size= 1 ret=0 first=3c 5a 5a 5a
+esp_hosted_sdio: sweep[0] FN1@0x60 size= 4 ret=0 first=3c 3c 3c 3c
+esp_hosted_sdio: sweep[0] FN1@0x60 size= 8 ret=0 first=3c 00 3c 00
+esp_hosted_sdio: sweep[0] FN1@0x60 size=16 ret=0 first=3c 00 c0 03
+esp_hosted_sdio: sweep[0] FN1@0x60 size=20 ret=0 first=3c 00 c0 03
+esp_hosted_sdio: sweep[0] FN1@0x60 size=32 ret=0 first=3c 00 c0 03
+esp_hosted_sdio: sweep[0] FN1@0x60 size=60 ret=0 first=3c 00 c0 03
+esp_hosted_sdio: sweep[0] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
+```
+
+**全部尺寸 ret=0**，并且 16B 及以上读到的正是 **`3c 00 c0 03`（PACKET_LEN = 0x03c0003c，2804 字节）**
+——这是本板自退化以来**第一次**重新拿到正确的数据阶段内容（1/2/4/8 字节仍是已知的子字尾重复现象）。
+
+#### BU.3 这条修复重新解释了前面的"硬件判决"
+
+数据通路一旦通了，前面那些现象就有了**软件侧**的解释，而不是从机故障：
+
+1. 从机把事件放进 TX FIFO 后拉低 DAT1（它确实有数据要交，附录 BH.2）；
+2. 主机要读走才能清中断，但**排空判据错**导致读超时 → 事件永远没被读走；
+3. 于是 DAT1 **一直被拉着**（附录 BP 的"整整 145 秒为低"）、
+   `Open data path at slave` 之后永远等不到可读时刻、caps 握手超时（附录 BH/AU 的直接原因）；
+4. "整板断电"当时看起来有用，很可能只是断电后**首次**尝试刚好落在某个边界条件上。
+
+#### BU.4 现在还没通的最后一环：卡中断的"看见"
+
+- 排空修好后，`wait_slave_intr` 仍然打印 `D1=1 probe=0` → 从机的中断**没有被主机的判据看到**；
+- 而数据阶段已经证明**可以正常读**，所以这一环是**检测**问题（D1 引脚经矩阵路由后
+  `esp_gpioread()` 不可靠、`RINTSTS` 的 SDIO 位在本 CIU 上需要某种使能），不是数据通路问题；
+- 下一步就在这一环上：把 CIU 的卡中断检测路径弄清（或用 CCCR/INT_RAW 的轮询绕开中断）。
+

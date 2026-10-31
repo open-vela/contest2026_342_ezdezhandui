@@ -2622,7 +2622,23 @@ static sdio_eventset_t esp_sdmmc_eventwait(struct sdio_dev_s *dev)
              * read of FN1 0x60) while DATA_OVER never arrives.
              */
 
-            idle = (st & SDMMC_DATA_OVER) != 0 && bytes > 0 && idle;
+            /* For a CPU-moved transfer the state machine going idle *is* the
+             * end of the data phase: the engine never takes anything, so
+             * DATA_OVER -- which belongs to the internal DMA path -- is not what
+             * says the bytes are in.  This is the rule the note further up
+             * describes as measured-working ("the data phase does complete ...
+             * and the received bytes sit in the FIFO holding the right values");
+             * requiring DATA_OVER on top of it is what turned reads into
+             * timeouts with the card's data already sitting in the FIFO
+             * (appendix BT: "timeout with 1 byte(s) still in the FIFO:
+             * first=0x0000003c").
+             *
+             * The quiet-period counter above is what keeps this from firing
+             * before the phase starts.
+             */
+
+            idle = ((st & SDMMC_DATA_OVER) != 0 || g_pio_rxbuf != NULL) &&
+                   bytes > 0 && idle;
 
             /* Empty the FIFO once the CIU says the data phase is over.
              *

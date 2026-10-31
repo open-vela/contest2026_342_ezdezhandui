@@ -22,6 +22,10 @@
 #include <syslog.h>
 
 #include <nuttx/kthread.h>
+#include <nuttx/signal.h>
+
+#include "esp_gpio.h"
+#include "esp_sdmmc.h"
 
 #include "eh_host_core.h"
 #include "eh_host_transport_config.h"
@@ -49,6 +53,36 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
   int ret;
 
   syslog(LOG_INFO, "%s: starting official esp-hosted host stack\n", ENTRY_TAG);
+
+  /* Who is holding DAT1 low?
+   *
+   * The wire shows DAT1 asserted continuously (appendix BP), which reads as "the
+   * companion keeps its card interrupt raised" -- but the line is bidirectional,
+   * so the host's own pad could be the one pulling it.  These three reads tell
+   * them apart: input-only with pull-up (the card can still hold it low),
+   * output driven high (whoever wins here is driving), then back to the normal
+   * bidirectional configuration.
+   */
+
+  {
+    int d1 = CONFIG_ESPRESSIF_SDMMC_D1;
+
+    esp_configgpio(d1, INPUT | PULLUP);
+    nxsig_usleep(2000);
+    syslog(LOG_INFO, "%s: D1 test: as input+pullup -> %d\n",
+           ENTRY_TAG, esp_gpioread(d1));
+
+    esp_configgpio(d1, OUTPUT);
+    esp_gpiowrite(d1, true);
+    nxsig_usleep(2000);
+    syslog(LOG_INFO, "%s: D1 test: driven high -> readback %d (1 = nothing else pulls it low)\n",
+           ENTRY_TAG, esp_gpioread(d1));
+
+    esp_configgpio(d1, INPUT | OUTPUT | PULLUP | DRIVE_3);
+    nxsig_usleep(2000);
+    syslog(LOG_INFO, "%s: D1 test: restored -> %d\n",
+           ENTRY_TAG, esp_gpioread(d1));
+  }
 
   /* Resolve the transport configuration before anything reads it.
    *
@@ -103,7 +137,15 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
   ret = eh_host_connect_to_slave();
   if (ret != 0)
     {
-      syslog(LOG_ERR, "%s: connect to slave failed: %d\n", ENTRY_TAG, ret);
+      /* Sample the card-interrupt line again: the first sample (before init)
+       * read high, so if it reads low here the companion raised the interrupt
+       * during/after our traffic -- which is the normal "come and read" signal,
+       * and the failure is that the host cannot service it (appendix BP).
+       */
+
+      syslog(LOG_ERR,
+             "%s: connect to slave failed: %d (D1 now = %d, 0 = companion asking for service)\n",
+             ENTRY_TAG, ret, esp_gpioread(CONFIG_ESPRESSIF_SDMMC_D1));
       return ret;
     }
 

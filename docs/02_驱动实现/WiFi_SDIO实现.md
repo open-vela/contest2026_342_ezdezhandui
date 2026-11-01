@@ -14505,3 +14505,88 @@ I (2034) p4sdio: window 0x54 x4  -> ESP_OK bytes=00000000
 2. `apps/builtin/builtin_list.h`（`.gitignore` 里的**生成物**）会被写进源码树；若上一次构建是
    别的板/别的配置，它会列出别的 app（本轮列出 `dumpstack/getprime/ostest`），链接期报
    `undefined reference to xxx_main`。修法：用当前构建目录里生成的同名文件覆盖它。
+
+---
+
+# 附录 CA：把 P4 的改动迁出 ESP 通用层（2026-11-01 重构）
+
+## CA.1 为什么做
+
+`arch/risc-v/src/common/espressif/` 是 **esp32c3 / esp32c3-legacy / esp32c6 / esp32h2 /
+esp32p4 共用**的一层。P4 的工作把不少东西放进了这一层，风险有两条：
+
+1. **代码归属**：P4 专用实现（SDIO/ESP-Hosted 集群）和共享驱动混在同一目录里，
+   任何按目录同步/fork 的操作都会把 P4 代码带到别的芯片；
+2. **交付范围**：作品仓的导出以 nuttx 的 **git 基线**为准，而该基线停在 **2026-07-14**，
+   落后工作区所用的 openvela drop 近四个月 —— 于是 `arch/.../common/espressif/` 下
+   **131 个文件**（整片上上游更新，与本项目无关）都会被当成"改动"投递出去，
+   部署到别人的检出上就等于**用本工作区的版本覆盖共享 ESP 层**。
+
+## CA.2 做了什么
+
+### 阶段 1：代码迁到 P4 目录
+
+新布局 `nuttx/arch/risc-v/src/esp32p4/esp_hosted/`：
+
+| 子目录 | 内容 |
+|---|---|
+| `sdmmc/` | `esp_sdmmc.c/.h`（P4 的 DW-MSHC 驱动） |
+| `transport/` | `esp_hosted_sdio.c/.h`（bring-up 路径） |
+| `official/` | 原 `esp_hosted_official/**`（官方主机栈 + NuttX 移植层） |
+| `frame/` | `eh_frame/**`（esp-hosted 帧层） |
+| `compat/` | `freertos_compat/**`、`platform_include/**`（移植层兼容垫片） |
+
+构建挂接（全部从共享层**删除**，改到 P4 目录）：
+
+- `arch/risc-v/src/esp32p4/CMakeLists.txt`：`esp_hosted/sdmmc|transport` 的条件源文件、
+  `frame/` 的 `-U__KERNEL__` 编译属性与 include 路径、`official/port/os/nuttx` 的 `add_subdirectory`；
+- `arch/risc-v/src/esp32p4/Make.defs`：同等的 `CHIP_CSRCS` / `INCLUDES` / `VPATH`；
+- `ESPRESSIF_SDMMC*`、`ESPRESSIF_HOSTED_*` 的 Kconfig 段（219 行）整段搬到
+  `arch/risc-v/src/esp32p4/Kconfig`，**符号名不变**（defconfig 无需改动）；
+- 共享层里 `esp_sdmmc.c`/`esp_hosted_sdio.c` 的源、`eh_frame` 的编译块、
+  `platform_include`/`freertos_compat` 的 include、`add_subdirectory(...official...)` 全部移除；
+- 板级 `esp32p4_bringup.c` 的 include 改为
+  `"esp_hosted/transport/esp_hosted_sdio.h"` 与
+  `"esp_hosted/official/port/os/nuttx/include/eh_hosted_nuttx.h"`
+  （P4 芯片源码目录本来就在板级 include 路径上，已用编译命令核实）。
+
+**结果**：`common/espressif` 里对 `esp_hosted*` / `esp_sdmmc*` / `eh_frame` /
+`platform_include` 的引用为 **0**；构建图里出现的是
+`.../esp32p4/esp_hosted/{sdmmc,transport,frame}/**.o`，旧的 `common/espressif/...` 目标为 0。
+
+### 阶段 2：交付范围收窄
+
+`tools/engineering/export.py` 增加排除清单（这条与阶段 1 同等重要）：
+
+```python
+NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
+```
+
+- 共享 ESP 层**整体不导出**（131 个文件被跳过，导出日志会打印计数）；
+- P4 自有代码（现在在 `arch/risc-v/src/esp32p4/` 下）与其余 nuttx 改动（`drivers/`、
+  `cmake/`、`include/` 等 P4 移植真正需要的）照常导出；
+- 作品仓 `nuttx/` 文件数 **553 → 423**，其中共享 espressif 层 **0 个文件**；
+- `gen_manifest_copyfiles.py --check` 通过（清单与文件树一致）。
+
+## CA.3 验证
+
+| 项目 | 结果 |
+|---|---|
+| P4 构建 | 通过（`build completed successfully`），构建图为 `esp32p4/esp_hosted/**` |
+| P4 真机 | 迁移后重新烧写：`connected … rssi=-50 ch=6`、`DhcpDnsStatus … link=1 dhcp=1 ip=192.168.1.9`、`wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1` |
+| 共享层引用 | `grep` 于 `common/espressif/{Kconfig,Make.defs,CMakeLists.txt}`：`esp_hosted`/`esp_sdmmc`/`eh_frame`/`platform_include` 命中 0 |
+| 交叉目标 | `nuttx/boards/risc-v/esp32c6/esp32c6-devkitc/configs/nsh` 构建（见 CA.4 记录） |
+| 清单一致性 | `python3 tools/engineering/gen_manifest_copyfiles.py --check` → ✅ |
+
+## CA.4 操作提示与遗留
+
+1. **交叉目标构建要清干净**：`build.sh` 的 `-b <dir>` 必须配合 `--cmake` 生效顺序，
+   否则会退回 make 构建并在 `nuttx/` 真相鉴留下 `.config`，下一次 CMake 配置会报
+   `Please distclean previous make build`（本次踩过，删掉 `nuttx/.config` 即恢复）。
+   另外构建其它芯片会把 `nuttx/arch/risc-v/include/board` 软链改指向该芯片，
+   之后回到 P4 构建前要还原（与附录 BZ.6 同源）。
+2. **遗留（阶段 4，未在本次范围）**：P4 bring-up 的其它驱动仍在共享目录里
+   （`esp_touch.c`、`esp_mipi_dsi.c`、`esp_emac.c`、`esp_i2s.c`、`esp_csi.c`、`esp_lirc.c` 等）。
+   它们多数已在 Kconfig 里 `depends on ARCH_CHIP_ESP32P4`，对其它芯片**配置上不可选**，
+   但目录位置仍不理想。搬迁方式与本次相同（P4 `Make.defs`/`CMakeLists.txt`/`Kconfig`），
+   需要先按内容区分"上游新文件"与"本项目新增"，再逐个评估。

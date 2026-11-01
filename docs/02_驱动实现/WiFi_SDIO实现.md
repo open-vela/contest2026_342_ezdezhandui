@@ -14281,6 +14281,46 @@ EH_CHECK_OK_WARN(eh_cp_rpc_send_event(msg_id, data, len));
 1. 读 `eh_cp_rpc_send_event()` 尾部到传输层的入队路径，找"返回成功但没上线"的分支（队列满/无 credit）；
 2. 读从机 v2 请求分发为何没把 353 交给 `req_get_dhcp_dns_status`（例如响应内存分配失败、或 id 落在别的 variant 表里）。
 
+#### BY.30 第 85 轮：**根因是"主机没有声明 network-split 能力"**
+
+源码核对把两件事一次串起来了：
+
+**① 从机的 nw_split RPC 处理函数是被能力宏关掉的。** 从机侧
+`eh_cp_feat_rpc_ext_v2_handler_req_nw_split.c` 里 `req_get_dhcp_dns_status()` 整段包在
+`#if EH_CP_FEAT_NW_SPLIT_READY` 内；而 esp-hosted 的 `*_READY` 宏**由主机在初始化时声明的能力决定**
+（从机日志里那行 `Host capabilities: 44` 就是这个值）。我们的端口从来没有声明 network-split ——
+于是 353 无人应答，而且**连一行日志都不会有**（处理函数根本没编进去），
+这与真机观察完全一致（既没有 `Fetched IP:`，也没有它的失败分支）。
+
+**② 主机侧也没有这个特性。** 我们 vendored 的 `host/features/` 只有
+`rpc / rpc_ext_v2 / system / wifi` 四个 —— 上游同版本里还有 `eh_host_feat_nw_split`
+（这正是把"从机 DHCP 结果"变成"本机接口已配置"的那一层）。也就是说：
+**IP 那条路两边都缺，而缺的是同一件事**——主机没有声明并使用 network-split。
+
+**本轮的实施尝试与结论**（记下来，供下一轮专做）：
+在端口编译定义里加上
+
+```
+CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT=1 / _READY=1 / _AUTO_INIT=1
+CONFIG_LWIP_TCP_LOCAL_PORT_RANGE_START/END、UDP 同名四项
+```
+
+并把上游 `host/features/eh_host_feat_nw_split/`（5 个源文件 + include 里的
+`*_v2_{req,resp,evt}_ids.inc`）拷进 vendored 树、把它的 src 加进端口 CMake，构建会依次要求：
+
+| 缺什么 | 说明 |
+|---|---|
+| `eh_fsm.h` | 上游 `common/` 里的状态机小工具，vendored 子集没有 |
+| `eh_host_feat_nw_split.h` | 该特性的公共头（上游 `include/` 里） |
+| `esp_netif_ip_addr.h` | 本次已补了一个最小的转接头（已随回退删除） |
+| 注入头 `esp_wifi_netif.h` 的 `esp_netif_receive_t` | vendored 注入头不含该类型 |
+
+**本轮已把这次尝试完整回退**（CMake、拷入的特性目录、转接头都清掉），
+并确认**构建恢复绿色**（6 秒增量构建成功）——不留半成品。
+**下一轮的正事**：把上面这张清单一次性补齐（上游同版本取文件即可），
+让主机真正声明 network-split；那之后 `Req_GetDhcpDnsStatus` 会被应答、
+network UP 事件也会被这一层消费，`wlan0` 即可拿到地址。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

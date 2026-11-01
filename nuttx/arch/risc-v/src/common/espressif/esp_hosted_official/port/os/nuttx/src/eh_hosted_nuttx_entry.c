@@ -629,6 +629,12 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                          "%s: connected to \"%s\" ssid=\"%s\" rssi=%d ch=%u\n",
                          ENTRY_TAG, names[t], (FAR const char *)info.ssid,
                          (int)info.rssi, (unsigned)info.primary);
+
+                  /* The link is up: tell NuttX, so that it will route through
+                   * wlan0 (which needs IFF_RUNNING, not just IFF_UP).
+                   */
+
+                  esp_hosted_netdev_carrier(true);
                   up = true;
                   break;
                 }
@@ -657,6 +663,49 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                * negotiate it through the link -- which is a stronger end-to-end
                * proof than reading the companion's address out of an event.
                */
+
+              /* First: can this host put a broadcast on the wire at all?
+               *
+               * A manual UDP broadcast bound to wlan0 answers that in one line,
+               * and separates "the stack refuses the send" from "the driver
+               * never gets it" -- which is what the DHCP client's -1 left open
+               * (appendix BY.26).
+               */
+
+              {
+                int fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+                if (fd < 0)
+                  {
+                    syslog(LOG_ERR, "%s: probe socket -> errno %d\n",
+                           ENTRY_TAG, errno);
+                  }
+                else
+                  {
+                    struct sockaddr_in to;
+                    char   probe[8] = { 1, 1, 6, 0, 0, 0, 0, 0 };
+                    int    one = 1;
+                    int    prc;
+
+                    (void)setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE,
+                                     "wlan0", 6);
+                    (void)setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &one,
+                                     sizeof(one));
+
+                    memset(&to, 0, sizeof(to));
+                    to.sin_family      = AF_INET;
+                    to.sin_port        = HTONS(67);
+                    to.sin_addr.s_addr = INADDR_BROADCAST;
+
+                    errno = 0;
+                    prc = sendto(fd, probe, sizeof(probe), 0,
+                                 (FAR struct sockaddr *)&to, sizeof(to));
+                    syslog(prc >= 0 ? LOG_INFO : LOG_ERR,
+                           "%s: probe broadcast sendto -> %d (errno=%d)\n",
+                           ENTRY_TAG, prc, errno);
+                    close(fd);
+                  }
+              }
 
               {
                 FAR void *hc = dhcpc_open("wlan0", NULL, 0);

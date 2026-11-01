@@ -44,6 +44,7 @@
 #include <syslog.h>
 
 #include <nuttx/kmalloc.h>
+#include <nuttx/net/net.h>
 #include <nuttx/net/netdev.h>
 #include <nuttx/net/ip.h>
 #include <nuttx/net/ethernet.h>
@@ -109,6 +110,8 @@ static int               g_scan_count;
  *
  ****************************************************************************/
 
+static int hosted_netdev_txpoll(FAR struct net_driver_s *dev);
+
 static void hosted_netdev_txavail(FAR struct net_driver_s *dev)
 {
   FAR struct hosted_netdev_s *priv = (FAR struct hosted_netdev_s *)dev;
@@ -138,16 +141,62 @@ static void hosted_netdev_txavail(FAR struct net_driver_s *dev)
       return;
     }
 
-  ret = priv->txfn(priv->channel->api_chan, dev->d_buf, dev->d_len);
-  if (ret != ESP_OK)
+  /* Ask the stack for whatever it has queued; it fills d_buf/d_len and calls
+   * hosted_netdev_txpoll() for each frame.
+   *
+   * d_txavail alone is only a notification in this NuttX: the transmit path is
+   * devif_poll().  Measured with a notification-only driver: d_txavail ran with
+   * d_len == 0 (nothing was ever staged for us), no frame ever reached the
+   * companion, and the DHCP client's broadcast blocked inside sendto()
+   * (appendix BY.26).
+   */
+
+  /* devif_poll() walks the stack's send queues and expects the network lock to
+   * be held, the way the in-tree drivers call it.
+   */
+
+  net_lock();
+  devif_poll(dev, hosted_netdev_txpoll);
+  net_unlock();
+}
+
+/****************************************************************************
+ * Name: hosted_netdev_txpoll
+ *
+ * Description:
+ *   One frame the stack wants sent.  Called by devif_poll() with the frame
+ *   already in d_buf/d_len; returning zero lets the poll continue while
+ *   returning non-zero ends it.
+ *
+ ****************************************************************************/
+
+static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
+{
+  FAR struct hosted_netdev_s *priv = (FAR struct hosted_netdev_s *)dev;
+  static int poll_trace;
+
+  if (poll_trace < 20)
     {
-      syslog(LOG_ERR, "%s: tx failed: %d (len %u)\n", NETDEV_TAG, ret,
+      poll_trace++;
+      syslog(LOG_INFO, "%s: txpoll len=%u\n", NETDEV_TAG,
              (unsigned)dev->d_len);
+    }
+
+  if (dev->d_len == 0 || priv->txfn == NULL || priv->channel == NULL)
+    {
+      return 1;
+    }
+
+  if (priv->txfn(priv->channel->api_chan, dev->d_buf, dev->d_len) != ESP_OK)
+    {
       NETDEV_TXERRORS(dev);
-      return;
+      dev->d_len = 0;
+      return 1;
     }
 
   NETDEV_TXPACKETS(dev);
+  dev->d_len = 0;
+  return 0;
 }
 
 /****************************************************************************
@@ -203,6 +252,29 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
       len >= NET_LL_HDRLEN(&priv->dev))
     {
       FAR struct eth_hdr_s *eth;
+
+      /* Flush a pending transmit first: d_buf/d_len are shared between the two
+       * directions in this netdev model.
+       *
+       * The stack stages an outgoing frame in d_buf/d_len and then asks the
+       * driver to send it (d_txavail).  If a received frame lands in between,
+       * copying it into d_buf destroys the staged frame -- and the driver then
+       * sees an empty packet when it is finally asked to transmit, which is
+       * exactly what the trace showed: "txavail len=0" and a broadcast send
+       * that never completed (appendix BY.26).  Sending the pending frame here
+       * keeps the single buffer coherent.
+       */
+
+      if (priv->dev.d_len > 0 && priv->txfn != NULL)
+        {
+          if (priv->txfn(priv->channel->api_chan, priv->dev.d_buf,
+                         priv->dev.d_len) != ESP_OK)
+            {
+              NETDEV_TXERRORS(&priv->dev);
+            }
+
+          priv->dev.d_len = 0;
+        }
 
       memcpy(priv->dev.d_buf, buf, len);
       priv->dev.d_len = (uint16_t)len;
@@ -277,6 +349,16 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
  *   (eh_host_wifi_*), which turns them into RPCs to the companion.
  *
  ****************************************************************************/
+
+/* devif_poll() is how a driver asks the network stack to hand it anything it
+ * has queued.  Its declaration lives in net/devif/devif.h, which is internal to
+ * the net stack and not on this target's include path (the arch build sees the
+ * public headers only), so it is declared here with the callback type spelled
+ * out -- devif_poll_callback_t is the same function-pointer type.
+ */
+
+int devif_poll(FAR struct net_driver_s *dev,
+               CODE int (*callback)(FAR struct net_driver_s *dev));
 
 #if defined(CONFIG_NETDEV_IOCTL) && defined(CONFIG_ESPRESSIF_HOSTED_WIFI)
 static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
@@ -523,6 +605,37 @@ static int hosted_netdev_ifdown(FAR struct net_driver_s *dev)
  *   OK on success, a negated errno otherwise.
  *
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: esp_hosted_netdev_carrier
+ *
+ * Description:
+ *   Tell NuttX the link is up (or down).
+ *
+ *   IFF_UP alone is not enough for the stack to pick wlan0 as the outgoing
+ *   interface: netdev_default() -- what a broadcast send falls back to --
+ *   requires IFF_UP *and* IFF_RUNNING, and IFF_RUNNING is what netdev_carrier_on()
+ *   sets.  Measured without it: a broadcast bound to wlan0 fails with
+ *   EHOSTUNREACH (errno 113) and the DHCP client can never send its DISCOVER
+ *   (appendix BY.26).
+ *
+ ****************************************************************************/
+
+void esp_hosted_netdev_carrier(bool up)
+{
+  FAR struct hosted_netdev_s *priv = &g_hosted_netdev;
+
+  if (up)
+    {
+      netdev_carrier_on(&priv->dev);
+    }
+  else
+    {
+      netdev_carrier_off(&priv->dev);
+    }
+
+  syslog(LOG_INFO, "%s: carrier %s\n", NETDEV_TAG, up ? "on" : "off");
+}
 
 /****************************************************************************
  * Name: esp_hosted_netdev_up

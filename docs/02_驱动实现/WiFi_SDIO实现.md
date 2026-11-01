@@ -14121,6 +14121,33 @@ stack*），传 NULL 就是跳到地址 0；而这个调用在本文件里还是
 即 NuttX 还没把 DISCOVER 交给驱动。下一轮从 `dhcpc` 的 socket/sendto 路径与接口路由状态入手
 （接口此时还没有地址，NuttX 的路由查找是否因此拒绝发送，是首先要验的假设）。
 
+#### BY.26 第 81 轮：发送方向的三层问题，逐层剥开
+
+**① 广播发不出去：`EHOSTUNREACH`。** 用一个"手工广播探测"把锅分清楚：
+
+```
+eh_hosted_nuttx: probe broadcast sendto -> -1 (errno=113)     ← 113 = EHOSTUNREACH
+```
+
+查上游：广播目的地的出接口由 `netdev_findby_ripv4addr()` → `netdev_default()` 决定，
+而 `netdev_default()` 只认**同时置了 `IFF_UP` 与 `IFF_RUNNING`** 的设备；
+`IFF_RUNNING` 要靠 **`netdev_carrier_on()`**。于是新增 `esp_hosted_netdev_carrier()`，
+并在**关联成功**时上报 carrier。真机：`carrier on` 之后 `d_txavail` 第一次被调用 ✔
+
+**② 通知 ≠ 发送：这套 NuttX 的发送路径是 `devif_poll()`。** 上游里 `udp_sendto_buffered.c`
+用的是 `netdev_txnotify_dev(dev, UDP_POLL)`，而树内现役驱动（`drivers/net/w5500.c`）都是
+`devif_poll(&dev, txpoll)`。也就是说 `d_txavail` 只是"来活儿了"的通知，**真正的取包-发送要走
+`devif_poll` + 一个 txpoll 回调**。已按这个模型改写（含 `net_lock()/net_unlock()`）。
+
+**③ 但 txpoll 一次都没被调用** —— 加上回调内日志后，真机日志里连一行 `txpoll` 都没有，
+而 `sendto` 依然阻塞。结合树内所有现役网络驱动（w5500 / encx24j600 …）**都使用 iob 模型**
+（`dev->d_iob` + `devif_iob_send`），结论是：**这套 NuttX 的发送方向要求 iob 模型**，
+我们端口目前的"平坦 `d_buf`/`d_len`"写法（接收方向能跑通）在发送方向不被支持。
+
+**这是下一轮的正事**：把端口的数据面改成 iob 模型（`d_iob`/`netdev_iob_*`/`devif_iob_send`），
+接收侧一并统一；之后 `dhcpc` 的 DISCOVER 才能真正上线，`wlan0` 才会拿到自己的地址。
+本轮的全部中间结论与三处修复都已入库（carrier、devif_poll+net_lock、tx 完成清 `d_len`）。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

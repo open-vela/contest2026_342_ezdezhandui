@@ -306,6 +306,29 @@ void dm_selftest_step(void)
         }
 
         dm_selftest_snapshot("dm_net");
+
+        /* Wireless: the simulator's wifi_sim device reads its access point
+         * table from a file; on the board the same WAPI calls talk to the
+         * ESP-Hosted wlan0.
+         */
+
+        {
+          struct dm_wifi_ap_s aps[DM_NET_MAX_APS];
+          int found = dm_net_wifi_scan(aps, DM_NET_MAX_APS);
+
+          if (found > 0)
+            {
+              snprintf(g_detail, sizeof(g_detail), "%d AP, first='%.24s' %d dBm",
+                       found, aps[0].ssid, aps[0].rssi);
+              dm_check("wifi:scan", aps[0].ssid[0] != '\0', g_detail);
+            }
+          else
+            {
+              snprintf(g_detail, sizeof(g_detail), "rc=%d", found);
+              dm_check("wifi:scan", false, g_detail);
+            }
+        }
+
         g_state = DM_ST_NET_WAIT;
         g_frames = 2;
         return;

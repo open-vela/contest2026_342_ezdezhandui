@@ -14696,6 +14696,21 @@ python3 tools/engineering/verify_migration.py --compile   # V2 全量 -c 编译�
 | PSRAM 32MB | `esp_allocateheap/esp_extraheaps/esp_retentionheap.c` | 同上，未修改 | 否 |
 | （例外）GPIO 外设 | `esp_gpio.c` | 我们改过、tracked（manifest 无法删除 → 不能搬） | 是，但属必要补充，已被整机与真机覆盖 |
 
+### CB.1.1 eth0 的最终判定（不是回归项，而是本板从未接线）
+
+文件级核查（2026-11-01）：
+
+- `esp_emac.c` 已搬到 `arch/risc-v/src/esp32p4/drivers/`，本板 `CONFIG_ESPRESSIF_EMAC=y` **真编译通过**；
+- 板级 `vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/src/esp32p4_ethernet.c`
+  在 `CONFIG_ESPRESSIF_EMAC` 下参与编译，里面定义了 `board_emac_init()`；
+- 但全树搜 **`board_emac_init` 只有定义与声明、没有任何调用者**（`esp32p4_bringup.c` 里只有一句
+  "ethernet is unaffected" 的日志文本）→ **本板运行期不存在 `eth0`**，`NETINIT_DHCPC` 也就没有对象可配。
+
+⇒ 结论：**"eth0 DHCP 联网"在这块板上不是已接线的功能**，因此既不是本次迁移能破坏的东西，
+也不是本次迁移能"验证通过"的东西；能给的证据就是"驱动已迁移 + 本板真编译"。
+若要让 eth0 真正可用，需要一步**功能改动**（不在本次范围）：在 `esp32p4_bringup.c` 里
+`#ifdef CONFIG_ESPRESSIF_EMAC` 调用 `board_emac_init();`，然后接网线观察 `eth0` 注册与 DHCP。
+
 **真机证据**（`logs/20261101-180250_drivers-moved/boot.txt`）：`MCUboot` banner、`NuttShell (NSH)`+`nsh>`、
 `hex_psram: density : 0x07 (256 Mbit)`（=32MB）、`MIPI-DSI host registered (2 lanes @ 900 Mbps)` +
 `EK79007 panel init...`、`Camera registered on /dev/video0`、`wlan0 address 192.168.1.9`。

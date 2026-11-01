@@ -7,8 +7,9 @@
 #   tools/test/sim_deskmate.sh                 # 构建 + 运行 + 断言
 #   tools/test/sim_deskmate.sh --no-build      # 复用已有构建
 #   tools/test/sim_deskmate.sh --keep-running  # 不设超时（调试用）
+#   tools/test/sim_deskmate.sh --out <dir>     # 证据归档目录（默认 /tmp/deskmate-runs）
 #
-# 产物：logs/sim-deskmate/<时间戳>/ 下
+# 产物：<out>/<时间戳>/ 下
 #   console.log          guest 控制台全文
 #   dm_home.bin          UI 帧快照（RAW RGB565，来自应用内 hostfs 落盘）
 #   dm_home.bin.txt      快照几何描述（宽/高/bpp/stride/后端）
@@ -27,7 +28,10 @@ CONFIG_DIR="nuttx/boards/sim/sim/sim/configs/deskmate"
 BUILD_DIR="${WS}/cmake_out/sim_deskmate"
 SIM_BIN="${BUILD_DIR}/nuttx"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-RUN_DIR="${REPO}/logs/sim-deskmate/${STAMP}"
+# 证据目录默认放在 /tmp：本仓的 logs/ 是未跟踪目录，同工作区的其它会话跑
+# `git clean -xdf` 会把它连根清掉（实测踩过）。要入库时显式 `--out logs/sim-deskmate`。
+OUT_BASE="${TMPDIR:-/tmp}/deskmate-runs"
+RUN_DIR=""
 # 交换目录用短路径：NSH 命令行长度有限（本配置已抬到 512，但短路径让默认配置
 # 也能跑），跑完把产物拷回 RUN_DIR。
 HOST_DIR="${TMPDIR:-/tmp}/dm-sim-${STAMP}"
@@ -36,17 +40,20 @@ TIMEOUT_SECS=180
 DO_BUILD=1
 KEEP_RUNNING=0
 
-for arg in "$@"; do
-  case "${arg}" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --no-build)     DO_BUILD=0 ;;
     --keep-running) KEEP_RUNNING=1; TIMEOUT_SECS=0 ;;
+    --out)          shift; OUT_BASE="${1:-${OUT_BASE}}" ;;
     -h|--help)
-      sed -n '2,20p' "${BASH_SOURCE[0]}"
+      sed -n '2,22p' "${BASH_SOURCE[0]}"
       exit 0 ;;
-    *) echo "unknown option: ${arg}" >&2; exit 2 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
+RUN_DIR="${OUT_BASE%/}/${STAMP}"
 mkdir -p "${RUN_DIR}" "${HOST_DIR}"
 
 log()  { printf '\033[1;36m[sim-deskmate]\033[0m %s\n' "$*"; }

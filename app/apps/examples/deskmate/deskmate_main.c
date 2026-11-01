@@ -146,8 +146,35 @@ static void dm_write_wifi_bss(void)
       return;
     }
 
-  (void)mkdir("/tmp", 0777);
-  (void)mkdir("/tmp/wifi", 0777);
+  /* Make sure the containing directory exists: on the simulator the table
+   * lives under /host (hostfs), which the guest root filesystem cannot
+   * provide by itself.
+   */
+
+  {
+    char dir[96];
+    char *slash;
+
+    strlcpy(dir, DM_WIFI_BSS, sizeof(dir));
+    slash = strrchr(dir, '/');
+
+    if (slash != NULL && slash != dir)
+      {
+        *slash = '\0';
+
+        for (char *q = dir + 1; *q != '\0'; q++)
+          {
+            if (*q == '/')
+              {
+                *q = '\0';
+                (void)mkdir(dir, 0777);
+                *q = '/';
+              }
+          }
+
+        (void)mkdir(dir, 0777);
+      }
+  }
 
   fp = fopen(DM_WIFI_BSS, "w");
   if (fp == NULL)

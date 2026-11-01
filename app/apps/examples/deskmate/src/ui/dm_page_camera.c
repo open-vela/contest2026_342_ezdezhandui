@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include <lvgl/lvgl.h>
 
@@ -38,8 +39,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define DM_CAMERA_PREVIEW_W  480
-#define DM_CAMERA_PREVIEW_H  270
 #define DM_CAMERA_MOTION_PCT 6        /* Percent of changed samples */
 #define DM_CAMERA_MOTION_DIFF 1200    /* Per-pixel RGB565 delta */
 

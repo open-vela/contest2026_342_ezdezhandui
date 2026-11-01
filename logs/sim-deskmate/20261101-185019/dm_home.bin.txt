@@ -1,5 +1,0 @@
-width=1024
-height=600
-bpp=16
-stride=2048
-backend=mem

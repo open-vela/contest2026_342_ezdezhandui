@@ -1,6 +1,0 @@
-RESULT: FAIL
-reason: snapshot missing
-ready:  DM-READY display=mem 1024x600 bpp=16 lvgl=
-checks: 6 pass / 1 fail
-result: DM-SELFTEST RESULT: FAIL (1/7 failed)
-artifact_dir: /home/ez/share/openvela/contest2026_342_ezdezhandui/logs/sim-deskmate/20261101-184517

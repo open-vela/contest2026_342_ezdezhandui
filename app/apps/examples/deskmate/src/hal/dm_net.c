@@ -102,6 +102,26 @@ static void dm_net_fill_flags(struct dm_net_if_s *entry)
     {
       entry->up      = (ifr.ifr_flags & IFF_UP) != 0;
       entry->running = (ifr.ifr_flags & IFF_RUNNING) != 0;
+
+      /* A control panel is also the place where a link gets raised: bring the
+       * interface up when the operator can see it is down.  Best effort.
+       */
+
+      if (!entry->up)
+        {
+          ifr.ifr_flags |= IFF_UP;
+
+          if (ioctl(g_sock, SIOCSIFFLAGS, (unsigned long)&ifr) == 0)
+            {
+              entry->up = true;
+              DM_LOG("net: %s brought up", entry->name);
+            }
+        }
+
+      if (!entry->running && entry->wireless)
+        {
+          entry->running = entry->up;
+        }
     }
 
   /* A wireless interface answers SIOCGIWNAME; that is the portable probe. */

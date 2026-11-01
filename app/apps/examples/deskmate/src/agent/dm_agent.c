@@ -12,10 +12,12 @@
 
 #include <nuttx/config.h>
 
+#include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
 #include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -82,9 +84,6 @@ static int g_tail;
 
 static unsigned int g_sent;
 static unsigned int g_recv;
-
-static char g_pending[DM_AGENT_MSGLEN];   /* Utterance waiting for an answer */
-static bool g_pending_valid;
 
 /****************************************************************************
  * Private Functions

@@ -7,6 +7,7 @@
 
         nuttx/<rel>           -> nuttx/<rel>
         board/esp32p4/<rel>   -> vendor/espressif/boards/esp32p4/<rel>
+        board/vela/<rel>      -> vendor/openvela/boards/vela/<rel>
         app/apps/<rel>        -> apps/<rel>
         app/ai_agent/<rel>    -> packages/ai_agent/<rel>
 
@@ -37,6 +38,7 @@ XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 GROUPS = [
     ("nuttx",          "nuttx"),
     ("board/esp32p4",  "vendor/espressif/boards/esp32p4"),
+    ("board/vela",     "vendor/openvela/boards/vela"),
     ("app/apps",       "apps"),
     ("app/ai_agent",   "packages/ai_agent"),
 ]

@@ -52,6 +52,7 @@ import sys
 SYNC_MAP = [
     ("nuttx",             "nuttx",           "NuttX 内核 / arch / 驱动"),
     ("vendor/espressif",  "board/esp32p4",   "板级源码 + defconfig（openvela vendor 风格）"),
+    ("vendor/openvela",   "board/vela",      "goldfish 官方模拟器板级配置（应用层验收轨）"),
     ("apps",              "app/apps",        "apps 应用（camera 示例、lvgl 端口、netinit…）"),
     ("packages/ai_agent", "app/ai_agent",    "ai_agent 应用"),
 ]
@@ -59,6 +60,7 @@ SYNC_MAP = [
 # 从 vendor/espressif 里只取板级子树，避免把 esp32s3 等无关板子一起带走
 SUBTREE_FILTER = {
     "vendor/espressif": "boards/esp32p4/",
+    "vendor/openvela": "boards/vela/",
 }
 
 # ------------------------------------------------------ nuttx 交付瘦身（可选）
@@ -75,6 +77,19 @@ NUTTX_DENY_PREFIXES = (
 # 这些文件名属于"仓级/构建级"，不进作品仓
 SKIP_NAMES = {".gitignore", ".gitmodules", ".built", ".depend", "Make.dep"}
 SKIP_PREFIXES = ("build-esp32p4", "cmake_out/", "out/")
+
+# ---------------------------------------------------------------- 只读保护区
+# 另一条对话正在开发模拟器 UI（deskmate）。它的文件**既不进交付、也不得被本仓
+# 覆盖**：交付是 copyfile 部署，一旦仓里带着旧副本，部署就会把人家新写的代码盖回去。
+# 注意它不止在 apps/：模拟器跑起来还需要 nuttx 侧的 wifi_sim 驱动与 sim 板级配置。
+PROTECTED_WORKSPACE_PATHS = (
+    "apps/examples/deskmate",                 # 模拟器 UI 主体
+    "nuttx/drivers/net/wifi_sim.c",           # sim 侧 Wi-Fi 驱动（tracked，改过）
+    "nuttx/boards/sim/sim/sim/configs/deskmate",  # sim 板级配置
+)
+
+# 构建脚手架（vendor 侧的依赖树/生成物），不属于源码交付
+SKIP_PREFIXES += ("vendor/espressif/chips/",)
 
 
 def run(args, cwd=None, check=True):
@@ -127,6 +142,9 @@ def collect(repo_path):
         if base in SKIP_NAMES:
             continue
         if any(path.startswith(p) for p in SKIP_PREFIXES):
+            continue
+        # 只读保护区：另一条对话在开发的东西，不进交付
+        if any(path == p or path.startswith(p + "/") for p in PROTECTED_WORKSPACE_PATHS):
             continue
 
         # 目录条目 = 嵌套 git 仓（构建期 clone 的依赖，如 arch/…/esp32p4/esp-hal-3rdparty、

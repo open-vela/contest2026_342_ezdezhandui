@@ -14677,3 +14677,62 @@ python3 tools/engineering/verify_migration.py --compile   # V2 全量 -c 编译�
    它们多数已在 Kconfig 里 `depends on ARCH_CHIP_ESP32P4`，对其它芯片**配置上不可选**，
    但目录位置仍不理想。搬迁方式与本次相同（P4 `Make.defs`/`CMakeLists.txt`/`Kconfig`），
    需要先按内容区分"上游新文件"与"本项目新增"，再逐个评估。
+
+---
+
+# 附录 CB：共享层影响评估与受控同步（2026-11-01）
+
+## CB.1 结论：共享层"未迁移的改动"不影响 8 个功能域
+
+| 功能域 | 依赖文件 | 归属 | 受影响 |
+|---|---|---|---|
+| eth0 以太网 | `esp_emac.c` | 已搬 `esp32p4/drivers/`，本板 `ESPRESSIF_EMAC=y` 真编译 | 否 |
+| LVGL 显示 | `esp_mipi_dsi.c` | 已搬，本板 `MIPI_DSI=y` 真编译 | 否 |
+| LVGL 触控 | `esp_touch.c` | 已搬（本板未开，编译矩阵已验） | 否 |
+| 摄像头链路 | `esp_csi.c`+`esp_mipi_dsi.c` | 已搬，本板 `MIPI_CSI=y` 真编译 | 否 |
+| 串口 / console | `esp_lowputc.c`、`esp_serial.c` | 共享层，**本项目从未修改** | 否 |
+| MCUboot 二级引导 | `Bootloader.cmake/.mk`、`esp_head.S` | 同上，未修改 | 否 |
+| flash XIP | `esp_spiflash*.c` | 同上，未修改 | 否 |
+| PSRAM 32MB | `esp_allocateheap/esp_extraheaps/esp_retentionheap.c` | 同上，未修改 | 否 |
+| （例外）GPIO 外设 | `esp_gpio.c` | 我们改过、tracked（manifest 无法删除 → 不能搬） | 是，但属必要补充，已被整机与真机覆盖 |
+
+**真机证据**（`logs/20261101-180250_drivers-moved/boot.txt`）：`MCUboot` banner、`NuttShell (NSH)`+`nsh>`、
+`hex_psram: density : 0x07 (256 Mbit)`（=32MB）、`MIPI-DSI host registered (2 lanes @ 900 Mbps)` +
+`EK79007 panel init...`、`Camera registered on /dev/video0`、`wlan0 address 192.168.1.9`。
+
+共享层里"看起来很多"的差异 = **vendor drop**（上游较新内容）+ **早期会话遗留**（`esp_wifi_*`/`esp_wlan_netdev` 旧路线），
+**不是本轮工作的代码**。本轮自有的 9 个驱动与 SDIO 集群已全部在 `esp32p4/` 下。
+
+## CB.2 `repo sync` 的真实风险
+
+- nuttx 仓 **90 个 tracked 文件被改动**（含 vendor drop、早期 P4、我们对共享构建文件的小改）→
+  `repo sync` 会**回退到 manifest revision**（≈ 降级 openvela），本项目很可能直接编不过；
+- 我们新增的 **untracked** 文件（集群、9 驱动、`esp32p4/{CMakeLists,Make.defs,Kconfig}`、
+  板级 defconfig）**不会被删**，但共享层被回退后构建会失败；
+- `vendor/espressif/chips`（411MB 依赖产物）在 `vendor/espressif` 里完全 untracked，
+  `repo sync` **不会删**（`git ls-files chips/` = 0），这是设计行为。
+
+## CB.3 只读保护区（另一条对话的模拟器 UI）
+
+不止 `apps/examples/deskmate`，模拟器能跑起来还依赖 nuttx 侧与 emulator 侧的这些东西：
+
+```
+apps/examples/deskmate                                   （UI 主体，31 个文件，untracked）
+nuttx/drivers/net/wifi_sim.c                             （sim 侧 Wi-Fi 驱动，tracked 且被修改）
+nuttx/boards/sim/sim/sim/configs/deskmate                （sim 板级配置，untracked）
+vendor/openvela                                          （goldfish/vela 板级，另一条对话维护）
+```
+
+**这些文件既不进本项目的交付，也不得被同步/部署覆盖**：交付是按 `<copyfile>` 部署的，
+一旦仓里带着旧副本，部署就会把人家新写的代码盖回去（本轮实测发现仓里确实残留过 8 个
+deskmate/defconfig 旧副本，已从作品仓删除并把它们写进 `export.py` 的排除规则）。
+
+## CB.4 工具与流程
+
+| 工具 | 作用 |
+|---|---|
+| `tools/engineering/check_consistency.py` | **只读**对账：manifest 双向差集（仓缺文件/工作区缺文件/内容不一致）、各仓改动是否被交付覆盖、保护区指纹；当前结果 **✅ 一致** |
+| `tools/engineering/sync_and_restore.sh` | **受控同步**（默认 dry-run）：记录保护区指纹 → 备份 tracked 改动 → **只同步 `nuttx` + `vendor/espressif`**（`apps` 永不同步）→ 用作品仓 copyfile 恢复 → 逐字节校验保护区 → 重建 + 回归提示 |
+
+安全顺序（`--apply`）：`备份 → repo sync nuttx vendor/espressif → 部署作品仓 → 保护区校验 → 重建 → 8 域回归`；
+任一环节失败即用备份 patch + 作品仓树回滚。

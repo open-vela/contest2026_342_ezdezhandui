@@ -18,8 +18,17 @@ CFLAGS += ${INCDIR_PREFIX}$(CURDIR)/src
 
 MAINSRC = deskmate_main.c
 CSRCS   = src/dm_selftest.c
+CSRCS  += src/agent/dm_agent.c
+CSRCS  += src/hal/dm_camera.c
 CSRCS  += src/hal/dm_display.c
+CSRCS  += src/hal/dm_net.c
 CSRCS  += src/hal/dm_touch.c
+CSRCS  += src/ui/dm_page_camera.c
+CSRCS  += src/ui/dm_page_chat.c
+CSRCS  += src/ui/dm_page_home.c
+CSRCS  += src/ui/dm_page_net.c
+CSRCS  += src/ui/dm_page_settings.c
 CSRCS  += src/ui/dm_ui.c
+CSRCS  += src/ui/dm_widgets.c
 
 include $(APPDIR)/Application.mk

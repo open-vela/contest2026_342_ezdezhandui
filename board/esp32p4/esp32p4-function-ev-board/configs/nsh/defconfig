@@ -279,6 +279,19 @@ CONFIG_EXAMPLES_LVGLDEMO_INPUT_DEVPATH="/dev/input0"
 CONFIG_LV_USE_DEMO_WIDGETS=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 
+# ── DeskMate 应用层（LVGL 中控 UI：摄像头 / WiFi / 网口 / 触摸 + agent）──
+# 四个外设都已在上面开好，这里只把应用编进来：
+#   /dev/fb0 1024x600 RGB565 + /dev/input0（GT911）→ 显示与触摸
+#   /dev/video0（SC2336 → MIPI-CSI → V4L2）        → 摄像头页
+#   eth0（esp_emac）与 wlan0（ESP-Hosted，可用即用）→ 网络页
+CONFIG_EXAMPLES_DESKMATE=y
+CONFIG_EXAMPLES_DESKMATE_PROGNAME="deskmate"
+CONFIG_EXAMPLES_DESKMATE_PRIORITY=100
+CONFIG_EXAMPLES_DESKMATE_STACKSIZE=32768
+CONFIG_EXAMPLES_DESKMATE_AGENT_MODE="ws"
+CONFIG_EXAMPLES_DESKMATE_CAMERA_DEVPATH="/dev/video0"
+CONFIG_LV_FONT_MONTSERRAT_28=y
+
 # ── MIPI-CSI camera: SC2336 (AS-AG638A32M2-50) on 2-lane CSI-2 -> /dev/video0 ──
 # NOTE: CONFIG_VIDEO_REQBUFS_COUNT_MAX must be written explicitly — it is a
 # prompt-less int inside "if VIDEO_STREAM", and a defconfig does not record

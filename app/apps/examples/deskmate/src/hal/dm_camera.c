@@ -20,7 +20,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#if defined(CONFIG_VIDEO) && defined(CONFIG_VIDEO_STREAM)
+#if defined(CONFIG_VIDEO) || defined(CONFIG_VIDEO_STREAM)
 #  include <nuttx/video/video.h>
 #  include <nuttx/video/v4l2_cap.h>
 #  define DM_HAVE_V4L2 1
@@ -104,6 +104,7 @@ static int dm_camera_try_fmt(uint32_t pixfmt)
 }
 #endif
 
+#ifdef DM_HAVE_V4L2
 /* 2x2 quad demosaic of a BGGR RAW8 frame, resampled straight into the preview
  * buffer.  Averaging each quad gives one RGB pixel, so the preview is half the
  * sensor resolution; the scale factor then maps that onto the canvas.
@@ -172,6 +173,8 @@ static void dm_camera_convert_rgb(const uint8_t *src, int sw, int sh,
         }
     }
 }
+
+#endif /* DM_HAVE_V4L2 */
 
 /* Synthetic pattern: a colour ramp plus a moving block, so the preview is
  * obviously "live" and its motion can drive the proactive engine.

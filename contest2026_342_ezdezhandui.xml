@@ -28,6 +28,7 @@
     <copyfile src="app/apps/examples/deskmate/CMakeLists.txt" dest="apps/examples/deskmate/CMakeLists.txt"/>
     <copyfile src="app/apps/examples/deskmate/Kconfig" dest="apps/examples/deskmate/Kconfig"/>
     <copyfile src="app/apps/examples/deskmate/Makefile" dest="apps/examples/deskmate/Makefile"/>
+    <copyfile src="app/apps/examples/deskmate/README.md" dest="apps/examples/deskmate/README.md"/>
     <copyfile src="app/apps/examples/deskmate/deskmate_main.c" dest="apps/examples/deskmate/deskmate_main.c"/>
     <copyfile src="app/apps/examples/deskmate/src/agent/dm_agent.c" dest="apps/examples/deskmate/src/agent/dm_agent.c"/>
     <copyfile src="app/apps/examples/deskmate/src/agent/dm_agent.h" dest="apps/examples/deskmate/src/agent/dm_agent.h"/>
@@ -598,6 +599,7 @@
     <copyfile src="nuttx/drivers/input/gt9xx.c" dest="nuttx/drivers/input/gt9xx.c"/>
     <copyfile src="nuttx/drivers/mmcsd/CMakeLists.txt" dest="nuttx/drivers/mmcsd/CMakeLists.txt"/>
     <copyfile src="nuttx/drivers/mmcsd/sdio.c" dest="nuttx/drivers/mmcsd/sdio.c"/>
+    <copyfile src="nuttx/drivers/net/wifi_sim.c" dest="nuttx/drivers/net/wifi_sim.c"/>
     <copyfile src="nuttx/drivers/video/CMakeLists.txt" dest="nuttx/drivers/video/CMakeLists.txt"/>
     <copyfile src="nuttx/drivers/video/Kconfig" dest="nuttx/drivers/video/Kconfig"/>
     <copyfile src="nuttx/drivers/video/Make.defs" dest="nuttx/drivers/video/Make.defs"/>
@@ -767,5 +769,6 @@
     <copyfile src="board/esp32p4/esp32p4-tab5/src/esp32p4_mipi_dpi.c" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5/src/esp32p4_mipi_dpi.c"/>
     <copyfile src="board/esp32p4/esp32p4-tab5/src/esp32p4_reset.c" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5/src/esp32p4_reset.c"/>
     <copyfile src="board/esp32p4/esp32p4-tab5/src/esp32p4_touch.c" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5/src/esp32p4_touch.c"/>
+    <copyfile src="board/vela/configs/goldfish-arm64-v8a-ap/defconfig" dest="vendor/openvela/boards/vela/configs/goldfish-arm64-v8a-ap/defconfig"/>
   </project>
 </manifest>

@@ -61,22 +61,16 @@ SUBTREE_FILTER = {
     "vendor/espressif": "boards/esp32p4/",
 }
 
-# ------------------------------------------------------ nuttx 导出排除清单
-# nuttx 的 git 基线（2026-07-14，见仓库 HEAD）落后工作区所用的 openvela drop
-# 近四个月，于是 `git status` 会把整批上游更新都报成"已修改"。
+# ------------------------------------------------------ nuttx 交付瘦身（可选）
+# 默认：**完整交付**——工作区相对基线的一切改动都进作品仓（含共享 espressif 层）。
+# 这是本项目的既有行为，部署目标是同版本 openvela 工作区，覆盖等于无操作。
 #
-# 其中 `arch/risc-v/src/common/espressif/` 是**所有 ESP32 系列共享**的层：把这
-# 一层的整片上游更新（上百个文件）当作"本次改动"投递出去，就等于用本工作区的
-# 版本覆盖别人的共享层——这正是"影响其它 esp32 芯片"的来源。
-#
-# P4 自己的代码已经全部搬到 `arch/risc-v/src/esp32p4/`（含 esp_hosted/ 集群），
-# 共享层里不再有本项目的挂接点，因此这一层**整体不导出**。其余 nuttx 改动
-# （drivers/、cmake/、include/ 等 P4 移植真正需要的修改）照常导出。
+# 只有显式加 `--p4-only` 时才启用下面的排除清单：nuttx 的 git 基线（2026-07-14）
+# 落后工作区所用的 openvela drop 近四个月，共享层里上百个文件其实只是"上游更新"；
+# 这个开关用来只带 P4 自有内容。**默认关闭**，避免出现"交付树缺文件"。
 NUTTX_DENY_PREFIXES = (
     "arch/risc-v/src/common/espressif/",
 )
-
-ALLOW_FILTER = {}
 
 # 这些文件名属于"仓级/构建级"，不进作品仓
 SKIP_NAMES = {".gitignore", ".gitmodules", ".built", ".depend", "Make.dep"}
@@ -166,6 +160,9 @@ def main():
                     help="同时刷新 manifest 的 <copyfile> 条目")
     ap.add_argument("--only", nargs="*", default=None,
                     help="只导出这些 project path")
+    ap.add_argument("--p4-only", action="store_true",
+                    help="只带 P4 自有内容，不导出共享 espressif 层"
+                         "（默认完整交付）")
     args = ap.parse_args()
 
     ws = args.workspace or find_workspace_root(os.getcwd())
@@ -203,7 +200,8 @@ def main():
             changed = [(p, k) for p, k in changed if p.startswith(filt)]
             deleted = [p for p in deleted if p.startswith(filt)]
 
-        deny = NUTTX_DENY_PREFIXES if proj == "nuttx" else ()
+        deny = (NUTTX_DENY_PREFIXES
+                if (proj == "nuttx" and args.p4_only) else ())
         if deny:
             before = len(changed) + len(deleted)
             changed = [(p, k) for p, k in changed

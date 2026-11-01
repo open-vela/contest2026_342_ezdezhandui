@@ -43,7 +43,7 @@
 #endif
 
 #ifdef CONFIG_ESP32P4_TAB5_MIPI_DSI
-#  include "espressif/esp_mipi_dsi.h"
+#  include "drivers/esp_mipi_dsi.h"
 #endif
 
 #ifdef CONFIG_ESP32P4_TAB5_LCD

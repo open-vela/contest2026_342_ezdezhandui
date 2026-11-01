@@ -96,6 +96,14 @@ if(CONFIG_ESPRESSIF_DEDICATED_GPIO)
   target_sources(arch PRIVATE drivers/esp_dedic_gpio.c)
 endif()
 
+if(CONFIG_ESPRESSIF_MIPI_DSI)
+  target_sources(arch PRIVATE drivers/esp_mipi_dsi.c)
+endif()
+
+if(CONFIG_ESPRESSIF_EMAC)
+  target_sources(arch PRIVATE drivers/esp_emac.c)
+endif()
+
 target_include_directories(arch PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/drivers)
 

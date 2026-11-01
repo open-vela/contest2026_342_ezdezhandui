@@ -105,10 +105,6 @@ if(CONFIG_ESPRESSIF_LDO)
   list(APPEND SRCS esp_ldo.c)
 endif()
 
-if(CONFIG_ESPRESSIF_MIPI_DSI)
-  list(APPEND SRCS esp_mipi_dsi.c)
-endif()
-
 if(CONFIG_ESP_SDM)
   list(APPEND SRCS esp_sdm.c)
 endif()
@@ -165,10 +161,6 @@ endif()
 
 if(CONFIG_ESP_MCPWM)
   list(APPEND SRCS esp_mcpwm.c)
-endif()
-
-if(CONFIG_ESPRESSIF_EMAC)
-  list(APPEND SRCS esp_emac.c)
 endif()
 
 if(CONFIG_ESPRESSIF_SHA_ACCELERATOR)

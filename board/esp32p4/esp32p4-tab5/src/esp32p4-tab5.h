@@ -33,7 +33,7 @@
 #include <stdbool.h>
 
 #ifdef CONFIG_ESPRESSIF_MIPI_DSI
-#  include "espressif/esp_mipi_dsi.h"
+#  include "drivers/esp_mipi_dsi.h"
 #endif
 
 /****************************************************************************

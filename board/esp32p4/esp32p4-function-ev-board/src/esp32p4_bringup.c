@@ -156,7 +156,7 @@
 
 #if defined(CONFIG_ESP32P4_FUNCTION_EV_BOARD_MIPI_DSI) && \
     !ESP32P4_CAMERA_WITHOUT_DSI_TEST
-#  include "espressif/esp_mipi_dsi.h"
+#  include "drivers/esp_mipi_dsi.h"
 #endif
 
 #if defined(CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD) && \

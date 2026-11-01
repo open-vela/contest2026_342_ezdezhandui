@@ -50,7 +50,7 @@
 
 #include <arch/board/board.h>
 
-#include "espressif/esp_mipi_dsi.h"
+#include "drivers/esp_mipi_dsi.h"
 
 #include "esp32p4-tab5.h"
 

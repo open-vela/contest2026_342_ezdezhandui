@@ -110,10 +110,6 @@ ifeq ($(CONFIG_ESPRESSIF_LDO),y)
 	CHIP_CSRCS += esp_ldo.c
 endif
 
-ifeq ($(CONFIG_ESPRESSIF_MIPI_DSI),y)
-	CHIP_CSRCS += esp_mipi_dsi.c
-endif
-
 ifeq ($(CONFIG_ESP_SDM),y)
 	CHIP_CSRCS += esp_sdm.c
 endif
@@ -170,10 +166,6 @@ endif
 
 ifeq ($(CONFIG_ESP_MCPWM),y)
 	CHIP_CSRCS += esp_mcpwm.c
-endif
-
-ifeq ($(CONFIG_ESPRESSIF_EMAC),y)
-	CHIP_CSRCS += esp_emac.c
 endif
 
 ifeq ($(CONFIG_COMP),y)

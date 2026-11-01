@@ -29,7 +29,7 @@
 #include <debug.h>
 #include <errno.h>
 
-#include "espressif/esp_emac.h"
+#include "drivers/esp_emac.h"
 #include "espressif/esp_hr_timer.h"
 
 #include "esp32p4-function-ev-board.h"

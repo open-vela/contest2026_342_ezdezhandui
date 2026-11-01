@@ -14596,7 +14596,25 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
    已无任何构建引用）删除；`vendor/espressif/chips/esp32p4/nuttx_build/CMakeLists.txt` 里
    指向旧位置的两处路径改到 `nuttx/arch/risc-v/src/esp32p4/esp_hosted/...`
    （该文件不参与 `build.sh` 的构建，也不进作品仓，属整理性质）。
-3. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，
+3. **交付范围纠错（2026-11-01 晚）**：上一步曾把 `arch/.../common/espressif/` **整目录**
+   从交付里排除，导致 131 个共享层文件不再进作品仓（提交里表现为 510 个删除）。
+   工作区文件**从未被删**（67 个 `.c` 都在），manifest 也只能 copy/link、**不能删除**；
+   但交付会缺 P4 端口的共享层改动。已恢复为**完整交付**（`nuttx` 554 文件、共享层 131 文件、
+   删除 0），排除清单只在显式 `--p4-only` 时启用。
+4. **归属判定的可靠依据（本轮查清）**：
+   - `git fetch openvela` 取到的是 **`openvela/dev`**（2026-10-27）；本地 HEAD 属于
+     **`openvela/dev-ai-contest-2026`**，也就是本项目的分支 —— 所以 `git status` 的差分
+     就是"本项目相对它的改动"✔；
+   - 由此确认：`esp_i2s.c`、`esp_emac.c`、`esp_adc.c`、`esp_touch.c`、`esp_mipi_dsi.c`、
+     `esp_lirc.c`、`esp_nxdiag.c`、`esp_csi.c`、`esp_dedic_gpio.c` 在 `openvela/dev` 里
+     **一个都没有**，且在本仓为 **untracked** ⇒ 它们是**本项目的 P4 驱动**，必须保留在交付里；
+   - 反例：`esp_gpio.c` / `esp_spi.c` / `esp_rmt.c` / `esp_temperature_sensor.c` 是
+     **tracked**（上游文件，只是被 vendor drop 更新过）⇒ 不能"搬走"（manifest 无法表达删除）。
+5. **下一步（若继续做归属）**：把上面那批 **untracked 的 P4 驱动**（连同头文件）搬进
+   `arch/risc-v/src/esp32p4/drivers/`，在 P4 的 `Make.defs`/`CMakeLists.txt` 里加源与 include；
+   untracked 文件搬走**不会**在 manifest 里产生删除条目（已验证：SDIO 集群 380 个文件搬迁后
+   `--check` 通过）。tracked 的共享文件保持原样交付。
+6. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，
    走错会退回 make 并在 `nuttx/` 源码树留下 `Make.defs`、`include/arch` 等残留，
    下一次 CMake 配置会依次报 `Please distclean previous make build` 和
    `Stale artifacts from a previous Kconfig-based Make build`（按提示删掉即可；

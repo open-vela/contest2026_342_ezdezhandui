@@ -30,12 +30,76 @@
 import argparse
 import os
 import re
+import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WS = os.environ.get("OPENVELA_WS", "/home/ez/share/openvela")
 XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 # 作品仓内目录 -> openvela 工作区目标前缀
+# ── 公共层（common/espressif）最小交付集 ──────────────────────────────────
+# 依据：应用构建图里真正编译的源文件 + 这些编译单元的 -MM 头闭包 + 构建文件
+# （Kconfig/Make.defs/CMakeLists.txt/Bootloader.*/Wireless.*/esp_ulp.*/ulp*）。
+# 其余文件既不被编译、也不被 include：评审端用基线版本即可。
+# 实测（2026-11-01）：把非必需集 67 个文件还原成基线/移走后，应用构建 3 秒通过
+# （证明确实不在构建图中），并烧写真机复验通过（MCUboot + NSH + connected +
+# DhcpDnsStatus link=1 dhcp=1 ip=192.168.1.9 + wlan0 192.168.1.9）。
+# 重新计算：python3 tools/engineering/shared_minimal.py（需先构建一次主板）
+SHARED_MINIMAL = {
+    "Bootloader.c",
+    "Bootloader.cmake",
+    "Bootloader.mk",
+    "CMakeLists.txt",
+    "Kconfig",
+    "Make.defs",
+    "Wireless.cmake",
+    "Wireless.mk",
+    "chip.h",
+    "esp_allocateheap.c",
+    "esp_config.h",
+    "esp_ets_timer_legacy.c",
+    "esp_gpio.c",
+    "esp_gpio.h",
+    "esp_head.S",
+    "esp_hr_timer.h",
+    "esp_i2c.c",
+    "esp_i2c.h",
+    "esp_idle.c",
+    "esp_irq.c",
+    "esp_irq.h",
+    "esp_ldo.c",
+    "esp_ldo.h",
+    "esp_libc_stubs.c",
+    "esp_libc_stubs.h",
+    "esp_lowputc.c",
+    "esp_lowputc.h",
+    "esp_memorymap.h",
+    "esp_pm.h",
+    "esp_random.c",
+    "esp_rtc_gpio.c",
+    "esp_rtc_gpio.h",
+    "esp_serial.c",
+    "esp_start.c",
+    "esp_start.h",
+    "esp_systemreset.c",
+    "esp_systemreset.h",
+    "esp_timer_adapter.c",
+    "esp_timer_adapter.h",
+    "esp_timerisr.c",
+    "esp_ulp.cmake",
+    "esp_ulp.mk",
+    "esp_usbserial.h",
+    "esp_vectors.S",
+    "ulp.cmake",
+    "ulp_makefile",
+}
+
+# 永不交付（公共层里属于本项目的兼容副本；P4 侧 esp_hosted/compat/platform_include
+# 已有同名文件且在 include 路径上，共享层没有任何构建文件引用它）
+NEVER_DELIVER = {
+    "nuttx/arch/risc-v/src/common/espressif/platform_include/sys/lock.h",
+}
+
 # 只读保护区（作品仓内路径）：另一条对话在开发的模拟器 UI 及其 sim/emulator 侧配置。
 # 它们**绝不进本仓交付**——copyfile 部署会把旧副本盖回别人的工作区。
 PROTECTED_REPO_PATHS = (
@@ -186,6 +250,10 @@ def linkfile_groups(entries, threshold=20):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只校验不写入")
+    ap.add_argument("--check-revision", action="store_true",
+                    help="只校验 revision 是否等于本仓当前 HEAD")
+    ap.add_argument("--no-shared-minimal", action="store_true",
+                    help="关闭公共层最小交付集（回退为交付全部公共层文件）")
     ap.add_argument("--linkfile-threshold", type=int, default=20,
                     help="自包含子树文件数达到该值时改用一条 <linkfile>（默认 20）")
     ap.add_argument("--no-linkfile", action="store_true",
@@ -206,6 +274,23 @@ def main():
 
     with open(XML, encoding="utf-8") as f:
         lines = f.read().split("\n")
+
+    # ── revision 自动维护 + 清理孤立元素 ───────────────────────────────────
+    head = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    proj_re = re.compile(r'(<project\s+path="contest2026_342_ezdezhandui"[^>]*?revision=")([0-9a-f]+)(")')
+    cur = proj_re.search("\n".join(lines))
+    cur_rev = cur.group(2) if cur else None
+    if args.check_revision:
+        if cur_rev != head:
+            print("❌ revision 陈旧: %s != HEAD %s" % (cur_rev, head))
+            return 1
+        print("✅ revision == HEAD (%s)" % head[:12])
+        return 0
+
+    # 孤立 <remote name="ezxu">（没有任何 project 引用）与失效注释
+    lines = [l for l in lines if 'name="ezxu"' not in l]
+    lines = [l for l in lines if "AI 开发技能集" not in l and "供评审直接阅读本项目的 AI Coding" not in l]
 
     first = next(i for i, l in enumerate(lines) if COPYFILE_RE.match(l))
     LINKFILE_RE = re.compile(r'(\s*)<linkfile src="([^"]+)" dest="([^"]+)"\s*/>')
@@ -236,6 +321,24 @@ def main():
               and d not in wanted_dests]
 
     wanted = tree_entries()
+
+    # ── 公共层最小交付集 + 永不交付清单 ─────────────────────────────────────
+    SHARED_PREFIX = "nuttx/arch/risc-v/src/common/espressif/"
+    if not args.no_shared_minimal:
+        kept2, dropped_shared = [], 0
+        for src, dest in wanted:
+            if src in NEVER_DELIVER:
+                dropped_shared += 1
+                continue
+            if src.startswith(SHARED_PREFIX):
+                base = src[len(SHARED_PREFIX):]
+                if "/" not in base and base not in SHARED_MINIMAL:
+                    dropped_shared += 1
+                    continue
+            kept2.append((src, dest))
+        if dropped_shared:
+            print("公共层最小集: 不交付 %d 个公共层文件（评审端用基线版本）" % dropped_shared)
+        wanted = kept2
 
     # ── 混合策略：自包含子树用一条 <linkfile>，其余逐文件 <copyfile> ──────────
     links = [] if args.no_linkfile else linkfile_groups(wanted, args.linkfile_threshold)
@@ -348,6 +451,11 @@ def main():
 
     out = [l for l in lines[:first]
            if not (LINKFILE_RE.match(l) and ours(LINKFILE_RE.match(l).group(2)))]
+    if head and cur_rev != head:
+        # project 元素跨两行写（path/name 一行、revision 一行），必须整篇替换
+        text = proj_re.sub(lambda m: m.group(1) + head + m.group(3), "\n".join(out))
+        out = text.split("\n")
+        print("revision 已更新: %s -> %s" % ((cur_rev or "?")[:12], head[:12]))
     out += ['    <linkfile src="%s" dest="%s"/>' % (r, d) for r, d, _n in links]
     out += ['    <copyfile src="%s" dest="%s"/>' % (s, d) for s, d in wanted]
     out += ['    <copyfile src="%s" dest="%s"/>' % (s, d) for s, d in extras]

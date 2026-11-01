@@ -49,6 +49,27 @@ PROTECTED = [
     "vendor/openvela",
 ]
 
+# 有意不交付的公共层文件（见 gen_manifest_copyfiles.py 的 SHARED_MINIMAL /
+# NEVER_DELIVER）：它们既不被编译、也不被 include，评审端用基线版本即可。
+# 这里从"未交付改动"里剔除，避免把有意设计报成问题。
+import re as _re
+
+
+def _shared_minimal():
+    gen = os.path.join(REPO, "tools/engineering/gen_manifest_copyfiles.py")
+    try:
+        text = open(gen, encoding="utf-8").read()
+    except OSError:
+        return set(), set()
+    m = _re.search(r"SHARED_MINIMAL = \{(.*?)\}", text, _re.S)
+    keep = set(_re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+    n = _re.search(r"NEVER_DELIVER = \{(.*?)\}", text, _re.S)
+    never = set(_re.findall(r'"([^"]+)"', n.group(1))) if n else set()
+    return keep, never
+
+
+SHARED_KEEP, SHARED_NEVER = _shared_minimal()
+
 # 构建/工具噪声：既不该进交付，也不值得报成"未交付改动"
 NOISE_PREFIXES = (
     "build-esp32p4-bootloader/", "build-", "cmake_out/", "out/",
@@ -150,6 +171,21 @@ def under_protected(path):
     return any(path == p or path.startswith(p + "/") for p in PROTECTED)
 
 
+SHARED_PREFIX = "nuttx/arch/risc-v/src/common/espressif/"
+
+
+def is_intentional_undelivered(proj, rel):
+    """公共层里"有意不交付"的文件（最小集之外的直属文件 + NEVER_DELIVER）。"""
+    full = proj + "/" + rel
+    if full in SHARED_NEVER:
+        return True
+    if full.startswith(SHARED_PREFIX):
+        base = full[len(SHARED_PREFIX):]
+        if "/" not in base and base not in SHARED_KEEP:
+            return True
+    return False
+
+
 def is_noise(rel):
     if any(rel.startswith(p) for p in NOISE_PREFIXES):
         return True
@@ -185,6 +221,9 @@ def check_undelivered(pairs):
         uncovered, protected_dirty, noise = [], [], 0
         for p in changed:
             if is_noise(p):
+                noise += 1
+                continue
+            if is_intentional_undelivered(proj, p):
                 noise += 1
                 continue
             if touches_protected(proj, p):

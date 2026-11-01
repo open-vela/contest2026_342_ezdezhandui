@@ -55,3 +55,27 @@ vendor/openvela
 ```
 
 对账与受控同步见 `tools/engineering/check_consistency.py` 与 `sync_and_restore.sh`。
+
+## 公共层（`common/espressif`）最小交付集
+
+**原则**：公共层的改动一律挪进独立文件（P4 侧 `arch/risc-v/src/esp32p4/**`）；只有当基线版本会导致构建/启动失败（真 BUG）时才在公共层保留交付。当前**例外清单为空**。
+
+**判定依据**（脚本可复跑：`tools/engineering/shared_minimal.py`）：
+
+1. 应用构建图（`build.ninja`）里真正编译的公共层源文件：**19 个**；
+2. 这些编译单元 + 全部 P4 编译单元跑 `-MM` 得到的直属公共层头闭包：**16 个**；
+3. 公共层构建文件（`Kconfig`/`Make.defs`/`CMakeLists.txt`/`Bootloader.*`/`Wireless.*`/`esp_ulp.*`/`ulp*`）：**11 个**；
+4. ⇒ 最小集 **46 个**；不交付 **67 个**（既不被编译、也不被 include，评审端用基线版本）。
+
+**永不交付**：`common/espressif/platform_include/sys/lock.h`（本项目新增的兼容副本；P4 侧 `esp32p4/esp_hosted/compat/platform_include/sys/lock.h` 内容相同且在 include 路径上，共享层没有任何构建文件引用它）。
+
+**实测验证（2026-11-01）**：把这 67 个文件在工作区还原成基线版本（tracked 用 `git checkout HEAD --`，untracked 移走）后：
+
+- 应用构建 3 秒通过 ⇒ 证明确实**不在构建图中**；
+- 烧写（含 MCUboot 引导器路径）后真机三项复现：`MCUboot` → `NuttShell`、`connected to "Hello_World_2.4G" rssi=-49`、`DhcpDnsStatus iface=0 link=1 dhcp=1 ip=192.168.1.9`、`wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1`（证据目录 `logs/20261101-211034_shared-minimal`）。
+
+**结果**：manifest 从 231 条 copyfile 降到 **163 条**（另有 3 条 linkfile）；公共层条目 113 → **45**，且其中**没有任何我们改过的文件**。
+
+**残余风险**：若评审端打开了某个我们关闭的 `CONFIG_ESPRESSIF_*`，被裁掉的文件会退回基线版本 —— 该功能可能不可用，但**不会导致构建失败**（基线版本存在）。
+
+**回退**：`python3 tools/engineering/gen_manifest_copyfiles.py --no-shared-minimal`（一条命令恢复交付全部公共层文件）。

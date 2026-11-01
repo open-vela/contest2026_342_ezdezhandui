@@ -8,14 +8,11 @@
   -->
   <include name="openvela.xml"/>
 
-  <!-- AI 开发技能集（本队 fork 的 openvela AI Skills）：检出到工作区 .agents/，
-       供评审直接阅读本项目的 AI Coding 开发资产（含 contest-log-collector 等） -->
-  <remote fetch="https://github.com/ez-xu/" name="ezxu"/>
 
   <!-- revision 节点锁定（SHA）: 固定到含 copyfile 重定向的提交, 避免 repo sync
        按 default(dev-ai-contest-2026) 退回无 copyfile 旧版。更新: rev-parse fix-clic-interrupt -->
   <project path="contest2026_342_ezdezhandui" name="contest2026_342_ezdezhandui"
-         revision="5044ded162ad3b100590d3692d3d6a36c7574ea8">
+         revision="f7fb38fb11c21ae91c394e4fac1f2ad834645e91">
     <linkfile src="nuttx/arch/risc-v/src/esp32p4" dest="nuttx/arch/risc-v/src/esp32p4"/>
     <linkfile src="board/esp32p4/esp32p4-function-ev-board" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board"/>
     <linkfile src="board/esp32p4/esp32p4-tab5" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5"/>
@@ -52,109 +49,41 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.mk" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.mk"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/chip.h" dest="nuttx/arch/risc-v/src/common/espressif/chip.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_aes.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_aes.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_aes.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_aes.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_allocateheap.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_allocateheap.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ana_cmpr.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ana_cmpr.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ana_cmpr.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ana_cmpr.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_config.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_config.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_crypto.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_crypto.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_efuse.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_efuse.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_efuse.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_efuse.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ets_timer_legacy.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ets_timer_legacy.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_extraheaps.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_extraheaps.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gpio.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_gpio.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gpio.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_gpio.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_gptimer.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_head.S" dest="nuttx/arch/risc-v/src/common/espressif/esp_head.S"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hr_timer.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hr_timer.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c_bitbang.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c_bitbang.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c_bitbang.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c_bitbang.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_idle.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_idle.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_irq.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_irq.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_irq.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_irq.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ldo.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ldo.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ldo.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ldo.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ledc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ledc.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ledc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ledc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lp_mailbox.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_lp_mailbox.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lp_mailbox.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_lp_mailbox.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_mcpwm.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_mcpwm.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_mcpwm.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_mcpwm.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_memorymap.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_memorymap.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_pcnt.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_pcnt.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_pcnt.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_pcnt.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_pm.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_pm.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_pm.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_pm.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_pm_initialize.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_pm_initialize.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_qencoder.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_qencoder.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_qencoder.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_qencoder.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_random.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_random.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_retentionheap.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_retentionheap.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_retentionheap.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_retentionheap.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rmt.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_rmt.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rmt.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_rmt.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rtc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_rtc.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rtc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_rtc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sdm.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_sdm.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sdm.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_sdm.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_serial.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_serial.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sha.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_sha.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_sha.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_sha.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spi.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_spi.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spi.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_spi.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spi_bitbang.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_spi_bitbang.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spi_bitbang.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_spi_bitbang.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spi_slave.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_spi_slave.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spiflash.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_spiflash.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spiflash.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_spiflash.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spiflash_mtd.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_spiflash_mtd.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_spiflash_mtd.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_spiflash_mtd.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_start.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_start.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_start.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_start.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_temperature_sensor.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_temperature_sensor.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_temperature_sensor.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_temperature_sensor.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_tickless.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_tickless.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_tickless.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_tickless.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timerisr.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_timerisr.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_twai.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_twai.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_twai.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_twai.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ulp.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ulp.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ulp.cmake" dest="nuttx/arch/risc-v/src/common/espressif/esp_ulp.cmake"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ulp.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ulp.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ulp.mk" dest="nuttx/arch/risc-v/src/common/espressif/esp_ulp.mk"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_usbserial.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_usbserial.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_usbserial.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_usbserial.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_vectors.S" dest="nuttx/arch/risc-v/src/common/espressif/esp_vectors.S"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wdt.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_wdt.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wdt.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_wdt.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wifi_api.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_wifi_api.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wifi_api.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_wifi_api.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wifi_event_handler.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_wifi_event_handler.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wifi_utils.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_wifi_utils.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wifi_utils.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_wifi_utils.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wlan_netdev.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_wlan_netdev.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_wlan_netdev.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_wlan_netdev.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ws2812.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ws2812.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ws2812.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ws2812.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/platform_include/sys/lock.h" dest="nuttx/arch/risc-v/src/common/espressif/platform_include/sys/lock.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/ulp.cmake" dest="nuttx/arch/risc-v/src/common/espressif/ulp.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/ulp_makefile" dest="nuttx/arch/risc-v/src/common/espressif/ulp_makefile"/>
     <copyfile src="nuttx/arch/risc-v/src/common/riscv_doirq.c" dest="nuttx/arch/risc-v/src/common/riscv_doirq.c"/>

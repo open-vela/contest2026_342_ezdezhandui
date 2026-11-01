@@ -65,10 +65,8 @@ python3 tools/test/board.py run "deskmate"
 
 ```bash
 cd contest2026_342_ezdezhandui
-tools/test/sim_deskmate.sh                 # 配置 + 构建 + 运行 + 断言 + 归档证据（约 3 秒，增量构建后）
-tools/test/sim_deskmate.sh --no-build      # 复用已有构建
-tools/test/sim_deskmate.sh --tour          # 巡览演示：逐页截图 + 拼 deskmate_tour.gif（无断言）
-tools/test/sim_deskmate.sh --out <目录>    # 证据归档目录（默认 /tmp/deskmate-runs）
+tools/test/sim_deskmate.sh            # 配置 + 构建 + 运行 + 断言 + 归档证据
+tools/test/sim_deskmate.sh --no-build # 复用已有构建
 ```
 
 产物在 `logs/sim-deskmate/<时间戳>/`：`console.log`、`dm_home.png`、`dm_camera.png`、

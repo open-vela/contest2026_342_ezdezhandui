@@ -1,0 +1,6 @@
+RESULT: PASS
+reason: all assertions passed
+ready:  DM-READY display=mem 1024x600 bpp=16 lvgl=
+checks: 7 pass / 0 fail
+result: DM-SELFTEST RESULT: PASS (7/7)
+artifact_dir: /home/ez/share/openvela/contest2026_342_ezdezhandui/logs/sim-deskmate/20261101-185019

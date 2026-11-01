@@ -21,8 +21,17 @@ if(CONFIG_EXAMPLES_DESKMATE)
     SRCS
     deskmate_main.c
     src/dm_selftest.c
+    src/agent/dm_agent.c
+    src/hal/dm_camera.c
     src/hal/dm_display.c
+    src/hal/dm_net.c
     src/hal/dm_touch.c
-    src/ui/dm_ui.c)
+    src/ui/dm_page_camera.c
+    src/ui/dm_page_chat.c
+    src/ui/dm_page_home.c
+    src/ui/dm_page_net.c
+    src/ui/dm_page_settings.c
+    src/ui/dm_ui.c
+    src/ui/dm_widgets.c)
 
 endif()

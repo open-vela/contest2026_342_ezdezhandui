@@ -90,6 +90,29 @@
 #  define DM_EXIT_AFTER  0
 #endif
 
+/* Agent bridge default mode and endpoint */
+
+#ifdef CONFIG_EXAMPLES_DESKMATE_AGENT_MODE
+#  define DM_AGENT_MODE CONFIG_EXAMPLES_DESKMATE_AGENT_MODE
+#else
+#  define DM_AGENT_MODE "mock"
+#endif
+
+/* Camera preview geometry (both the page and the self-test use it) */
+
+#define DM_CAMERA_PREVIEW_W 480
+#define DM_CAMERA_PREVIEW_H 270
+
+/* Simulator convenience: write a wifi_sim BSS table before the UI starts, so
+ * the wireless page has something to list on a host with no radio.
+ */
+
+#ifdef CONFIG_EXAMPLES_DESKMATE_WIFI_BSS
+#  define DM_WIFI_BSS CONFIG_EXAMPLES_DESKMATE_WIFI_BSS
+#else
+#  define DM_WIFI_BSS ""
+#endif
+
 /* Snapshot directory used when no explicit path is given */
 
 #ifndef DM_SNAP_DIR

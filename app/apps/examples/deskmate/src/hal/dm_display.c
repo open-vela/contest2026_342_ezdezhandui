@@ -466,6 +466,55 @@ int dm_display_stats(struct dm_display_stats_s *stats)
   return 0;
 }
 
+uint32_t dm_display_frame_hash(void)
+{
+  const uint8_t *pixels;
+  uint32_t hash = 2166136261u;
+  int width;
+  int height;
+  int stride;
+  int bpp;
+
+  if (!g_created || g_metrics.pixels == NULL)
+    {
+      return 0;
+    }
+
+  pixels = g_metrics.pixels;
+  width  = g_metrics.width;
+  height = g_metrics.height;
+  stride = g_metrics.stride;
+  bpp    = g_metrics.bpp;
+
+  for (int y = 0; y < height; y += 11)
+    {
+      const uint8_t *row = pixels + (size_t)y * stride;
+
+      for (int x = 0; x < width; x += 11)
+        {
+          uint8_t v;
+
+          if (bpp == 16)
+            {
+              v = row[(size_t)x * 2];
+            }
+          else if (bpp == 32)
+            {
+              v = row[(size_t)x * 4 + 1];
+            }
+          else
+            {
+              v = row[x];
+            }
+
+          hash ^= v;
+          hash *= 16777619u;
+        }
+    }
+
+  return hash;
+}
+
 void dm_display_destroy(void)
 {
   if (!g_created)

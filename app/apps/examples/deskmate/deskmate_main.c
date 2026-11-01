@@ -42,10 +42,13 @@
 
 #include <lvgl/lvgl.h>
 
+#include "agent/dm_agent.h"
 #include "dm_config.h"
 #include "dm_log.h"
 #include "dm_selftest.h"
+#include "hal/dm_camera.h"
 #include "hal/dm_display.h"
+#include "hal/dm_net.h"
 #include "hal/dm_touch.h"
 #include "ui/dm_ui.h"
 
@@ -66,8 +69,10 @@
 static const char *g_usage =
   "Usage: " DM_PROGNAME " [options]\n"
   "  --selftest          run the headless scenario, print the report and exit\n"
-  "  --snap <path>       snapshot destination (default " DM_SNAP_HOST_DIR "/dm_home.bin)\n"
+  "  --snap <path>       snapshot destination (default " DM_SNAP_HOST_DIR "/dm_selftest.bin)\n"
   "  --hostfs <dir>      mount this host directory at /host (simulator)\n"
+  "  --agent <mode>      mock | ws | off\n"
+  "  --page <id|index>   start on a page\n"
   "  --exit-after <sec>  leave the UI loop after <sec> seconds\n"
   "  --help              this text\n";
 
@@ -120,6 +125,43 @@ static void dm_mount_hostfs(const char *path)
 #endif
 }
 
+/* Simulator convenience: hand the wifi_sim driver a BSS table so the wireless
+ * page has access points to list on a host without a radio.  The file format
+ * is the one nttx/drivers/net/wifi_sim.c parses:
+ *
+ *     bssid,freq,signal,security,ssid,password
+ */
+
+static void dm_write_wifi_bss(void)
+{
+  static const char bss[] =
+    "02:00:00:00:01:00,2412,-42,[WPA2-PSK],DeskMate-Lab,lab-pass-123\n"
+    "02:00:00:00:02:00,2437,-58,[WPA2-PSK],openvela-dev,dev-pass-456\n"
+    "02:00:00:00:03:00,2462,-71,[ESS],Guest-Open,\n";
+
+  FILE *fp;
+
+  if (DM_WIFI_BSS[0] == '\0')
+    {
+      return;
+    }
+
+  (void)mkdir("/tmp", 0777);
+  (void)mkdir("/tmp/wifi", 0777);
+
+  fp = fopen(DM_WIFI_BSS, "w");
+  if (fp == NULL)
+    {
+      DM_WARN("wifi: cannot write the BSS table %s (%d)", DM_WIFI_BSS, errno);
+      return;
+    }
+
+  (void)fwrite(bss, 1, sizeof(bss) - 1, fp);
+  fclose(fp);
+
+  DM_LOG("wifi: BSS table written to %s", DM_WIFI_BSS);
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -128,6 +170,8 @@ int main(int argc, FAR char *argv[])
 {
   const char *snap_path = NULL;
   const char *hostfs_path = DM_HOSTFS_PATH;
+  const char *agent_mode = DM_AGENT_MODE;
+  const char *start_page = NULL;
   bool selftest = false;
   unsigned int exit_after_ms = (unsigned int)DM_EXIT_AFTER * 1000u;
   unsigned int start_ms;
@@ -148,6 +192,14 @@ int main(int argc, FAR char *argv[])
         {
           hostfs_path = argv[++i];
         }
+      else if (strcmp(argv[i], "--agent") == 0 && i + 1 < argc)
+        {
+          agent_mode = argv[++i];
+        }
+      else if (strcmp(argv[i], "--page") == 0 && i + 1 < argc)
+        {
+          start_page = argv[++i];
+        }
       else if (strcmp(argv[i], "--exit-after") == 0 && i + 1 < argc)
         {
           exit_after_ms = (unsigned int)atoi(argv[++i]) * 1000u;
@@ -167,6 +219,7 @@ int main(int argc, FAR char *argv[])
          (int)selftest);
 
   dm_mount_hostfs(hostfs_path);
+  dm_write_wifi_bss();
 
 #if defined(CONFIG_BOARDCTL) && !defined(CONFIG_NSH_ARCHINIT)
   boardctl(BOARDIOC_INIT, 0);
@@ -195,22 +248,36 @@ int main(int argc, FAR char *argv[])
       return 1;
     }
 
+  (void)dm_agent_init(agent_mode);
+  (void)dm_net_refresh();
+  (void)dm_camera_create(DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H);
+
   if (dm_ui_create() != 0)
     {
       DM_ERR("UI build failed");
+      dm_camera_destroy();
+      dm_agent_destroy();
       dm_display_destroy();
       lv_deinit();
       return 1;
     }
 
+  if (start_page != NULL)
+    {
+      (void)dm_ui_goto_id(start_page);
+    }
+
   {
     const struct dm_display_metrics_s *metrics = dm_display_metrics();
 
-    printf("DM-READY display=%s %dx%d bpp=%d lvgl=%s\n",
+    printf("DM-READY display=%s %dx%d bpp=%d lvgl=%s agent=%s camera=%s "
+           "page=%s\n",
            metrics != NULL ? metrics->backend : "none",
            metrics != NULL ? metrics->width : 0,
            metrics != NULL ? metrics->height : 0,
-           metrics != NULL ? metrics->bpp : 0, lv_version_info());
+           metrics != NULL ? metrics->bpp : 0, lv_version_info(),
+           dm_agent_state(), dm_camera_backend(),
+           dm_ui_current_id() != NULL ? dm_ui_current_id() : "?");
     fflush(stdout);
   }
 
@@ -225,6 +292,7 @@ int main(int argc, FAR char *argv[])
       for (i = 0; i < 4; i++)
         {
           lv_timer_handler();
+          dm_ui_tick();
           usleep(5000);
         }
     }
@@ -245,6 +313,7 @@ int main(int argc, FAR char *argv[])
 
       if (selftest && !dm_selftest_active())
         {
+          dm_selftest_finish();
           result = dm_selftest_result() == 0 ? 0 : 1;
           break;
         }
@@ -267,6 +336,8 @@ int main(int argc, FAR char *argv[])
       usleep(idle * 1000);
     }
 
+  dm_camera_destroy();
+  dm_agent_destroy();
   dm_display_destroy();
   lv_deinit();
 

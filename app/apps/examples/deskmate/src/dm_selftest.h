@@ -45,6 +45,12 @@ void dm_selftest_step(void);
 
 bool dm_selftest_active(void);
 
+/* Print the final PASS/FAIL line.  Call once the scenario finished; calling it
+ * twice is harmless.
+ */
+
+void dm_selftest_finish(void);
+
 /* Result of a finished run: 0 = all checks passed.  Only meaningful once
  * dm_selftest_active() returned false.
  */

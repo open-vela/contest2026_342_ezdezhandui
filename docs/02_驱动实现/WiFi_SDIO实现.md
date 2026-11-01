@@ -14659,7 +14659,9 @@ python3 tools/engineering/verify_migration.py --compile   # V2 全量 -c 编译�
 
 本机做**全新 out-of-tree 构建**时，CMake 会去 clone `esp-hal-3rdparty`（约 **700 MB**，实测 ~40–50 MB/min）。因此：
 
-- 新增的 `verify-drivers` 整机构建：clone 完成后可正常构建（hal 树 + `_deps/.../populate-stamp` 已缓存，重跑会跳过 clone）；
+- 新增的 `verify-drivers` 整机构建：**clone 已实测成功**（`[9/9] Completed 'esp_hal_3rdparty-populate'`，
+  检出 `8d0a8989100`），但该配置与主板不同 → ccache 命中率低，整机要编 **约 2542 个目标**
+  （实测 5 分钟只到 88/2542），本轮未等它跑完，保留构建目录与已缓存的 hal 树，重跑会跳过 clone；
 - **另两块 P4 板（tab5、pico）的构建**与**主板的干净重建**同理，需要各自完成一次 clone 或预热缓存；本次未跑完，作为后续项记录（命令：`./build.sh vendor/espressif/boards/esp32p4/esp32p4-tab5/configs/nsh --cmake -j8`，pico 同理；跑前/跑后按 BZ.6 还原 `arch/risc-v/include/board` 软链）。
 
    - 搬迁时把 `#include "espressif/esp_nxdiag.h"` 改为同目录 `"esp_nxdiag.h"`（新目录已在 include 路径上）。

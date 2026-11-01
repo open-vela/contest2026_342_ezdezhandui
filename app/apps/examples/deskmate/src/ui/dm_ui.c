@@ -3,10 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * The DeskMate widget tree.  Milestone 1 builds the home page: a status bar, a
- * system card, an interactive tap card that proves touch input reaches the
- * widgets, and a footer.  Later milestones add the camera, chat, network and
- * settings pages on top of the same helpers.
+ * The DeskMate shell: status bar, page area, tab bar.
+ *
+ * Everything happens on the LVGL thread (the application's single loop), so no
+ * widget is ever touched from another thread.
  ****************************************************************************/
 
 /****************************************************************************
@@ -21,107 +21,98 @@
 
 #include <lvgl/lvgl.h>
 
+#include "agent/dm_agent.h"
 #include "dm_config.h"
 #include "dm_log.h"
 #include "hal/dm_display.h"
 #include "ui/dm_i18n.h"
+#include "ui/dm_page.h"
+#include "ui/dm_theme.h"
 #include "ui/dm_ui.h"
+#include "ui/dm_widgets.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
-#if defined(LV_FONT_MONTSERRAT_28) && LV_FONT_MONTSERRAT_28
-#  define DM_FONT_TITLE (&lv_font_montserrat_28)
-#else
-#  define DM_FONT_TITLE LV_FONT_DEFAULT
-#endif
-
-#if defined(LV_FONT_MONTSERRAT_20) && LV_FONT_MONTSERRAT_20
-#  define DM_FONT_BODY (&lv_font_montserrat_20)
-#else
-#  define DM_FONT_BODY LV_FONT_DEFAULT
-#endif
-
-#define DM_COL_BG       0x0f1319
-#define DM_COL_CARD     0x1b2230
-#define DM_COL_CARD2    0x222c3d
-#define DM_COL_ACCENT   0x4c9aff
-#define DM_COL_TEXT     0xe8eef6
-#define DM_COL_MUTED    0x8d9bb0
+#define DM_PAGE_COUNT 5
+#define DM_TOAST_TICKS 40          /* UI ticks a toast stays visible */
 
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
-static lv_obj_t *g_time_label;
-static lv_obj_t *g_uptime_label;
-static lv_obj_t *g_geo_label;
-static lv_obj_t *g_counter_label;
-static lv_obj_t *g_tap_button;
-static int       g_tap_count;
+static dm_page_t *g_pages[DM_PAGE_COUNT] =
+{
+  &dm_page_home,
+  &dm_page_camera,
+  &dm_page_chat,
+  &dm_page_net,
+  &dm_page_settings,
+};
+
+static int g_tab_index[DM_PAGE_COUNT] = { 0, 1, 2, 3, 4 };
+
+static lv_obj_t *g_screen;
+static lv_obj_t *g_content;
+static lv_obj_t *g_clock;
+static lv_obj_t *g_agent_badge;
+static lv_obj_t *g_page_title;
+static lv_obj_t *g_tabbar;
+static lv_obj_t *g_toast;
+static int g_current = -1;
+static int g_content_w;
+static int g_content_h;
+static int g_toast_ticks;
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
 
-static void dm_style_card(lv_obj_t *obj, lv_color_t bg)
+static void dm_ui_style_tab(lv_obj_t *btn, bool active)
 {
-  lv_obj_set_style_bg_color(obj, bg, 0);
-  lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_width(obj, 0, 0);
-  lv_obj_set_style_radius(obj, 12, 0);
-  lv_obj_set_style_pad_all(obj, 14, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(active ? DM_COL_ACCENT :
+                                              DM_COL_CARD), 0);
+  lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+
+  {
+    lv_obj_t *label = lv_obj_get_child(btn, 0);
+
+    if (label != NULL)
+      {
+        lv_obj_set_style_text_color(label, lv_color_hex(active ?
+                                                        DM_COL_ON_ACCENT :
+                                                        DM_COL_TEXT), 0);
+      }
+  }
 }
 
-static lv_obj_t *dm_label(lv_obj_t *parent, const char *text,
-                          const lv_font_t *font, lv_color_t colour)
+static void dm_ui_tab_cb(lv_event_t *event)
 {
-  lv_obj_t *label = lv_label_create(parent);
+  int index = *(int *)lv_event_get_user_data(event);
 
-  lv_label_set_text(label, text);
-  lv_obj_set_style_text_font(label, font, 0);
-  lv_obj_set_style_text_color(label, colour, 0);
-
-  return label;
-}
-
-static void dm_tap_event_cb(lv_event_t *event)
-{
-  lv_event_code_t code = lv_event_get_code(event);
-
-  if (code != LV_EVENT_CLICKED)
+  if (lv_event_get_code(event) != LV_EVENT_CLICKED)
     {
       return;
     }
 
-  g_tap_count++;
-
-  if (g_counter_label != NULL)
-    {
-      lv_label_set_text_fmt(g_counter_label, "%d %s", g_tap_count,
-                            DM_I18N_TAP_COUNT);
-    }
-
-  DM_LOG("ui: tap %d handled by the button", g_tap_count);
+  (void)dm_ui_goto(index);
 }
 
-static void dm_refresh_clock(void)
+static void dm_ui_set_clock(void)
 {
   time_t now = time(NULL);
   struct tm tm_buf;
   char text[32];
 
-  if (localtime_r(&now, &tm_buf) == NULL)
+  if (g_clock == NULL || localtime_r(&now, &tm_buf) == NULL)
     {
       return;
     }
 
-  strftime(text, sizeof(text), "%H:%M:%S", &tm_buf);
-
-  if (g_time_label != NULL)
+  if (strftime(text, sizeof(text), "%H:%M:%S", &tm_buf) > 0)
     {
-      lv_label_set_text(g_time_label, text);
+      lv_label_set_text(g_clock, text);
     }
 }
 
@@ -132,17 +123,9 @@ static void dm_refresh_clock(void)
 int dm_ui_create(void)
 {
   const struct dm_display_metrics_s *metrics = dm_display_metrics();
-  lv_obj_t *screen;
-  lv_obj_t *bar;
-  lv_obj_t *card;
-  lv_obj_t *title;
-  lv_obj_t *value;
   int width;
   int height;
-  int margin = 16;
-  int bar_h;
-  int card_h;
-  int y;
+  int i;
 
   if (metrics == NULL)
     {
@@ -153,171 +136,264 @@ int dm_ui_create(void)
   width  = metrics->width;
   height = metrics->height;
 
-  screen = lv_screen_active();
-  lv_obj_remove_style_all(screen);
-  lv_obj_set_style_bg_color(screen, lv_color_hex(DM_COL_BG), 0);
-  lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
-
-  /* Status bar ------------------------------------------------------------ */
-
-  bar_h = DM_STATUS_BAR_H;
-
-  bar = lv_obj_create(screen);
-  lv_obj_remove_style_all(bar);
-  lv_obj_set_pos(bar, 0, 0);
-  lv_obj_set_size(bar, width, bar_h);
-  lv_obj_set_style_bg_color(bar, lv_color_hex(DM_COL_CARD), 0);
-  lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
-  lv_obj_set_style_pad_left(bar, margin, 0);
-  lv_obj_set_style_pad_right(bar, margin, 0);
-
-  title = dm_label(bar, DM_I18N_APP_TITLE, DM_FONT_TITLE,
-                   lv_color_hex(DM_COL_TEXT));
-  lv_obj_align(title, LV_ALIGN_LEFT_MID, 0, 0);
-
-  g_time_label = dm_label(bar, "--:--:--", DM_FONT_BODY,
-                          lv_color_hex(DM_COL_ACCENT));
-  lv_obj_align(g_time_label, LV_ALIGN_RIGHT_MID, 0, 0);
-
-  /* System card ----------------------------------------------------------- */
-
-  y = bar_h + margin;
-  card_h = (height - y - DM_FOOTER_H - 2 * margin) * 3 / 5;
-  if (card_h < 120)
+  g_content_w = width;
+  g_content_h = height - DM_STATUS_H - DM_TABBAR_H;
+  if (g_content_h < 120)
     {
-      card_h = height - y - DM_FOOTER_H - 2 * margin;
-      if (card_h < 80)
-        {
-          card_h = height - y - margin;
-        }
+      g_content_h = height - DM_STATUS_H;
     }
 
-  card = lv_obj_create(screen);
-  lv_obj_remove_style_all(card);
-  lv_obj_set_pos(card, margin, y);
-  lv_obj_set_size(card, width - 2 * margin, card_h);
-  dm_style_card(card, lv_color_hex(DM_COL_CARD));
-  lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
-                        LV_FLEX_ALIGN_START);
-  lv_obj_set_style_pad_row(card, 6, 0);
+  g_screen = lv_screen_active();
+  lv_obj_remove_style_all(g_screen);
+  lv_obj_set_style_bg_color(g_screen, lv_color_hex(DM_COL_BG), 0);
+  lv_obj_set_style_bg_opa(g_screen, LV_OPA_COVER, 0);
 
-  dm_label(card, DM_I18N_SYSTEM_CARD, DM_FONT_BODY, lv_color_hex(DM_COL_ACCENT));
+  /* Status bar. */
 
-  g_geo_label = dm_label(card, "", DM_FONT_BODY, lv_color_hex(DM_COL_TEXT));
-  lv_label_set_text_fmt(g_geo_label, "%s %dx%d RGB565 (%s)",
-                        DM_I18N_DISPLAY, metrics->width, metrics->height,
-                        metrics->backend);
+  {
+    lv_obj_t *bar = lv_obj_create(g_screen);
 
-  value = dm_label(card, "", DM_FONT_BODY, lv_color_hex(DM_COL_MUTED));
-  lv_label_set_text_fmt(value, "%s %s", DM_I18N_LVGL, lv_version_info());
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_pos(bar, 0, 0);
+    lv_obj_set_size(bar, width, DM_STATUS_H);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(DM_COL_CARD), 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
 
-  value = dm_label(card, "", DM_FONT_BODY, lv_color_hex(DM_COL_MUTED));
-  lv_label_set_text_fmt(value, "%s %s %s", DM_I18N_BUILD, DM_APP_NAME,
-                        DM_APP_VERSION);
-
-  g_uptime_label = dm_label(card, "", DM_FONT_BODY, lv_color_hex(DM_COL_MUTED));
-  lv_label_set_text(g_uptime_label, DM_I18N_UPTIME ": 0 s");
-
-  /* Touch card ------------------------------------------------------------ */
-
-  y += card_h + margin;
-  card_h = height - DM_FOOTER_H - margin - y;
-  if (card_h < 96)
     {
-      card_h = 96;
+      lv_obj_t *title = dm_label_at(bar, DM_I18N_APP_TITLE, DM_FONT_BODY,
+                                    lv_color_hex(DM_COL_TEXT), DM_MARGIN, 16);
+
+      (void)title;
     }
 
-  card = lv_obj_create(screen);
-  lv_obj_remove_style_all(card);
-  lv_obj_set_pos(card, margin, y);
-  lv_obj_set_size(card, width - 2 * margin, card_h);
-  dm_style_card(card, lv_color_hex(DM_COL_CARD2));
+    g_page_title = dm_label_at(bar, "", DM_FONT_BODY,
+                               lv_color_hex(DM_COL_ACCENT), 0, 16);
+    lv_obj_align(g_page_title, LV_ALIGN_CENTER, 0, 0);
 
-  dm_label(card, DM_I18N_TOUCH_CARD, DM_FONT_BODY,
-           lv_color_hex(DM_COL_ACCENT));
+    g_agent_badge = dm_badge(bar, "agent: -", lv_color_hex(DM_COL_MUTED));
+    lv_obj_align(g_agent_badge, LV_ALIGN_RIGHT_MID, -170, 0);
 
-  g_tap_button = lv_button_create(card);
-  lv_obj_set_size(g_tap_button, 140, 52);
-  lv_obj_align(g_tap_button, LV_ALIGN_LEFT_MID, 0, 12);
-  lv_obj_set_style_bg_color(g_tap_button, lv_color_hex(DM_COL_ACCENT), 0);
-  lv_obj_set_style_radius(g_tap_button, 10, 0);
-  lv_obj_add_event_cb(g_tap_button, dm_tap_event_cb, LV_EVENT_CLICKED, NULL);
-
-  {
-    lv_obj_t *btn_label = dm_label(g_tap_button, DM_I18N_TAP_BUTTON,
-                                   DM_FONT_BODY, lv_color_hex(0x08131f));
-    lv_obj_center(btn_label);
+    g_clock = dm_label_at(bar, "--:--:--", DM_FONT_BODY,
+                          lv_color_hex(DM_COL_ACCENT), 0, 16);
+    lv_obj_align(g_clock, LV_ALIGN_RIGHT_MID, -DM_MARGIN, 0);
   }
 
-  g_counter_label = dm_label(card, "", DM_FONT_BODY, lv_color_hex(DM_COL_TEXT));
-  lv_label_set_text_fmt(g_counter_label, "0 %s", DM_I18N_TAP_COUNT);
-  lv_obj_align_to(g_counter_label, g_tap_button, LV_ALIGN_OUT_RIGHT_MID, 18, 0);
+  /* Page area. */
 
-  {
-    lv_obj_t *hint = dm_label(card, DM_I18N_TAP_HINT, LV_FONT_DEFAULT,
-                              lv_color_hex(DM_COL_MUTED));
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-  }
+  g_content = lv_obj_create(g_screen);
+  lv_obj_remove_style_all(g_content);
+  lv_obj_set_pos(g_content, 0, DM_STATUS_H);
+  lv_obj_set_size(g_content, width, g_content_h);
+  lv_obj_set_style_bg_opa(g_content, LV_OPA_TRANSP, 0);
+  lv_obj_clear_flag(g_content, LV_OBJ_FLAG_SCROLLABLE);
 
-  /* Footer ---------------------------------------------------------------- */
+  /* Tab bar. */
 
-  {
-    lv_obj_t *footer = dm_label(screen, DM_I18N_HOME "  -  "
-                                DM_I18N_APP_SUBTITLE, LV_FONT_DEFAULT,
-                                lv_color_hex(DM_COL_MUTED));
-    lv_obj_align(footer, LV_ALIGN_BOTTOM_LEFT, margin, -10);
-  }
+  g_tabbar = lv_obj_create(g_screen);
+  lv_obj_remove_style_all(g_tabbar);
+  lv_obj_set_pos(g_tabbar, 0, height - DM_TABBAR_H);
+  lv_obj_set_size(g_tabbar, width, DM_TABBAR_H);
+  lv_obj_set_style_bg_color(g_tabbar, lv_color_hex(DM_COL_CARD), 0);
+  lv_obj_set_style_bg_opa(g_tabbar, LV_OPA_COVER, 0);
+  lv_obj_set_style_pad_all(g_tabbar, 6, 0);
+  lv_obj_set_style_pad_column(g_tabbar, 6, 0);
+  lv_obj_set_flex_flow(g_tabbar, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(g_tabbar, LV_FLEX_ALIGN_SPACE_EVENLY,
+                        LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_clear_flag(g_tabbar, LV_OBJ_FLAG_SCROLLABLE);
 
-  dm_refresh_clock();
+  for (i = 0; i < DM_PAGE_COUNT; i++)
+    {
+      lv_obj_t *btn = lv_button_create(g_tabbar);
 
-  DM_LOG("ui: home page built (%d top-level objects)",
-         (int)lv_obj_get_child_count(screen));
+      lv_obj_set_size(btn, (width - 2 * DM_MARGIN) / DM_PAGE_COUNT - 8,
+                      DM_TABBAR_H - 12);
+      lv_obj_set_style_radius(btn, 8, 0);
+      lv_obj_add_event_cb(btn, dm_ui_tab_cb, LV_EVENT_CLICKED, &g_tab_index[i]);
+      dm_label(btn, g_pages[i]->title, DM_FONT_SMALL,
+               lv_color_hex(DM_COL_TEXT));
+      lv_obj_center(lv_obj_get_child(btn, 0));
+      dm_ui_style_tab(btn, false);
+    }
+
+  /* Toast (hidden until something proactive happens). */
+
+  g_toast = lv_label_create(g_screen);
+  lv_obj_set_style_text_font(g_toast, DM_FONT_SMALL, 0);
+  lv_obj_set_style_text_color(g_toast, lv_color_hex(DM_COL_ON_ACCENT), 0);
+  lv_obj_set_style_bg_color(g_toast, lv_color_hex(DM_COL_WARN), 0);
+  lv_obj_set_style_bg_opa(g_toast, LV_OPA_COVER, 0);
+  lv_obj_set_style_radius(g_toast, 8, 0);
+  lv_obj_set_style_pad_all(g_toast, 8, 0);
+  lv_obj_align(g_toast, LV_ALIGN_TOP_MID, 0, DM_STATUS_H + 8);
+  lv_obj_add_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
+
+  dm_ui_set_clock();
+
+  if (dm_ui_goto(0) != 0)
+    {
+      DM_ERR("ui: home page failed to build");
+      return -1;
+    }
+
+  DM_LOG("ui: shell built (%dx%d, %d pages, content %dx%d)", width, height,
+         DM_PAGE_COUNT, g_content_w, g_content_h);
   return 0;
 }
 
-void dm_ui_tick(void)
+int dm_ui_page_count(void)
 {
-  static unsigned int last_second;
-  struct timespec ts;
-  unsigned int now_s;
-
-  dm_refresh_clock();
-
-  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
-    {
-      return;
-    }
-
-  now_s = (unsigned int)ts.tv_sec;
-  if (now_s == last_second)
-    {
-      return;
-    }
-
-  last_second = now_s;
-
-  if (g_uptime_label != NULL)
-    {
-      lv_label_set_text_fmt(g_uptime_label, DM_I18N_UPTIME ": %u s", now_s);
-    }
+  return DM_PAGE_COUNT;
 }
 
-int dm_ui_tap_count(void)
+const char *dm_ui_page_id(int index)
 {
-  return g_tap_count;
+  if (index < 0 || index >= DM_PAGE_COUNT)
+    {
+      return NULL;
+    }
+
+  return g_pages[index]->id;
 }
 
-int dm_ui_tap_target(int *x, int *y)
+int dm_ui_page_index(const char *id)
 {
-  lv_area_t area;
+  int i;
 
-  if (g_tap_button == NULL)
+  if (id == NULL)
     {
       return -1;
     }
 
-  lv_obj_get_coords(g_tap_button, &area);
+  for (i = 0; i < DM_PAGE_COUNT; i++)
+    {
+      if (strcmp(g_pages[i]->id, id) == 0)
+        {
+          return i;
+        }
+    }
+
+  /* Allow the tab index to be given as a string. */
+
+  if (id[0] >= '0' && id[0] <= '9' && id[1] == '\0')
+    {
+      int index = id[0] - '0';
+
+      return (index < DM_PAGE_COUNT) ? index : -1;
+    }
+
+  return -1;
+}
+
+int dm_ui_current(void)
+{
+  return g_current;
+}
+
+const char *dm_ui_current_id(void)
+{
+  return dm_ui_page_id(g_current);
+}
+
+int dm_ui_goto(int index)
+{
+  dm_page_t *page;
+  int i;
+
+  if (index < 0 || index >= DM_PAGE_COUNT)
+    {
+      return -1;
+    }
+
+  page = g_pages[index];
+
+  if (!page->built)
+    {
+      if (page->create(g_content, g_content_w, g_content_h) != 0)
+        {
+          DM_ERR("ui: page '%s' failed to build", page->id);
+          return -1;
+        }
+
+      page->root = lv_obj_get_child(g_content,
+                                    lv_obj_get_child_count(g_content) - 1);
+      page->built = true;
+    }
+
+  for (i = 0; i < DM_PAGE_COUNT; i++)
+    {
+      if (!g_pages[i]->built || g_pages[i]->root == NULL)
+        {
+          continue;
+        }
+
+      if (i == index)
+        {
+          lv_obj_clear_flag(g_pages[i]->root, LV_OBJ_FLAG_HIDDEN);
+        }
+      else
+        {
+          lv_obj_add_flag(g_pages[i]->root, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+  g_current = index;
+
+  if (g_page_title != NULL)
+    {
+      lv_label_set_text(g_page_title, page->title);
+    }
+
+  for (i = 0; i < DM_PAGE_COUNT; i++)
+    {
+      lv_obj_t *btn = lv_obj_get_child(g_tabbar, i);
+
+      if (btn != NULL)
+        {
+          dm_ui_style_tab(btn, i == index);
+        }
+    }
+
+  if (page->enter != NULL)
+    {
+      page->enter();
+    }
+
+  DM_LOG("ui: page -> %s", page->id);
+  return 0;
+}
+
+int dm_ui_goto_id(const char *id)
+{
+  int index = dm_ui_page_index(id);
+
+  if (index < 0)
+    {
+      DM_WARN("ui: unknown page '%s'", id != NULL ? id : "(null)");
+      return -1;
+    }
+
+  return dm_ui_goto(index);
+}
+
+int dm_ui_tab_target(const char *id, int *x, int *y)
+{
+  int index = dm_ui_page_index(id);
+  lv_obj_t *btn;
+  lv_area_t area;
+
+  if (index < 0)
+    {
+      return -1;
+    }
+
+  btn = lv_obj_get_child(g_tabbar, index);
+  if (btn == NULL)
+    {
+      return -1;
+    }
+
+  lv_obj_get_coords(btn, &area);
 
   if (x != NULL)
     {
@@ -334,12 +410,62 @@ int dm_ui_tap_target(int *x, int *y)
 
 int dm_ui_object_count(void)
 {
-  lv_obj_t *screen = lv_screen_active();
-
-  if (screen == NULL)
+  if (g_screen == NULL)
     {
       return 0;
     }
 
-  return (int)lv_obj_get_child_count(screen);
+  return (int)lv_obj_get_child_count(g_screen);
+}
+
+void dm_ui_toast(const char *text)
+{
+  if (g_toast == NULL || text == NULL)
+    {
+      return;
+    }
+
+  lv_label_set_text(g_toast, text);
+  lv_obj_clear_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_align(g_toast, LV_ALIGN_TOP_MID, 0, DM_STATUS_H + 8);
+
+  g_toast_ticks = DM_TOAST_TICKS;
+}
+
+void dm_ui_tick(void)
+{
+  char msg[512];
+
+  dm_ui_set_clock();
+
+  if (g_agent_badge != NULL)
+    {
+      lv_label_set_text_fmt(g_agent_badge, "agent: %s", dm_agent_state());
+    }
+
+  /* Drain whatever the agent produced - LLM replies, offline answers, and
+   * proactive events the device raised by itself.  Every message lands in the
+   * conversation; a notice is shown when the user is looking elsewhere.
+   */
+
+  while (dm_agent_poll(msg, sizeof(msg)) == 1)
+    {
+      dm_page_chat_append_agent(msg);
+
+      if (strcmp(dm_ui_current_id() != NULL ? dm_ui_current_id() : "",
+                 "chat") != 0)
+        {
+          dm_ui_toast(msg);
+        }
+    }
+
+  if (g_current >= 0 && g_pages[g_current]->update != NULL)
+    {
+      g_pages[g_current]->update();
+    }
+
+  if (g_toast_ticks > 0 && --g_toast_ticks == 0 && g_toast != NULL)
+    {
+      lv_obj_add_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
+    }
 }

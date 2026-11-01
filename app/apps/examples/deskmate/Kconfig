@@ -110,4 +110,32 @@ config EXAMPLES_DESKMATE_FONT_SIMSUN
 		Fallback for CJK labels when the generated subset font is not
 		available.  Costs roughly 150 KB of flash.
 
+config EXAMPLES_DESKMATE_AGENT_MODE
+	string "Agent bridge backend (mock | ws | off)"
+	default "mock"
+	---help---
+		mock : offline responder, answers from the device state.  Makes the
+		       conversation and the proactive engine testable without a
+		       network or an API key.
+		ws   : WebSocket client to the ai_agent built-in server
+		       (127.0.0.1:28789 by default).
+		off  : the bridge is disabled.
+
+config EXAMPLES_DESKMATE_WIFI_BSS
+	string "Write this wifi_sim BSS table at startup (empty = none)"
+	default ""
+	---help---
+		Simulator convenience: the wifi_sim pseudo wireless driver reads its
+		access point table from CONFIG_WIFI_SIM_CONFDIR/bss.  Point this at
+		that file (e.g. "/tmp/wifi/bss" together with
+		CONFIG_WIFI_SIM_CONFDIR="/tmp/wifi") to have the network page list
+		access points on a host with no radio.
+
+config EXAMPLES_DESKMATE_CAMERA_DEVPATH
+	string "Camera device path"
+	default "/dev/video0"
+	---help---
+		V4L2 capture device.  When it cannot be opened the camera HAL falls
+		back to a synthetic moving pattern, which is what the simulator uses.
+
 endif # EXAMPLES_DESKMATE

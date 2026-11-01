@@ -47,7 +47,7 @@ for arg in "$@"; do
   esac
 done
 
-mkdir -p "${HOST_DIR}"
+mkdir -p "${RUN_DIR}" "${HOST_DIR}"
 
 log()  { printf '\033[1;36m[sim-deskmate]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[sim-deskmate]\033[0m %s\n' "$*"; }
@@ -117,7 +117,8 @@ fi
 # 2. 运行
 # --------------------------------------------------------------------------
 # 先喂命令、再给足时间；应用跑完自检会自己退出，模拟器本体随后被超时收掉。
-CMDS=$'deskmate --selftest --hostfs '"${HOST_DIR}"$' --snap /host/deskmate/dm_home.bin\n'
+# 快照走应用内默认路径 /host/deskmate/dm_home.bin，命令行只带 hostfs。
+CMDS=$'deskmate --selftest --hostfs '"${HOST_DIR}"$'\n'
 
 log "running ${SIM_BIN} (timeout ${TIMEOUT_SECS}s)"
 if [ "${TIMEOUT_SECS}" = "0" ]; then
@@ -150,6 +151,10 @@ echo "${SELFTEST_LINE}" | grep -q 'PASS' || { STATUS=FAIL; REASON="self-test did
 [ "${FAIL_COUNT}" = "0" ] || { STATUS=FAIL; REASON="${FAIL_COUNT} check(s) failed"; }
 [ -f "${SNAP_BIN}" ] || { STATUS=FAIL; REASON="snapshot missing"; }
 
+# hostfs 必须挂到我们给的那个目录：命令行被截断时挂载点会不同，快照就会丢。
+grep -q "hostfs: ${HOST_DIR} mounted at /host" "${RUN_DIR}/console.log" \
+  || { STATUS=FAIL; REASON="hostfs mount path mismatch (command line truncated?)"; }
+
 # --------------------------------------------------------------------------
 # 4. 快照 → PNG（复用真机同一条证据链）
 # --------------------------------------------------------------------------
@@ -166,6 +171,9 @@ if [ -f "${SNAP_BIN}" ]; then
   if python3 "${HERE}/fb2png.py" "${SNAP_BIN}" "${SNAP_PNG}" \
        "${SNAP_W}" "${SNAP_H}" > "${RUN_DIR}/fb2png.log" 2>&1; then
     log "snapshot converted: ${SNAP_PNG}"
+    # 归档：把帧快照与几何描述一起拷进本次运行目录（交换目录在 /tmp）。
+    cp -f "${SNAP_BIN}" "${RUN_DIR}/dm_home.bin" 2>/dev/null || true
+    [ -f "${SNAP_TXT}" ] && cp -f "${SNAP_TXT}" "${RUN_DIR}/dm_home.bin.txt" 2>/dev/null || true
   else
     STATUS=FAIL
     REASON="${REASON:+${REASON}; }fb2png failed (see fb2png.log)"

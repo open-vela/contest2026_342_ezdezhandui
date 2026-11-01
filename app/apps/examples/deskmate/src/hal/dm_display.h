@@ -98,6 +98,13 @@ int dm_display_snapshot(const char *path);
 
 int dm_display_stats(struct dm_display_stats_s *stats);
 
+/* Cheap content fingerprint of the current frame (sampled FNV-1a).  Two frames
+ * with different UI have different hashes, which is how the self-test proves
+ * that navigating between pages really changed what is on screen.
+ */
+
+uint32_t dm_display_frame_hash(void);
+
 /* Tear the display down again (LVGL objects are deleted by the caller). */
 
 void dm_display_destroy(void);

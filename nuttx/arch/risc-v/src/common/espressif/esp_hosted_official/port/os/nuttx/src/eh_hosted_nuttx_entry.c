@@ -57,6 +57,50 @@
 #  define CONFIG_ESPRESSIF_HOSTED_OFFICIAL_STACKSIZE 4096
 #endif
 
+/****************************************************************************
+ * Name: hosted_dhcp_event
+ *
+ * Description:
+ *   The DhcpDnsStatus event carries the address the companion got over DHCP.
+ *   Handing it to wlan0 is what makes the interface usable -- and it is the only
+ *   way, because Req_GetDhcpDnsStatus is not answered by this companion
+ *   (measured, appendix BY.22).  The callback runs on the RPC dispatch thread
+ *   with a const view of the message; it only reads it.
+ *
+ ****************************************************************************/
+
+static void hosted_dhcp_event(FAR const void *ctrl_cmd, FAR void *ctx)
+{
+  FAR const eh_rpc_ctrl_cmd_t *c = (FAR const eh_rpc_ctrl_cmd_t *)ctrl_cmd;
+  FAR const eh_rpc_dhcp_dns_t *e;
+
+  UNUSED(ctx);
+
+  if (c == NULL)
+    {
+      return;
+    }
+
+  e = &c->u.dhcp_dns;
+
+  syslog(LOG_INFO,
+         "%s: DhcpDnsStatus iface=%d link=%d dhcp=%d ip=%u.%u.%u.%u\n",
+         ENTRY_TAG, (int)e->iface, (int)e->net_link_up, (int)e->dhcp_up,
+         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[0] : 0,
+         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[1] : 0,
+         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[2] : 0,
+         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[3] : 0);
+
+  if (e->dhcp_up && e->dhcp_ip.len == 4)
+    {
+      (void)esp_hosted_netdev_apply_ip(e->dhcp_ip.data,
+                                       e->dhcp_nm.len == 4 ? e->dhcp_nm.data
+                                                           : NULL,
+                                       e->dhcp_gw.len == 4 ? e->dhcp_gw.data
+                                                           : NULL);
+    }
+}
+
 static int eh_hosted_nuttx_thread(int argc, char *argv[])
 {
   int ret;
@@ -203,6 +247,15 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
     {
       syslog(LOG_ERR, "%s: wlan0 registration failed: %d\n", ENTRY_TAG, ret);
       return ret;
+    }
+
+  /* Listen for the address the companion gets over DHCP. */
+
+  if (eh_host_feat_rpc_register_event(RPC_ID__Event_DhcpDnsStatus,
+                                      hosted_dhcp_event, NULL) != 0)
+    {
+      syslog(LOG_WARNING, "%s: could not subscribe to DhcpDnsStatus\n",
+             ENTRY_TAG);
     }
 
   /* Bring the radio up over RPC (goal stage 4).
@@ -538,6 +591,43 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
           if (up)
             {
+              /* Ask the companion for its DHCP/DNS status and print the raw
+               * reply.  The address is in there; printing the bytes first shows
+               * the layout the generated struct uses, so the next step can apply
+               * it to wlan0 instead of guessing field offsets (appendix BY.22).
+               */
+
+              eh_rpc_ctrl_cmd_t *dreq = eh_rpc_ctrl_cmd_alloc();
+
+              if (dreq != NULL)
+                {
+                  void *dresp = NULL;
+
+                  if (eh_host_feat_rpc_request_sync(RPC_ID__Req_GetDhcpDnsStatus,
+                                                    dreq, &dresp) == 0 &&
+                      dresp != NULL)
+                    {
+                      FAR const unsigned char *db = (FAR const unsigned char *)
+                                                    dresp;
+                      char line[3 * 24 + 1];
+                      unsigned k;
+
+                      for (k = 0; k < 24; k++)
+                        {
+                          snprintf(&line[k * 3], 4, " %02x", db[k]);
+                        }
+
+                      line[24 * 3] = '\0';
+                      syslog(LOG_INFO, "%s: dhcp status raw:%s\n",
+                             ENTRY_TAG, line);
+                    }
+
+                  if (dresp != NULL)
+                    {
+                      eh_rpc_ctrl_cmd_free(dresp);
+                    }
+                }
+
               break;
             }
 

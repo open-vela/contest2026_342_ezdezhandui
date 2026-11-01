@@ -41,6 +41,13 @@ int esp_hosted_official_start(void);
 
 int esp_hosted_netdev_register(void);
 
+/* Give wlan0 the address the companion obtained over DHCP (it arrives in the
+ * DhcpDnsStatus event: dhcp_ip / dhcp_nm / dhcp_gw, four bytes each).
+ */
+
+int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
+                               FAR const uint8_t *gw);
+
 #endif /* CONFIG_ESPRESSIF_HOSTED_OFFICIAL */
 
 #endif /* __EH_HOSTED_NUTTX_H */

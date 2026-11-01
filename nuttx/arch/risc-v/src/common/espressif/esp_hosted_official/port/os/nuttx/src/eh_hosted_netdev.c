@@ -424,6 +424,53 @@ static int hosted_netdev_ifdown(FAR struct net_driver_s *dev)
  *
  ****************************************************************************/
 
+/****************************************************************************
+ * Name: esp_hosted_netdev_apply_ip
+ *
+ * Description:
+ *   Give wlan0 the address the companion obtained over DHCP.
+ *
+ *   esp-hosted reports it in the DhcpDnsStatus event (dhcp_ip / dhcp_nm /
+ *   dhcp_gw, four bytes each, network order), which is the only place the
+ *   address appears -- Req_GetDhcpDnsStatus is not answered by this companion
+ *   (measured, appendix BY.22).  This is the "event -> netif address" hop the
+ *   goal's stage 4 needs so ifconfig shows the interface as configured.
+ *
+ ****************************************************************************/
+
+int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
+                               FAR const uint8_t *gw)
+{
+  FAR struct hosted_netdev_s *priv = &g_hosted_netdev;
+
+  if (ip == NULL)
+    {
+      return -EINVAL;
+    }
+
+  priv->dev.d_ipaddr  = ((uint32_t)ip[0] << 24) | ((uint32_t)ip[1] << 16) |
+                        ((uint32_t)ip[2] << 8) | (uint32_t)ip[3];
+  priv->dev.d_netmask = (nm != NULL) ?
+      (((uint32_t)nm[0] << 24) | ((uint32_t)nm[1] << 16) |
+       ((uint32_t)nm[2] << 8) | (uint32_t)nm[3]) : 0xffffff00;
+  priv->dev.d_draddr  = (gw != NULL) ?
+      (((uint32_t)gw[0] << 24) | ((uint32_t)gw[1] << 16) |
+       ((uint32_t)gw[2] << 8) | (uint32_t)gw[3]) : 0;
+
+  netdev_ifup(&priv->dev);
+
+  syslog(LOG_INFO,
+         "%s: wlan0 address %u.%u.%u.%u mask %u.%u.%u.%u gw %u.%u.%u.%u "
+         "(from the DhcpDnsStatus event)\n",
+         NETDEV_TAG, ip[0], ip[1], ip[2], ip[3],
+         priv->dev.d_netmask >> 24 & 0xff, (priv->dev.d_netmask >> 16) & 0xff,
+         (priv->dev.d_netmask >> 8) & 0xff, priv->dev.d_netmask & 0xff,
+         priv->dev.d_draddr >> 24 & 0xff, (priv->dev.d_draddr >> 16) & 0xff,
+         (priv->dev.d_draddr >> 8) & 0xff, priv->dev.d_draddr & 0xff);
+
+  return OK;
+}
+
 int esp_hosted_netdev_register(void)
 {
   FAR struct hosted_netdev_s *priv = &g_hosted_netdev;

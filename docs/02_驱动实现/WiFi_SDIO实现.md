@@ -13987,6 +13987,35 @@ I (66243) ehcp_event_handler: TX evt → host: event_id=1 msg_id=0x0309 len=261 
 （收尾项：主机侧的 `wlan0` 还没有把事件里的 IP 应用到 netdev 上——数据面还没做"事件→netif 地址"
 这一跳。链路层已通，这一跳属于 NuttX 网络栈的接线，记在下一轮。）
 
+#### BY.22 第 78 轮：事件→netif 地址这一跳的接线，与它卡在哪
+
+接线本身做完了（都是小改动）：
+
+| 位置 | 改动 |
+|---|---|
+| `eh_hosted_netdev.c` | 新增 `esp_hosted_netdev_apply_ip(ip, nm, gw)`：写入 `d_ipaddr/d_netmask/d_draddr` 并 `netdev_ifup()`，打印 `wlan0 address …` |
+| `eh_hosted_nuttx_entry.c` | 订阅 `RPC_ID__Event_DhcpDnsStatus`，回调把 `c->u.dhcp_dns`（`eh_rpc_dhcp_dns_t`：`dhcp_ip/dhcp_nm/dhcp_gw` 为 `eh_rpc_blob_t`）交给上面那个函数 |
+
+**为什么不用 `Req_GetDhcpDnsStatus` 去"问"IP**：真机试过，从机**不回**这个请求
+（`eh_host_feat_rpc: request: no response uid=5 msg_id=280`），所以 IP 只能来自事件。
+
+**卡在哪（真机实测，`logs/20261101-083720_ip-apply2`）**：
+
+```
+read_block 的 261 字节报文数 = 0        ← 带 IP 的那个事件从未被主机读走
+777 事件到达 = 2（都是 link=0/dhcp=0/ip=0.0.0.0）
+775 (StaConnected) 到达 = 1（48 字节的那个 ✔）
+丢包 = 0
+```
+
+而从机侧明确发出过：`TX evt → host: event_id=0 msg_id=0x0309 len=261`（BY.21 的证据）。
+即 **同一条路径上 48 字节的事件到了、261 字节的那一个没到**，且不是丢包（Drop=0）——
+是"从机排队了、但主机侧没有看到新报文"（与 BY.15 的"空中断/INT_RAW=0"同源）。
+这是**传输层**的下一件事，不是 netif 接线的问题。
+
+**当前状态**：`wlan0` 的控制面（scan/connect）与链路层（关联 + DHCP 拿到 192.168.1.9）都已打通；
+"事件→地址"的代码已就位，等上面这个一次性大报文能稳定读回，`ifconfig wlan0` 即可见地址。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

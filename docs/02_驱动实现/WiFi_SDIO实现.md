@@ -14246,6 +14246,41 @@ bus_rx: iftype:3   ×138    ← 控制/RPC 通道
 ⇒ 最后这一环落在**从机固件的事件发送路径**上（`event_id=0` 那条队列），
 而不是本移植层；`esp-hosted-mcu` 的从机源码已不在本机，需重新取回后从那一侧查。
 
+#### BY.29 第 84 轮：取回从机源码；纠正一处长期误读；把"问 IP"这条真正打通到从机门口
+
+**① 从机源码取回来了**（`esp-hosted-mcu/coprocessor`，稀疏克隆）：
+
+```
+coprocessor/{eh_cp_core, eh_cp_transport, features/eh_cp_feat_nw_split, features/eh_cp_feat_rpc_ext_v2, …}
+```
+
+**② 纠正一处误读**：第 78 轮我曾写"`Req_GetDhcpDnsStatus` 从机不回（`no response uid=5 msg_id=280`）"，
+拿源码核对后是**错的**——`RPC_ID__Req_WifiStart = 280`，那条日志说的是 `Req_WifiStart`（best-effort 那次），
+**问 IP 的请求当时根本没发出去**。
+
+**③ 于是真正发了一次**（id 353，请求里的 `iface=0` = STA，与从机自己的日志一致）：
+
+```
+eh_hosted_nuttx: Req_GetDhcpDnsStatus(353) -> -1 resp=no
+```
+
+而从机侧 v2 的处理函数（`eh_cp_feat_rpc_ext_v2_handler_req_nw_split.c:34`）在成功时会打印
+`Fetched IP: %s, NM: %s, GW: %s …` —— **从机日志里没有这一行**，说明请求没有走到处理函数。
+
+**④ 事件那条路的从机侧真相**（源码）：`eh_cp_feat_rpc_ext_v2_event_handler.c` 里
+
+```c
+ESP_LOGI(TAG, "TX evt → host: event_id=%ld msg_id=0x%04x len=%u", …);
+EH_CHECK_OK_WARN(eh_cp_rpc_send_event(msg_id, data, len));
+```
+
+—— 日志在**发送之前**打印，发送失败只会是一条 warning；而真机上那条 warning **没有出现**，
+即从机**认为**它发出去了。可主机侧的 payload 转储里**从未出现** `c0 a8 01 09`（192.168.1.9）。
+
+**下一轮（现在两边源码都在手上，纯离线可查）**：
+1. 读 `eh_cp_rpc_send_event()` 尾部到传输层的入队路径，找"返回成功但没上线"的分支（队列满/无 credit）；
+2. 读从机 v2 请求分发为何没把 353 交给 `req_get_dhcp_dns_status`（例如响应内存分配失败、或 id 落在别的 variant 表里）。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

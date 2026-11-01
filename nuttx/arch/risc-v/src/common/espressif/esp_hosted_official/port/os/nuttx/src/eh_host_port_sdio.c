@@ -1053,6 +1053,38 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
       }
   }
 
+  /* Payload contents, for the one question left: does the message that carries
+   * the DHCP address reach this host at all?
+   *
+   * The companion sends it as a DhcpDnsStatus event (msg_id 0x0309, 261 bytes)
+   * tagged event_id=0, while the RPC layer only ever dispatches the empty
+   * (network-down) copies.  Printing what actually arrives -- the first bytes of
+   * every payload-sized read -- makes that answerable from the log alone: the
+   * address 192.168.1.9 would appear as c0 a8 01 09 (appendix BY.29).
+   */
+
+  if (ret >= 0 && size >= 256)
+    {
+      static int payload_trace;
+
+      if (payload_trace < 40)
+        {
+          char line[3 * 16 + 1];
+          unsigned k;
+
+          payload_trace++;
+
+          for (k = 0; k < 16; k++)
+            {
+              snprintf(&line[k * 3], 4, " %02x", data[k]);
+            }
+
+          line[16 * 3] = '\0';
+          syslog(LOG_INFO, "%s: payload read addr=0x%05x size=%u:%s\n",
+                 SDIO_TAG, (unsigned)reg, (unsigned)size, line);
+        }
+    }
+
   if (lock_required)
     {
       nxmutex_unlock(&c->lock);

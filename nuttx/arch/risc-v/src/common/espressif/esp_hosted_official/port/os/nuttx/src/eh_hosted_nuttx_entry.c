@@ -654,6 +654,72 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                * needs to get its address.
                */
 
+              /* Ask the companion for its DHCP status directly.
+               *
+               * The event that carries the address only ever arrives as the
+               * empty (network-down) copy, but the companion implements the
+               * query -- Req_GetDhcpDnsStatus, id 353 -- and fills in
+               * dhcp_up / dhcp_ip / dhcp_nm / dhcp_gw.  An earlier round believed
+               * this query had been tried and left unanswered; the log line it
+               * was read from (msg_id=280) was actually Req_WifiStart
+               * (appendix BY.29).
+               */
+
+              {
+                eh_rpc_ctrl_cmd_t *qreq = eh_rpc_ctrl_cmd_alloc();
+
+                if (qreq == NULL)
+                  {
+                    syslog(LOG_ERR, "%s: no ctrl cmd for the DHCP query\n",
+                           ENTRY_TAG);
+                  }
+                else
+                  {
+                    FAR void *qresp = NULL;
+                    int       qrc;
+
+                    qrc = eh_host_feat_rpc_request_sync(
+                              RPC_ID__Req_GetDhcpDnsStatus, qreq, &qresp);
+
+                    syslog(LOG_INFO,
+                           "%s: Req_GetDhcpDnsStatus(%d) -> %d resp=%s\n",
+                           ENTRY_TAG, (int)RPC_ID__Req_GetDhcpDnsStatus, qrc,
+                           qresp != NULL ? "yes" : "no");
+
+                    if (qrc == 0 && qresp != NULL)
+                      {
+                        FAR eh_rpc_ctrl_cmd_t *r =
+                            (FAR eh_rpc_ctrl_cmd_t *)qresp;
+                        FAR const eh_rpc_dhcp_dns_t *d = &r->u.dhcp_dns;
+
+                        syslog(LOG_INFO,
+                               "%s: dhcp status iface=%d link=%d dhcp=%d "
+                               "ip=%u.%u.%u.%u\n",
+                               ENTRY_TAG, (int)d->iface, (int)d->net_link_up,
+                               (int)d->dhcp_up,
+                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[0] : 0,
+                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[1] : 0,
+                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[2] : 0,
+                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[3] : 0);
+
+                        if (d->dhcp_up && d->dhcp_ip.len == 4)
+                          {
+                            (void)esp_hosted_netdev_apply_ip(
+                                    d->dhcp_ip.data,
+                                    d->dhcp_nm.len == 4 ? d->dhcp_nm.data : NULL,
+                                    d->dhcp_gw.len == 4 ? d->dhcp_gw.data
+                                                        : NULL);
+                          }
+
+                        eh_rpc_ctrl_cmd_free(qresp);
+                      }
+                    else if (qresp != NULL)
+                      {
+                        eh_rpc_ctrl_cmd_free(qresp);
+                      }
+                  }
+              }
+
               /* Obtain wlan0's own address over the link (goal stage 4: 取 IP).
                *
                * The companion holds a DHCP lease of its own, but wlan0 is a

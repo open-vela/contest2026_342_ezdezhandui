@@ -88,6 +88,14 @@ if(CONFIG_ESPRESSIF_TOUCH)
   target_sources(arch PRIVATE drivers/esp_touch.c)
 endif()
 
+if(CONFIG_ESPRESSIF_MIPI_CSI)
+  target_sources(arch PRIVATE drivers/esp_csi.c)
+endif()
+
+if(CONFIG_ESPRESSIF_DEDICATED_GPIO)
+  target_sources(arch PRIVATE drivers/esp_dedic_gpio.c)
+endif()
+
 target_include_directories(arch PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/drivers)
 

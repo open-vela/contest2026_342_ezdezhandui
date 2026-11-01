@@ -45,7 +45,7 @@
 
 #include "espressif/esp_gpio.h"
 #ifdef CONFIG_ESPRESSIF_DEDICATED_GPIO
-#include "espressif/esp_dedic_gpio.h"
+#include "drivers/esp_dedic_gpio.h"
 #endif
 #include "espressif/esp_rtc_gpio.h"
 

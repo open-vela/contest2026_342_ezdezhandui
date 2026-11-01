@@ -56,6 +56,14 @@ ifeq ($(CONFIG_ESPRESSIF_TOUCH),y)
 CHIP_CSRCS += drivers/esp_touch.c
 endif
 
+ifeq ($(CONFIG_ESPRESSIF_MIPI_CSI),y)
+CHIP_CSRCS += drivers/esp_csi.c
+endif
+
+ifeq ($(CONFIG_ESPRESSIF_DEDICATED_GPIO),y)
+CHIP_CSRCS += drivers/esp_dedic_gpio.c
+endif
+
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)drivers
 VPATH += drivers
 

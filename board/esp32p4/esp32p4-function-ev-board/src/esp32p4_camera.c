@@ -40,7 +40,7 @@
 #include <arch/board/board.h>
 
 #include "espressif/esp_i2c.h"
-#include "espressif/esp_csi.h"
+#include "drivers/esp_csi.h"
 
 #include "esp32p4-function-ev-board.h"
 

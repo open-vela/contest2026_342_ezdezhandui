@@ -56,10 +56,6 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ana_cmpr.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ana_cmpr.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_config.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_config.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_crypto.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_crypto.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_csi.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_csi.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_csi.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_csi.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_dedic_gpio.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_dedic_gpio.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_dedic_gpio.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_dedic_gpio.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_efuse.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_efuse.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_efuse.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_efuse.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_emac.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_emac.c"/>
@@ -170,6 +166,10 @@
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/Make.defs" dest="nuttx/arch/risc-v/src/esp32p4/Make.defs"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_dedic_gpio.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_dedic_gpio.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_dedic_gpio.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_dedic_gpio.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.c"/>

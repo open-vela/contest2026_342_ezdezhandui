@@ -39,6 +39,10 @@ file(GLOB EH_HOSTED_STACK_SRCS
 
 set(EH_HOSTED_SRCS
   ${EH_HOSTED_NUTTX_DIR}/src/eh_host_port_sdio.c
+  # Network-split serialisers only (the data path needs esp_netif, which
+  # this port does not implement -- see the definitions above).
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_nw_split/src/eh_host_feat_nw_split_v2_req.c
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_nw_split/src/eh_host_feat_nw_split_v2_resp_evt.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_event_extra_nuttx.c
   ${EH_HOSTED_NUTTX_DIR}/src/esp_wifi_stub.c
   ${EH_HOSTED_NUTTX_DIR}/src/wifi_glue_nuttx.c
@@ -129,6 +133,20 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
   CONFIG_ESP_HOSTED_HOST_CORE=1
   CONFIG_ESP_HOSTED_HOST_FEAT_SYSTEM=1
   CONFIG_ESP_HOSTED_HOST_FEAT_SYSTEM_READY=1
+  # Network split, capability only (appendix BY.32).
+  #
+  # The companion gates its req_get_dhcp_dns_status() on this capability, so
+  # without it a Req_GetDhcpDnsStatus is silently ignored; with it the
+  # companion answers, and this port consumes the answer (it already has the
+  # v2 decode and applies the address itself).  The stack's own network-split
+  # data path is NOT compiled: it is written against esp_netif, which this
+  # port does not implement, and the address is applied by the port instead.
+  CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT=1
+  CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT_READY=1
+  CONFIG_LWIP_TCP_LOCAL_PORT_RANGE_START=20000
+  CONFIG_LWIP_TCP_LOCAL_PORT_RANGE_END=20999
+  CONFIG_LWIP_UDP_LOCAL_PORT_RANGE_START=20000
+  CONFIG_LWIP_UDP_LOCAL_PORT_RANGE_END=20999
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_MCU_READY=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO_READY=1
   CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=1
@@ -200,3 +218,7 @@ endif()
 target_include_directories(eh_hosted_nuttx PRIVATE
   ${CMAKE_SOURCE_DIR}/../apps/include)
 message(STATUS "eh_hosted: apps include = ${CMAKE_SOURCE_DIR}/../apps/include")
+
+# Network-split headers (see the definitions above).
+target_include_directories(eh_hosted_nuttx PRIVATE
+  ${EH_HOSTED_DIR}/host/features/eh_host_feat_nw_split/include)

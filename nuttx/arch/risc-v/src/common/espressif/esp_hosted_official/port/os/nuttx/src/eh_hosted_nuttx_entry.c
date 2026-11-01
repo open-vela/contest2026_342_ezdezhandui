@@ -19,12 +19,15 @@
 #include <nuttx/config.h>
 
 #include <sched.h>
+#include <stdio.h>
 #include <syslog.h>
 
 #include <nuttx/kthread.h>
 #include <nuttx/wireless/wireless.h>
 #include <net/if.h>
+#include <fcntl.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
@@ -61,6 +64,45 @@
 #endif
 
 /****************************************************************************
+ * Name: hosted_parse_ip4
+ *
+ * Description:
+ *   Parse one of the companion's address strings into four bytes.
+ *
+ *   Its DHCP/DNS status carries addresses as text -- "192.168.1.9" followed by
+ *   the terminator, not a four-byte field (that is what the companion's
+ *   req_get_dhcp_dns_status() copies in with RPC_RESP_COPY_STR).  An earlier
+ *   version of this code required len == 4 and therefore threw the address away
+ *   -- which is exactly what the log showed: link=1 dhcp=1 ip=0.0.0.0
+ *   (appendix BY.32).
+ *
+ ****************************************************************************/
+
+static bool hosted_parse_ip4(FAR const eh_rpc_blob_t *b, FAR uint8_t out[4])
+{
+  unsigned a;
+  unsigned c;
+  unsigned d;
+  unsigned e;
+
+  if (b == NULL || b->data == NULL || b->len < 7)
+    {
+      return false;
+    }
+
+  if (sscanf((FAR const char *)b->data, "%u.%u.%u.%u", &a, &c, &d, &e) != 4)
+    {
+      return false;
+    }
+
+  out[0] = (uint8_t)a;
+  out[1] = (uint8_t)c;
+  out[2] = (uint8_t)d;
+  out[3] = (uint8_t)e;
+  return true;
+}
+
+/****************************************************************************
  * Name: hosted_dhcp_event
  *
  * Description:
@@ -86,21 +128,23 @@ static void hosted_dhcp_event(FAR const void *ctrl_cmd, FAR void *ctx)
 
   e = &c->u.dhcp_dns;
 
+  uint8_t ip[4];
+  uint8_t nm[4];
+  uint8_t gw[4];
+  bool    have_ip = hosted_parse_ip4(&e->dhcp_ip, ip);
+  bool    have_nm = hosted_parse_ip4(&e->dhcp_nm, nm);
+  bool    have_gw = hosted_parse_ip4(&e->dhcp_gw, gw);
+
   syslog(LOG_INFO,
          "%s: DhcpDnsStatus iface=%d link=%d dhcp=%d ip=%u.%u.%u.%u\n",
          ENTRY_TAG, (int)e->iface, (int)e->net_link_up, (int)e->dhcp_up,
-         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[0] : 0,
-         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[1] : 0,
-         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[2] : 0,
-         e->dhcp_ip.len == 4 ? e->dhcp_ip.data[3] : 0);
+         have_ip ? ip[0] : 0, have_ip ? ip[1] : 0,
+         have_ip ? ip[2] : 0, have_ip ? ip[3] : 0);
 
-  if (e->dhcp_up && e->dhcp_ip.len == 4)
+  if (e->dhcp_up && have_ip)
     {
-      (void)esp_hosted_netdev_apply_ip(e->dhcp_ip.data,
-                                       e->dhcp_nm.len == 4 ? e->dhcp_nm.data
-                                                           : NULL,
-                                       e->dhcp_gw.len == 4 ? e->dhcp_gw.data
-                                                           : NULL);
+      (void)esp_hosted_netdev_apply_ip(ip, have_nm ? nm : NULL,
+                                       have_gw ? gw : NULL);
     }
 }
 
@@ -532,6 +576,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
    * router's 2.4 GHz interface is the one that can actually be joined.
    */
 
+
 #ifdef ESP_WIFI_TEST_SSID
   if (strlen(ESP_WIFI_TEST_SSID) > 0)
     {
@@ -692,23 +737,25 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                             (FAR eh_rpc_ctrl_cmd_t *)qresp;
                         FAR const eh_rpc_dhcp_dns_t *d = &r->u.dhcp_dns;
 
+                        uint8_t qip[4];
+                        uint8_t qnm[4];
+                        uint8_t qgw[4];
+                        bool    q_ok = hosted_parse_ip4(&d->dhcp_ip, qip);
+                        bool    q_nm = hosted_parse_ip4(&d->dhcp_nm, qnm);
+                        bool    q_gw = hosted_parse_ip4(&d->dhcp_gw, qgw);
+
                         syslog(LOG_INFO,
                                "%s: dhcp status iface=%d link=%d dhcp=%d "
                                "ip=%u.%u.%u.%u\n",
                                ENTRY_TAG, (int)d->iface, (int)d->net_link_up,
                                (int)d->dhcp_up,
-                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[0] : 0,
-                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[1] : 0,
-                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[2] : 0,
-                               d->dhcp_ip.len == 4 ? d->dhcp_ip.data[3] : 0);
+                               q_ok ? qip[0] : 0, q_ok ? qip[1] : 0,
+                               q_ok ? qip[2] : 0, q_ok ? qip[3] : 0);
 
-                        if (d->dhcp_up && d->dhcp_ip.len == 4)
+                        if (d->dhcp_up && q_ok)
                           {
                             (void)esp_hosted_netdev_apply_ip(
-                                    d->dhcp_ip.data,
-                                    d->dhcp_nm.len == 4 ? d->dhcp_nm.data : NULL,
-                                    d->dhcp_gw.len == 4 ? d->dhcp_gw.data
-                                                        : NULL);
+                                    qip, q_nm ? qnm : NULL, q_gw ? qgw : NULL);
                           }
 
                         eh_rpc_ctrl_cmd_free(qresp);
@@ -884,6 +931,76 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                  ENTRY_TAG, names[t]);
         }
     }
+
+  /* End-to-end check: open a TCP connection to the gateway over the link.
+   *
+   * With the interface addressed (the companion's DHCP result, applied above)
+   * this is the strongest evidence the goal asks for: a socket on this host
+   * talking IP through the SDIO-attached station.  A refusal (ECONNREFUSED) is
+   * proof too -- it means the router answered with a reset (appendix BY.32).
+   */
+
+  {
+    struct sockaddr_in sa;
+    int                fd;
+    int                flags;
+    int                rc;
+    fd_set             wset;
+    struct timeval     tv;
+    int                soerr = 0;
+    socklen_t          slen = sizeof(soerr);
+
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+      {
+        syslog(LOG_ERR, "%s: ping socket -> errno %d\n", ENTRY_TAG, errno);
+      }
+    else
+      {
+        memset(&sa, 0, sizeof(sa));
+        sa.sin_family      = AF_INET;
+        sa.sin_port        = HTONS(80);
+        sa.sin_addr.s_addr = HTONL(0xc0a80101);   /* 192.168.1.1 */
+
+        flags = fcntl(fd, F_GETFL, 0);
+        (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+        errno = 0;
+        rc = connect(fd, (FAR struct sockaddr *)&sa, sizeof(sa));
+
+        if (rc < 0 && errno == EINPROGRESS)
+          {
+            FD_ZERO(&wset);
+            FD_SET(fd, &wset);
+            tv.tv_sec  = 6;
+            tv.tv_usec = 0;
+
+            rc = select(fd + 1, NULL, &wset, NULL, &tv);
+            if (rc > 0)
+              {
+                (void)getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &slen);
+                rc = 0;
+              }
+            else
+              {
+                soerr = ETIMEDOUT;
+              }
+          }
+        else if (rc < 0)
+          {
+            soerr = errno;
+          }
+
+        syslog(LOG_INFO,
+               "%s: TCP 192.168.1.1:80 over wlan0 -> %s (soerr=%d)\n",
+               ENTRY_TAG,
+               (rc == 0 && soerr == 0) ? "connected" :
+               (soerr == ECONNREFUSED ? "refused (router answered)" : "failed"),
+               soerr);
+
+        close(fd);
+      }
+  }
 
 #endif /* ESP_WIFI_TEST_SSID */
 

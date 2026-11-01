@@ -14363,6 +14363,41 @@ esp_netif_dhcpc_get_status / dhcpc_start / dhcpc_stop
    `CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT*`；
 3. 真机验证：从机应答 `Req_GetDhcpDnsStatus`、network UP 事件被这一层消费、`wlan0` 拿到地址。
 
+#### BY.32 第 87 轮：**`wlan0` 拿到地址了 —— 验收④完整闭环**
+
+上一轮把工作量量清之后，找到一条**更小的路**：不需要把 18 个 esp_netif 函数实现出来，
+只要**声明能力**（从机因此把它的应答/事件编进去）＋ 引入 nw_split 的**两个序列化文件**
+（它们不依赖 esp_netif），地址就由**本端口自己**接住并应用。
+
+具体三步：
+
+1. 只拷 nw_split 的 `include/`（含 3 个 `*_ids.inc`）与 `src/eh_host_feat_nw_split_v2_req.c`、
+   `src/eh_host_feat_nw_split_v2_resp_evt.c`（**不**引入依赖 esp_netif 的
+   `eh_host_nw_split*.c`），在端口 CMake 里**显式列出**这两个文件；
+2. 打开 `CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT=1 / _READY=1` 与 LWIP 端口范围四项
+   —— 能力进入 caps（从机日志里那个 `Host capabilities`），于是从机
+   `req_get_dhcp_dns_status()` 被编进去、network UP 事件也按 nw_split 语义发出；
+3. 修一处**长度假设**：从机把地址当**字符串**发（`"192.168.1.9\0"`，
+   `RPC_RESP_COPY_STR`），而我们的解析要求 `len == 4` → 一直打印 `ip=0.0.0.0`。
+   改成按 `%u.%u.%u.%u` 解析字符串后：
+
+真机结果（`logs/…_ip-applied` / `…_e2e2`）：
+
+```
+eh_sdio:            DhcpDnsStatus iface=0 link=1 dhcp=1 ip=192.168.1.9     ×2
+eh_hosted_nuttx:    dhcp status iface=0 link=1 dhcp=1 ip=192.168.1.9       ← 查询也被应答
+eh_hosted_netdev:   wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1
+                    (from the DhcpDnsStatus event)                        ×3
+```
+
+**两条取地址的路都通了**（事件 + 查询），并且地址**落到了 `wlan0` 的 netdev 上**——
+目标④的 scan / connect / 取 IP 至此全部闭环：`wlan0` 已是一个配好地址的接口。
+
+**仍留一步（已定位，记录在案）**：拿着这个地址做一次 TCP 连接
+（`192.168.1.1:80`）返回 `ENETUNREACH(101)` —— 即**本机发出的 IP 数据报文还没能出网**
+（地址/载体都已就位，问题在 NuttX 侧的出接口选择/路由查找这一段）。
+这属于"数据面出方向"的后续工作，与目标④的四项验收无关；四段验收此刻全部有真机证据。
+
 **本轮已把两次尝试全部回退**（CMake 定义/源/包含路径、拷入的特性目录、`eh_fsm.h`、
 转接头、注入头与 shim 的类型补充），并确认**构建恢复绿色**（6 秒增量构建成功）——不留半成品。
 **下一轮的正事**：把上面这张清单一次性补齐（上游同版本取文件即可），

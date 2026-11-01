@@ -14328,6 +14328,41 @@ CONFIG_LWIP_TCP_LOCAL_PORT_RANGE_START/END、UDP 同名四项
 按同一上游版本补齐**（一条 `cp` 链，但要逐个目录核对，避免夹带上不需要的文件）。
 这属于一次**专门的"补齐 vendored 子集"任务**，不适合塞在其它验证中间做。
 
+#### BY.31 第 86 轮：把"启用 network-split"这件事的**真实工作量**量出来了
+
+**① 量出来的第一件事：这一层要 18 个 esp_netif/ip_event 函数。**
+
+```
+esp_netif_new / destroy / create_default_wifi_sta / destroy_default_wifi
+esp_netif_attach_wifi_station / get_handle_from_ifkey / is_netif_up
+esp_netif_get_flags / set_mac / get_ip_info / set_ip_info / get_old_ip_info / set_old_ip_info
+esp_netif_get_dns_info / set_dns_info
+esp_netif_dhcpc_get_status / dhcpc_start / dhcpc_stop
+（另有 esp_wifi_set_default_wifi_sta_handlers / esp_wifi_clear_default_wifi_driver_and_handlers）
+```
+
+—— 这也解释了为什么它现在编不过：NuttX 移植层里 `esp_netif` **只有类型桩、没有实现**。
+好消息是这是**有界**的：18 个函数都可以薄薄地落在本端口的 netdev 上
+（`esp_netif_set_ip_info` → 我们已有的 `esp_hosted_netdev_apply_ip()`；
+其余多为状态/查询），也就是**写一个 NuttX 版的 esp_netif 薄层**（`port/os/nuttx/src/esp_netif_nuttx.c`），
+而不是把整个 ESP-IDF 网络栈搬进来。
+
+**② 量出来的第二件事：vendored 子集与上游 `main` 不是同一 revision。**
+
+- 同一文件对比：`eh_common_interface.h`/`eh_check.h` 一致，`eh_host_wifi.c` **差 325 行**；
+- 按目录 `rsync --ignore-existing` 把上游缺的文件补进来后，构建反而坏在**新补进来的 `context_req.c`**
+  上：它需要更新的生成 id（`RpcReqSetContext`，我们的 `gen_v2.h` 里没有）。
+
+⇒ 结论：**不能按文件零散补**，要么整棵 vendored 子集升到同一 revision，
+要么只用**与当前 vendored 同 revision** 的 nw_split 目录。本轮已经用
+"从上次导出副本整目录还原"的方式把这次尝试完全撤回，并确认**构建绿色**（6 秒）。
+
+**③ 因此下一轮的施工顺序很清楚**：
+1. 先写 `esp_netif_nuttx.c`（18 个函数，语义由我们定：IP/DNS/状态 + 租约到达时回调 `apply_ip`）；
+2. 把 nw_split 特性按**匹配 revision** 引入（或整体升版），打开
+   `CONFIG_ESP_HOSTED_HOST_FEAT_NW_SPLIT*`；
+3. 真机验证：从机应答 `Req_GetDhcpDnsStatus`、network UP 事件被这一层消费、`wlan0` 拿到地址。
+
 **本轮已把两次尝试全部回退**（CMake 定义/源/包含路径、拷入的特性目录、`eh_fsm.h`、
 转接头、注入头与 shim 的类型补充），并确认**构建恢复绿色**（6 秒增量构建成功）——不留半成品。
 **下一轮的正事**：把上面这张清单一次性补齐（上游同版本取文件即可），

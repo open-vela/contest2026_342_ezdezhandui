@@ -14619,6 +14619,7 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
    | 批次 | 驱动 | 落在 | 构建开关 | 验证 |
    |---|---|---|---|---|
    | 1 | `esp_lirc.c/.h`、`esp_nxdiag.c/.h` | `arch/risc-v/src/esp32p4/drivers/` | `CONFIG_ESP_RMT && CONFIG_DRIVERS_RC` / `CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL` | P4 整机构建通过；两文件用工程真编译参数 `-fsyntax-only` 均 rc=0；共享层对二者引用 0；交付待删除条目 0、`manifest --check` 通过 |
+   | 2 | `esp_touch.c/.h`、`esp_adc.c/.h` | 同上 | `CONFIG_ESPRESSIF_TOUCH` / `CONFIG_ESPRESSIF_ADC` | P4 整机构建通过；两文件 `-fsyntax-only` 均 rc=0；板级 include 改为 `"drivers/esp_touch.h"`、`"drivers/esp_adc.h"`；共享层引用 0；`manifest --check` 通过 |
 
    - 搬迁时把 `#include "espressif/esp_nxdiag.h"` 改为同目录 `"esp_nxdiag.h"`（新目录已在 include 路径上）。
    - 注意：这两项在本板 defconfig 里**未开启**，所以整机构建只证明挂接正确；驱动本体的编译用工程参数单独验证（上面的 `-fsyntax-only`）。

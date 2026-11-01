@@ -179,10 +179,6 @@ if(CONFIG_ESPRESSIF_EMAC)
   list(APPEND SRCS esp_emac.c)
 endif()
 
-if(CONFIG_ESPRESSIF_ADC)
-  list(APPEND SRCS esp_adc.c)
-endif()
-
 if(CONFIG_ESPRESSIF_SHA_ACCELERATOR)
   list(APPEND SRCS esp_sha.c)
 endif()
@@ -193,10 +189,6 @@ endif()
 
 if(CONFIG_CRYPTO_CRYPTODEV_HARDWARE)
   list(APPEND SRCS esp_crypto.c)
-endif()
-
-if(CONFIG_ESPRESSIF_TOUCH)
-  list(APPEND SRCS esp_touch.c)
 endif()
 
 if(CONFIG_COMP)

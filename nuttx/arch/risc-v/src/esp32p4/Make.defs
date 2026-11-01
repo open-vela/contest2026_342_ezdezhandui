@@ -48,6 +48,14 @@ ifeq ($(CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL),y)
 CHIP_CSRCS += drivers/esp_nxdiag.c
 endif
 
+ifeq ($(CONFIG_ESPRESSIF_ADC),y)
+CHIP_CSRCS += drivers/esp_adc.c
+endif
+
+ifeq ($(CONFIG_ESPRESSIF_TOUCH),y)
+CHIP_CSRCS += drivers/esp_touch.c
+endif
+
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)drivers
 VPATH += drivers
 

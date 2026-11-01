@@ -49,8 +49,6 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.mk" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.mk"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/chip.h" dest="nuttx/arch/risc-v/src/common/espressif/chip.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_adc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_adc.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_adc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_adc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_aes.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_aes.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_aes.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_aes.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_allocateheap.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_allocateheap.c"/>
@@ -143,8 +141,6 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timerisr.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_timerisr.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_touch.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_touch.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_touch.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_touch.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_twai.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_twai.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_twai.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_twai.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ulp.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ulp.c"/>
@@ -172,10 +168,14 @@
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/CMakeLists.txt" dest="nuttx/arch/risc-v/src/esp32p4/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/Kconfig" dest="nuttx/arch/risc-v/src/esp32p4/Kconfig"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/Make.defs" dest="nuttx/arch/risc-v/src/esp32p4/Make.defs"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_adc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_touch.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_touch.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_touch.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_touch.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp32p4_atomic.c" dest="nuttx/arch/risc-v/src/esp32p4/esp32p4_atomic.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp_chip_rev.c" dest="nuttx/arch/risc-v/src/esp32p4/esp_chip_rev.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp_hosted/compat/freertos_compat/freertos/FreeRTOS.h" dest="nuttx/arch/risc-v/src/esp32p4/esp_hosted/compat/freertos_compat/freertos/FreeRTOS.h"/>

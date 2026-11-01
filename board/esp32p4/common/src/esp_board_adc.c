@@ -30,7 +30,7 @@
 
 #include <nuttx/analog/adc.h>
 
-#include "espressif/esp_adc.h"
+#include "drivers/esp_adc.h"
 
 #include "esp_board_adc.h"
 

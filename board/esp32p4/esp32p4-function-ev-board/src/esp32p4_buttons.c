@@ -48,7 +48,7 @@
 
 #include "espressif/esp_gpio.h"
 #ifdef CONFIG_ESPRESSIF_TOUCH
-#  include "espressif/esp_touch.h"
+#  include "drivers/esp_touch.h"
 #endif
 
 /* Board */

@@ -80,6 +80,14 @@ if(CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL)
   target_sources(arch PRIVATE drivers/esp_nxdiag.c)
 endif()
 
+if(CONFIG_ESPRESSIF_ADC)
+  target_sources(arch PRIVATE drivers/esp_adc.c)
+endif()
+
+if(CONFIG_ESPRESSIF_TOUCH)
+  target_sources(arch PRIVATE drivers/esp_touch.c)
+endif()
+
 target_include_directories(arch PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/drivers)
 

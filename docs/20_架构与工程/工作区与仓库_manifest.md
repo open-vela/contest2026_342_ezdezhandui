@@ -79,3 +79,20 @@ vendor/openvela
 **残余风险**：若评审端打开了某个我们关闭的 `CONFIG_ESPRESSIF_*`，被裁掉的文件会退回基线版本 —— 该功能可能不可用，但**不会导致构建失败**（基线版本存在）。
 
 **回退**：`python3 tools/engineering/gen_manifest_copyfiles.py --no-shared-minimal`（一条命令恢复交付全部公共层文件）。
+
+## 清空验证（clean-room，2026-11-01）
+
+做法：把工作区**强制还原成评审端基线**（tracked 全部 `git checkout HEAD --`、untracked 全部删除、
+linkfile 子树整棵移走），再**只按 manifest 部署**（`<copyfile>` 复制 + `<linkfile>` 建符号链接），
+得到与评审端 `repo sync` 后一致的树。结果与经验：
+
+- 部署 163 条 copyfile + 3 条 linkfile 后，工作区 `nuttx/arch/risc-v/src/esp32p4` 等三处变为
+  指向作品仓的符号链接（与评审端一致），`check_consistency.py` ✅ 一致；
+- 坑 1：**不要复用旧构建目录**再重跑 CMake —— 重跑时 `NUTTX_DEFCONFIG` 环境变量丢失，会在
+  `cmake/nuttx_kconfig.cmake:48` 报 `string sub-command REGEX ... needs at least 5 arguments`。
+  评审端是全新 configure，不会踩到；本机要重配就换一个全新构建目录；
+- 坑 2：**全新构建目录需要重新 clone `esp-hal-3rdparty`（约 700 MB）**。本机今日实测
+  ~30 MB / 4 分钟，无法在本轮内完成整个 clean-room 构建；hal 缓存已放回
+  `cmake_out/esp32p4-function-ev-board_nsh/` 供下次配置复用；
+- 内容层面的"编译 + 烧录 + 真机三项证据"已由共享层最小集实验完成（见上一节，证据目录
+  `logs/20261101-211034_shared-minimal`），那次的树 = 交付内容（其余文件为基线版本）。

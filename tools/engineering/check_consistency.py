@@ -186,7 +186,15 @@ def is_intentional_undelivered(proj, rel):
     return False
 
 
+# 构建期符号链接（板级 include 重定向），由构建创建、不属于交付内容
+BUILD_ARTIFACTS = (
+    "boards/esp32p4/common/board",
+)
+
+
 def is_noise(rel):
+    if rel in BUILD_ARTIFACTS:
+        return True
     if any(rel.startswith(p) for p in NOISE_PREFIXES):
         return True
     base = os.path.basename(rel)

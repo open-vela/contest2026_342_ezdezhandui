@@ -12,7 +12,7 @@
   <!-- revision 节点锁定（SHA）: 固定到含 copyfile 重定向的提交, 避免 repo sync
        按 default(dev-ai-contest-2026) 退回无 copyfile 旧版。更新: rev-parse fix-clic-interrupt -->
   <project path="contest2026_342_ezdezhandui" name="contest2026_342_ezdezhandui"
-         revision="f7fb38fb11c21ae91c394e4fac1f2ad834645e91">
+         revision="e58a82058f0b1d06ded71ef71ab73a6d293cd662">
     <linkfile src="nuttx/arch/risc-v/src/esp32p4" dest="nuttx/arch/risc-v/src/esp32p4"/>
     <linkfile src="board/esp32p4/esp32p4-function-ev-board" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board"/>
     <linkfile src="board/esp32p4/esp32p4-tab5" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5"/>

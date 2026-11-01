@@ -14191,6 +14191,45 @@ eh_hosted_nuttx: station MAC learnt before DHCP
 2. 带 IP 的那条 261 字节消息**在数据通道上也没出现**（加了"非 IPv4/ARP 帧"的打印，一行都没有）——
    说明它还堵在从机的 `event_id=0` 队列里，两条取 IP 的路都还差一截。
 
+#### BY.28 第 83 轮：架构真相 —— **从机替主机做 DHCP**，地址只能靠那条消息送过来
+
+把两侧日志并排看，答案很清楚地摆在那里（同一次关联的两个事件）：
+
+```
+# 从机侧
+ehcp_nw_split: Sending network UP   event: iface=0, IP=192.168.1.9
+ehcp_event_handler: TX evt → host: event_id=0 msg_id=0x0309 len=261      ← 带地址的那条
+...
+ehcp_nw_split: Sending network DOWN event: iface=0, IP=0.0.0.0
+ehcp_event_handler: TX evt → host: event_id=1 msg_id=0x0309 len=261      ← 空的这条
+
+# 主机侧：9 次 777 事件，全部是空的
+DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0   ×10
+```
+
+也就是说：
+
+1. **esp-hosted 的 network-split 里，DHCP 是从机替主机做的**：从机拿到租约后把
+   "你的地址是 192.168.1.9" 作为 **network UP 事件**发给主机 —— 主机**不应该**自己去 DHCP。
+2. 这条消息走 `event_id=0`，而**空的那条**（network DOWN）走 `event_id=1` 并且能到 ✔。
+   主机侧收到的 777 事件**全是空的那些**，带地址的一条从未到达。
+3. 所以上一轮"让本机自己 DHCP"的思路是**方向错的**：主机的 DISCOVER 用的是**站点自己的 MAC**
+   （从机那个已经持有租约的 MAC），DHCP 服务器当然不会回应一个"同一站点、已经有租约"的新请求。
+   这条现在有了解释，不必再追。
+
+**数据面本身没问题**（同一次运行）：
+
+```
+rx frame len=590: 10 bd a3 89 70 d0 88 00 33 77 ba 69 08 00 45 00   ← AP → 本机 IPv4
+rx frame len=42 : 10 bd a3 89 70 d0 88 00 33 77 ba 69 08 06 00 01   ← ARP 请求（网络在找本站）
+tx: probe broadcast sendto -> 8 (errno=0) / txpoll len=304           ← 本机 → 空口（DISCOVER）
+```
+
+**结论**：距离"`wlan0` 拿到地址"只差**一条消息的投递**，而且它的范围已经缩到很小：
+主机的 SDIO 传输层按三个优先级队列收包（`PRIO_Q_SERIAL` / `PRIO_Q_BT` / `PRIO_Q_OTHERS`），
+而从机把这条消息标成 `event_id=0`。下一轮就做这一件事：**把每次收包落到哪个队列、以及
+从机侧 `event_id` 与队列的对应关系**打出来，定位这条 261 字节消息到底卡在哪一级。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

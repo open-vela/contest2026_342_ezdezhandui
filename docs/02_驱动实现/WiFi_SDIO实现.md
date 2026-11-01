@@ -14575,16 +14575,29 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
 | P4 构建 | 通过（`build completed successfully`），构建图为 `esp32p4/esp_hosted/**` |
 | P4 真机 | 迁移后重新烧写：`connected … rssi=-50 ch=6`、`DhcpDnsStatus … link=1 dhcp=1 ip=192.168.1.9`、`wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1` |
 | 共享层引用 | `grep` 于 `common/espressif/{Kconfig,Make.defs,CMakeLists.txt}`：`esp_hosted`/`esp_sdmmc`/`eh_frame`/`platform_include` 命中 0 |
-| 交叉目标 | `nuttx/boards/risc-v/esp32c6/esp32c6-devkitc/configs/nsh` 构建（见 CA.4 记录） |
+| 其它芯片 | 见 CA.4：静态证明（共享层对 P4 代码引用为 0；被移除的两条 include 只被 P4 使用） |
 | 清单一致性 | `python3 tools/engineering/gen_manifest_copyfiles.py --check` → ✅ |
 
 ## CA.4 操作提示与遗留
 
-1. **交叉目标构建要清干净**：`build.sh` 的 `-b <dir>` 必须配合 `--cmake` 生效顺序，
-   否则会退回 make 构建并在 `nuttx/` 真相鉴留下 `.config`，下一次 CMake 配置会报
-   `Please distclean previous make build`（本次踩过，删掉 `nuttx/.config` 即恢复）。
-   另外构建其它芯片会把 `nuttx/arch/risc-v/include/board` 软链改指向该芯片，
-   之后回到 P4 构建前要还原（与附录 BZ.6 同源）。
+1. **其它芯片的验证方式（本轮实际做到的）**：树内的 c3 / c3-legacy / c6 / h2 板子在本检出里
+   **只有 Make 版板级目录、没有 `CMakeLists.txt`**（openvela 的 CMake 流程只覆盖 vendor 板），
+   所以"交叉目标构建矩阵"在本检出里跑不起来（实测：C6 板配置报
+   `No CMakeLists.txt found at nuttx/boards/risc-v/esp32c6/esp32c6-devkitc`）。
+   替代的、更直接的证明是三条：
+   - **零引用**：`common/espressif` 的 `Kconfig` / `Make.defs` / `CMakeLists.txt` 里对
+     `esp_hosted*`、`esp_sdmmc*`、`eh_frame`、`platform_include`、`freertos_compat`
+     的引用均为 **0** —— 别的芯片编译的就是它自己的那份共享层，没有被塞进 P4 代码；
+   - **被移除的两条 include 只有 P4 用**：`_RETARGETABLE_LOCKING` 只在
+     `arch/risc-v/src/esp32p4/CMakeLists.txt` 定义（`platform_include/sys/lock.h` 因它而存在），
+     `freertos_compat` 是 MIPI-CSI（P4）路径的垫片；在 c6 等路径下无任何源码包含它们；
+   - **交付不再覆盖共享层**：该目录整体不进作品仓，别人的检出保留自己那份。
+2. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，
+   走错会退回 make 并在 `nuttx/` 源码树留下 `Make.defs`、`include/arch` 等残留，
+   下一次 CMake 配置会依次报 `Please distclean previous make build` 和
+   `Stale artifacts from a previous Kconfig-based Make build`（按提示删掉即可；
+   本次已清理，P4 重新构建验证通过）。另外交叉构建会把
+   `nuttx/arch/risc-v/include/board` 软链改指向该芯片，回 P4 前要还原（与附录 BZ.6 同源）。
 2. **遗留（阶段 4，未在本次范围）**：P4 bring-up 的其它驱动仍在共享目录里
    （`esp_touch.c`、`esp_mipi_dsi.c`、`esp_emac.c`、`esp_i2s.c`、`esp_csi.c`、`esp_lirc.c` 等）。
    它们多数已在 Kconfig 里 `depends on ARCH_CHIP_ESP32P4`，对其它芯片**配置上不可选**，

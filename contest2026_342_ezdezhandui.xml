@@ -91,8 +91,6 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ledc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ledc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lirc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_lirc.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lirc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_lirc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lp_mailbox.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_lp_mailbox.c"/>
@@ -102,8 +100,6 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_memorymap.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_memorymap.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_mipi_dsi.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_mipi_dsi.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_mipi_dsi.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_mipi_dsi.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_nxdiag.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_nxdiag.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_nxdiag.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_nxdiag.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_oneshot.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_pcnt.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_pcnt.c"/>
@@ -176,6 +172,10 @@
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/CMakeLists.txt" dest="nuttx/arch/risc-v/src/esp32p4/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/Kconfig" dest="nuttx/arch/risc-v/src/esp32p4/Kconfig"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/Make.defs" dest="nuttx/arch/risc-v/src/esp32p4/Make.defs"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_nxdiag.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp32p4_atomic.c" dest="nuttx/arch/risc-v/src/esp32p4/esp32p4_atomic.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp_chip_rev.c" dest="nuttx/arch/risc-v/src/esp32p4/esp_chip_rev.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp_hosted/compat/freertos_compat/freertos/FreeRTOS.h" dest="nuttx/arch/risc-v/src/esp32p4/esp_hosted/compat/freertos_compat/freertos/FreeRTOS.h"/>

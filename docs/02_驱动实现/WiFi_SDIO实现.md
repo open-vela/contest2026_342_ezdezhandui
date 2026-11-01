@@ -14614,7 +14614,15 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
    `arch/risc-v/src/esp32p4/drivers/`，在 P4 的 `Make.defs`/`CMakeLists.txt` 里加源与 include；
    untracked 文件搬走**不会**在 manifest 里产生删除条目（已验证：SDIO 集群 380 个文件搬迁后
    `--check` 通过）。tracked 的共享文件保持原样交付。
-6. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，
+6. **归属搬迁执行记录（2026-11-01 起）**
+
+   | 批次 | 驱动 | 落在 | 构建开关 | 验证 |
+   |---|---|---|---|---|
+   | 1 | `esp_lirc.c/.h`、`esp_nxdiag.c/.h` | `arch/risc-v/src/esp32p4/drivers/` | `CONFIG_ESP_RMT && CONFIG_DRIVERS_RC` / `CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL` | P4 整机构建通过；两文件用工程真编译参数 `-fsyntax-only` 均 rc=0；共享层对二者引用 0；交付待删除条目 0、`manifest --check` 通过 |
+
+   - 搬迁时把 `#include "espressif/esp_nxdiag.h"` 改为同目录 `"esp_nxdiag.h"`（新目录已在 include 路径上）。
+   - 注意：这两项在本板 defconfig 里**未开启**，所以整机构建只证明挂接正确；驱动本体的编译用工程参数单独验证（上面的 `-fsyntax-only`）。
+7. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，
    走错会退回 make 并在 `nuttx/` 源码树留下 `Make.defs`、`include/arch` 等残留，
    下一次 CMake 配置会依次报 `Please distclean previous make build` 和
    `Stale artifacts from a previous Kconfig-based Make build`（按提示删掉即可；

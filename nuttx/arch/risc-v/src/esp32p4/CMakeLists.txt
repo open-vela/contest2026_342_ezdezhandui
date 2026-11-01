@@ -68,6 +68,21 @@ if(CONFIG_ESPRESSIF_HOSTED_SDIO)
     ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/frame/shim)
 endif()
 
+# ── P4-only drivers that belong to this port ────────────────────────────────
+# Moved out of the shared espressif layer (plan 2026-11-01): they exist only in
+# this project (upstream openvela has no such files), so they are scoped here.
+
+if(CONFIG_ESP_RMT AND CONFIG_DRIVERS_RC)
+  target_sources(arch PRIVATE drivers/esp_lirc.c)
+endif()
+
+if(CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL)
+  target_sources(arch PRIVATE drivers/esp_nxdiag.c)
+endif()
+
+target_include_directories(arch PRIVATE
+  ${CMAKE_CURRENT_LIST_DIR}/drivers)
+
 # NuttX port layer of the official esp-hosted host stack (appendix AS).
 # Selected only by CONFIG_ESPRESSIF_HOSTED_OFFICIAL; the port's own sources and
 # include paths live in its CMakeLists.

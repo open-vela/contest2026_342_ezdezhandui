@@ -37,6 +37,20 @@ CHIP_CSRCS += esp_hosted/transport/esp_hosted_sdio.c
 CHIP_CSRCS += esp_hosted/frame/src/eh_frame.c
 endif
 
+# P4-only drivers that belong to this port (moved out of the shared layer).
+ifeq ($(CONFIG_ESP_RMT),y)
+ifeq ($(CONFIG_DRIVERS_RC),y)
+CHIP_CSRCS += drivers/esp_lirc.c
+endif
+endif
+
+ifeq ($(CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL),y)
+CHIP_CSRCS += drivers/esp_nxdiag.c
+endif
+
+INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)drivers
+VPATH += drivers
+
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)sdmmc
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)transport
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)frame$(DELIM)include

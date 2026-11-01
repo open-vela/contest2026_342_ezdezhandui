@@ -101,9 +101,6 @@ endif
 
 ifeq ($(CONFIG_ESP_RMT),y)
 	CHIP_CSRCS += esp_rmt.c
-	ifeq ($(CONFIG_DRIVERS_RC),y)
-		CHIP_CSRCS += esp_lirc.c
-	endif
 	ifeq ($(CONFIG_WS2812_NON_SPI_DRIVER),y)
 		CHIP_CSRCS += esp_ws2812.c
 	endif
@@ -185,10 +182,6 @@ endif
 
 ifeq ($(CONFIG_ESPRESSIF_EMAC),y)
 	CHIP_CSRCS += esp_emac.c
-endif
-
-ifeq ($(CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL),y)
-	CHIP_CSRCS += esp_nxdiag.c
 endif
 
 ifeq ($(CONFIG_ESPRESSIF_ADC),y)

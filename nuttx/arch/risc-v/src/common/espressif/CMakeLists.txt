@@ -96,9 +96,6 @@ endif()
 
 if(CONFIG_ESP_RMT)
   list(APPEND SRCS esp_rmt.c)
-  if(CONFIG_DRIVERS_RC)
-    list(APPEND SRCS esp_lirc.c)
-  endif()
   if(CONFIG_WS2812_NON_SPI_DRIVER)
     list(APPEND SRCS esp_ws2812.c)
   endif()
@@ -180,10 +177,6 @@ endif()
 
 if(CONFIG_ESPRESSIF_EMAC)
   list(APPEND SRCS esp_emac.c)
-endif()
-
-if(CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL)
-  list(APPEND SRCS esp_nxdiag.c)
 endif()
 
 if(CONFIG_ESPRESSIF_ADC)

@@ -29,7 +29,7 @@
 #include "bootloader_flash.h"
 #include "esp_mac.h"
 #include "spi_flash_chip_generic.h"
-#include "espressif/esp_nxdiag.h"
+#include "esp_nxdiag.h"
 #include "hal/efuse_ll.h"
 #include "esp_secure_boot.h"
 #include "esp_flash_encrypt.h"

@@ -14016,6 +14016,57 @@ read_block 的 261 字节报文数 = 0        ← 带 IP 的那个事件从未�
 **当前状态**：`wlan0` 的控制面（scan/connect）与链路层（关联 + DHCP 拿到 192.168.1.9）都已打通；
 "事件→地址"的代码已就位，等上面这个一次性大报文能稳定读回，`ifconfig wlan0` 即可见地址。
 
+#### BY.23 第 79 轮：IP 那条消息走的是**数据通道**（event_id=0），不是 RPC 控制通道
+
+三轮真机实验把这件事彻底钉死了：
+
+**1) 新报文路径本身是好的**（加了一个有界的"看门狗"：等待时读从机的 `INT_RAW`/`PACKET_LEN`）：
+
+```
+watchdog INT_RAW=00000000 (newpkt=0) LEN=…
+watchdog INT_RAW=00800000 (newpkt=1) LEN=…        ← 7 次
+```
+
+7 次 `newpkt=1` 都对应主机真的读到报文（`len_from_slave: 60/92/300/36/32`）。
+（顺带一条教训：`PACKET_LEN(0x60)` 用 CMD52 读回来是无意义的值——官方流程里的长度是读
+`TOKEN_RDATA(0x44)` 时"弹出"的，看门狗该读那一个。）
+
+**2) RPC 响应会超时，但请求其实到了**：把响应当判据会让本来能成的连接变成 "could not join"：
+
+```
+RPC wifi_set_config("…") -> -1 (advisory)     ← 从机串口：Applied WiFi config SSID: …
+RPC wifi_connect("…") -> -1                    ← 从机侧照样执行
+```
+
+原因：从机自己的示例应用在重连循环里每 ~2.4 s 推两个事件，而主机的报文读取是**逐字节 CMD52**
+（数百字节要几百毫秒），响应排在这些事件后面就超时了。改法：`set_config` 的响应只当参考、
+连接是否成功**以关联轮询为准**（18 次 × 5 s，中间再补发 connect）。这样即便响应丢失也能连上：
+
+```
+connected to "Hello_World_2.4G" ssid="Hello_World_2.4G" rssi=-48 ch=6
+bouncing the link for a fresh network-up event
+re-associated after the bounce (rssi=-49 ch=6)      ← 断/连一次也成功
+```
+
+**3) 关键发现：带 IP 的那条消息不是 RPC 事件。** 从机在重连成功后确实又发了一次：
+
+```
+I (205163) esp_netif_handlers: sta ip: 192.168.1.9, mask: 255.255.255.0, gw: 192.168.1.1
+I (205163) ehcp_nw_split: Sending network UP event: iface=0, IP=192.168.1.9
+I (205174) ehcp_event_handler: TX evt → host: event_id=0 msg_id=0x0309 len=261
+                                            ^^^^^^^^^^^^
+```
+
+对比控制类事件用的是 `event_id=1`（RPC）：**`event_id=0` 是数据/网络通道**。
+也就是说 IP 是走**数据面**送给主机的（`ehcp_nw_split` = network-split），
+而我们的 `DhcpDnsStatus` 回调拿到的是控制通道上那些 `link=0/dhcp=0` 的事件——难怪一直是零。
+
+**下一步（目标④真正的最后一环）**：把**数据通道**排空——我们的 `wlan0` 已经用
+`eh_host_transport_add_channel(NULL, ESP_STA_IF, 0, txfn, hosted_netdev_rx)` 注册了通道，
+但主机侧还没有把这条通道上的报文读出来交给 netdev（这也正是 `ping` 之类真正跑数据的前提）。
+做完这一步：IP 事件会以数据帧形式到 `hosted_netdev_rx`，由它解析并把地址交给
+`esp_hosted_netdev_apply_ip()`（本轮已就位），`ifconfig wlan0` 即可见地址。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

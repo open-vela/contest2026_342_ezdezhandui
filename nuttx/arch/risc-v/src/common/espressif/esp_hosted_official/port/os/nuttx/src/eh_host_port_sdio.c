@@ -132,6 +132,12 @@ struct eh_host_port_sdio_ctx_s
   struct sdio_dev_s *dev;
   mutex_t            lock;
   bool               ready;
+
+  /* Bounded diagnostics counter: while it is non-zero the wait path reports
+   * what the companion has pending (see wait_slave_intr).
+   */
+
+  int                watchdog_polls;
 };
 
 static struct eh_host_port_sdio_ctx_s g_sdio_ctx;
@@ -263,7 +269,11 @@ void *eh_host_port_sdio_init(void)
   if (!g_sdio_ctx_init)
     {
       nxmutex_init(&g_sdio_ctx.lock);
-      g_sdio_ctx_init = true;
+      /* ~4 minutes of coverage at the 2 s slice. */
+
+  g_sdio_ctx.watchdog_polls = 120;
+
+  g_sdio_ctx_init = true;
     }
 
   g_sdio_ctx.dev = esp_sdmmc_initialize(CONFIG_ESPRESSIF_SDMMC_SLOT);
@@ -1214,6 +1224,40 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
   if (c == NULL || c->dev == NULL)
     {
       return ESP_FAIL;
+    }
+
+  /* Say what the companion has pending, from time to time.
+   *
+   * A one-shot 261-byte event (the network-up message carrying the DHCP address)
+   * is sent by the companion and never read here, while 48-byte events arrive
+   * normally and nothing is dropped (appendix BY.22).  These two registers
+   * settle which side is at fault: INT_RAW's new-packet bit says whether the
+   * companion is asking, PACKET_LEN says whether it still holds a packet.
+   */
+
+  if (c->watchdog_polls > 0)
+    {
+      uint8_t raw[4];
+      uint8_t lenreg[4];
+
+      c->watchdog_polls--;
+
+      if (eh_host_port_sdio_read_reg(c, ESP_SLAVE_INT_RAW_REG, raw,
+                                     sizeof(raw), false) == ESP_OK &&
+          eh_host_port_sdio_read_reg(c, ESP_SLAVE_PACKET_LEN_REG, lenreg,
+                                     sizeof(lenreg), false) == ESP_OK)
+        {
+          uint32_t rawv = (uint32_t)raw[0] | ((uint32_t)raw[1] << 8) |
+                          ((uint32_t)raw[2] << 16) | ((uint32_t)raw[3] << 24);
+          uint32_t lenv = (uint32_t)lenreg[0] | ((uint32_t)lenreg[1] << 8) |
+                          ((uint32_t)lenreg[2] << 16) |
+                          ((uint32_t)lenreg[3] << 24);
+
+          syslog(LOG_INFO,
+                 "eh_host_port_sdio: watchdog INT_RAW=%08" PRIx32
+                 " (newpkt=%u) LEN=%" PRIu32 "\n",
+                 rawv, (unsigned)((rawv >> 23) & 1u), lenv);
+        }
     }
 
   /* Walk the wait in bounded slices.

@@ -556,26 +556,64 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                   ESP_WIFI_TEST_PASSWORD,
                   sizeof(ccfg.sta.password));
 
+          /* The config's reply is advisory only.
+           *
+           * Measured: the companion applies the config ("Applied WiFi config
+           * SSID: ..." on its console) and the host still times out waiting for
+           * the response when its event queue is busy -- and gating the connect
+           * on that reply then turned a working join into "could not join"
+           * (appendix BY.23).  It is a set-and-forget command here: proceed, and
+           * let the association poll below be the judge.
+           */
+
           crc = eh_host_wifi_set_config(WIFI_IF_STA, &ccfg);
-          syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
-                 "%s: RPC wifi_set_config(\"%s\") -> %d\n",
+          syslog(LOG_INFO, "%s: RPC wifi_set_config(\"%s\") -> %d (advisory)\n",
                  ENTRY_TAG, names[t], crc);
 
-          if (crc == ESP_OK)
-            {
-              crc = eh_host_wifi_connect();
-              syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
-                     "%s: RPC wifi_connect(\"%s\") -> %d\n",
-                     ENTRY_TAG, names[t], crc);
-            }
+          crc = eh_host_wifi_connect();
+          syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+                 "%s: RPC wifi_connect(\"%s\") -> %d\n",
+                 ENTRY_TAG, names[t], crc);
 
           /* The association shows up as sta_get_ap_info succeeding; give it a
            * dozen seconds, which is what the companion's own scan+join takes.
            */
 
-          for (int w = 0; crc == ESP_OK && w < 12; w++)
+          /* Give the association a real chance: the companion's own
+           * application shares the radio and may be mid-retry, in which case the
+           * first connect attempt is refused or simply waits.  Three attempts of
+           * twelve seconds each was what the measured runs needed (appendix
+           * BY.23); the previous single 12 s window made the result depend on
+           * where that retry loop happened to be.
+           */
+
+          /* Poll for the association, and keep nudging the connect.
+           *
+           * The requests themselves do arrive -- the companion logs "Applied
+           * WiFi config" and acts on the connect -- but their replies can time
+           * out while its own event traffic keeps the host's receive path busy
+           * (the payload is read a byte at a time, appendix BY.23).  Judging the
+           * join by the association poll instead of by those replies is what
+           * makes this independent of that timing.
+           */
+
+          for (int attempt = 0; attempt < 18 && !up; attempt++)
             {
-              nxsig_sleep(1);
+              if (attempt > 0 && (attempt % 4) == 0)
+                {
+                  (void)eh_host_wifi_connect();
+                }
+
+              for (int w = 0; w < 5; w++)
+                {
+                  nxsig_sleep(1);
+
+                  memset(&info, 0, sizeof(info));
+                  if (eh_host_wifi_sta_get_ap_info(&info) == ESP_OK)
+                    {
+                      break;
+                    }
+                }
 
               memset(&info, 0, sizeof(info));
               if (eh_host_wifi_sta_get_ap_info(&info) == ESP_OK)
@@ -591,6 +629,39 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
           if (up)
             {
+              /* Bounce the link once, on purpose.
+               *
+               * The companion sends the network-up event (the only message that
+               * carries the DHCP address) exactly once per association, and the
+               * first one is lost: it goes out while the host is still finishing
+               * the connect exchange, and the host never sees a new-packet
+               * (appendix BY.23).  A disconnect/connect cycle makes it associate
+               * and run DHCP again, sending a fresh event -- this time with the
+               * host's receive path idle and waiting, which is what the netdev
+               * needs to get its address.
+               */
+
+              syslog(LOG_INFO, "%s: bouncing the link for a fresh network-up "
+                     "event\n", ENTRY_TAG);
+
+              nxsig_sleep(8);
+              (void)eh_host_wifi_disconnect();
+              nxsig_sleep(2);
+              (void)eh_host_wifi_connect();
+
+              for (int w = 0; w < 25; w++)
+                {
+                  nxsig_sleep(1);
+                  memset(&info, 0, sizeof(info));
+                  if (eh_host_wifi_sta_get_ap_info(&info) == ESP_OK)
+                    {
+                      syslog(LOG_INFO, "%s: re-associated after the bounce "
+                             "(rssi=%d ch=%u)\n", ENTRY_TAG, (int)info.rssi,
+                             (unsigned)info.primary);
+                      break;
+                    }
+                }
+
               /* Ask the companion for its DHCP/DNS status and print the raw
                * reply.  The address is in there; printing the bytes first shows
                * the layout the generated struct uses, so the next step can apply

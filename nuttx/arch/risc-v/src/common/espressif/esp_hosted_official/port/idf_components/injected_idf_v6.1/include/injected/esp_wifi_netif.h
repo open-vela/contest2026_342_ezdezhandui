@@ -69,6 +69,7 @@ esp_err_t esp_wifi_get_if_mac(wifi_netif_driver_t ifx, uint8_t mac[6]);
  */
 bool esp_wifi_is_if_ready_when_started(wifi_netif_driver_t ifx);
 
+
 /**
  * @brief Register interface receive callback function with argument
  *

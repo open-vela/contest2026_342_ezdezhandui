@@ -14315,8 +14315,21 @@ CONFIG_LWIP_TCP_LOCAL_PORT_RANGE_START/END、UDP 同名四项
 | `esp_netif_ip_addr.h` | 本次已补了一个最小的转接头（已随回退删除） |
 | 注入头 `esp_wifi_netif.h` 的 `esp_netif_receive_t` | vendored 注入头不含该类型 |
 
-**本轮已把这次尝试完整回退**（CMake、拷入的特性目录、转接头都清掉），
-并确认**构建恢复绿色**（6 秒增量构建成功）——不留半成品。
+**同轮第二次尝试（把清单尽量补齐后再构建）**，实际推进到：
+
+| 已补 | 仍缺（上游同版本里有，vendored 子集没有） |
+|---|---|
+| `common/eh_common/include/eh_fsm.h`（上游拷入） | `eh_host_sta_fsm.h` |
+| `esp_netif_ip_addr.h`（最小转接头） | `eh_common_ctx.h` |
+| `esp_netif_types.h` 补 `esp_ip6_addr_t` / `esp_netif_ip_info_t` | `esp_ip_addr_t` |
+| 注入头 `esp_wifi_netif.h` 补 `esp_netif_receive_t` 声明 | —— |
+
+也就是说，这不是"再加两个宏"的事，而是**要把 vendored 的 `host/features` 与 `common` 子集
+按同一上游版本补齐**（一条 `cp` 链，但要逐个目录核对，避免夹带上不需要的文件）。
+这属于一次**专门的"补齐 vendored 子集"任务**，不适合塞在其它验证中间做。
+
+**本轮已把两次尝试全部回退**（CMake 定义/源/包含路径、拷入的特性目录、`eh_fsm.h`、
+转接头、注入头与 shim 的类型补充），并确认**构建恢复绿色**（6 秒增量构建成功）——不留半成品。
 **下一轮的正事**：把上面这张清单一次性补齐（上游同版本取文件即可），
 让主机真正声明 network-split；那之后 `Req_GetDhcpDnsStatus` 会被应答、
 network UP 事件也会被这一层消费，`wlan0` 即可拿到地址。

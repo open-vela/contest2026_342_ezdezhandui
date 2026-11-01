@@ -707,6 +707,19 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                   }
               }
 
+              /* Give the receive path a moment to learn the station's MAC; the
+               * AP drops frames whose source address it does not know as this
+               * station (appendix BY.27).
+               */
+
+              for (int w = 0; w < 20 && !esp_hosted_netdev_mac_learned(); w++)
+                {
+                  nxsig_sleep(1);
+                }
+
+              syslog(LOG_INFO, "%s: station MAC %s before DHCP\n", ENTRY_TAG,
+                     esp_hosted_netdev_mac_learned() ? "learnt" : "NOT learnt");
+
               {
                 FAR void *hc = dhcpc_open("wlan0", NULL, 0);
 

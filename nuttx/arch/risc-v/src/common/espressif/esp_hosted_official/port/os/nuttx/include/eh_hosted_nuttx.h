@@ -47,6 +47,7 @@ int esp_hosted_netdev_register(void);
 
 int esp_hosted_netdev_up(void);
 void esp_hosted_netdev_carrier(bool up);
+bool esp_hosted_netdev_mac_learned(void);
 
 int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
                                FAR const uint8_t *gw);

@@ -84,6 +84,7 @@ struct hosted_netdev_s
   bool                bifup;    /* The interface has been taken up        */
   eh_host_channel_t  *channel;  /* Stack-side channel for ESP_STA_IF      */
   eh_host_channel_tx_fn_t txfn; /* Bound TX entry point                   */
+  bool                   mac_learned; /* d_mac holds the station's own MAC */
 };
 
 /****************************************************************************
@@ -115,7 +116,6 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev);
 static void hosted_netdev_txavail(FAR struct net_driver_s *dev)
 {
   FAR struct hosted_netdev_s *priv = (FAR struct hosted_netdev_s *)dev;
-  esp_err_t ret;
 
   /* This NuttX netdev model has no d_iftransmit(): the network stack calls
    * d_txavail() when it has queued a packet in d_buf/d_len, and the driver
@@ -136,7 +136,7 @@ static void hosted_netdev_txavail(FAR struct net_driver_s *dev)
       }
   }
 
-  if (priv->txfn == NULL || dev->d_len == 0)
+  if (priv->txfn == NULL || priv->channel == NULL)
     {
       return;
     }
@@ -291,6 +291,29 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
 
       eth = (FAR struct eth_hdr_s *)priv->dev.d_buf;
 
+      /* Adopt the station's own MAC from the first frame addressed to it.
+       *
+       * The radio is in the companion, so the address that is on the air is the
+       * companion's; the port starts with a locally administered placeholder
+       * because no RPC getter exposes it (the StaConnected event carries only
+       * the AP's BSSID).  A frame the AP sends to this station carries that MAC
+       * as its destination, so it can be learnt here -- and it has to be, or the
+       * AP drops everything this interface transmits as coming from an unknown
+       * station (appendix BY.27).
+       */
+
+      if (!priv->mac_learned && (eth->dest[0] & 0x01) == 0)
+        {
+          memcpy(priv->dev.d_mac.ether.ether_addr_octet, eth->dest,
+                 sizeof(priv->dev.d_mac.ether.ether_addr_octet));
+          priv->mac_learned = true;
+
+          syslog(LOG_INFO, "%s: station MAC learnt %02x:%02x:%02x:%02x:%02x:%02x\n",
+                 NETDEV_TAG, eth->dest[0], eth->dest[1], eth->dest[2],
+                 eth->dest[3], eth->dest[4], eth->dest[5]);
+        }
+
+
 #ifdef CONFIG_NET_IPv4
       if (eth->type == HTONS(ETHTYPE_IP))
         {
@@ -306,6 +329,36 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
       else
 #endif
         {
+          /* Not IPv4/ARP: say so, with the bytes.
+           *
+           * The companion's network-up message -- the one that carries the DHCP
+           * address -- goes out as a *data channel* message (its log tags it
+           * event_id=0) and is not an Ethernet frame, so it lands here.  Printing
+           * it is how its shape gets identified instead of silently dropped
+           * (appendix BY.27).
+           */
+
+          static int other_trace;
+
+          if (other_trace < 8)
+            {
+              char line[3 * 16 + 1];
+              unsigned k;
+              unsigned n = len < 16 ? (unsigned)len : 16;
+
+              other_trace++;
+
+              for (k = 0; k < n; k++)
+                {
+                  snprintf(&line[k * 3], 4, " %02x",
+                           ((FAR const unsigned char *)priv->dev.d_buf)[k]);
+                }
+
+              line[n * 3] = '\0';
+              syslog(LOG_INFO, "%s: non-IP frame len=%u type=%04x:%s\n",
+                     NETDEV_TAG, (unsigned)len, (unsigned)eth->type, line);
+            }
+
           NETDEV_RXDROPPED(&priv->dev);
           priv->dev.d_len = 0;
         }
@@ -635,6 +688,19 @@ void esp_hosted_netdev_carrier(bool up)
     }
 
   syslog(LOG_INFO, "%s: carrier %s\n", NETDEV_TAG, up ? "on" : "off");
+}
+
+/****************************************************************************
+ * Name: esp_hosted_netdev_mac_learned
+ *
+ * Description:
+ *   True once the station's own MAC has been captured from a received frame.
+ *
+ ****************************************************************************/
+
+bool esp_hosted_netdev_mac_learned(void)
+{
+  return g_hosted_netdev.mac_learned;
 }
 
 /****************************************************************************

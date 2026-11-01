@@ -14148,6 +14148,49 @@ eh_hosted_nuttx: probe broadcast sendto -> -1 (errno=113)     ← 113 = EHOSTUNR
 接收侧一并统一；之后 `dhcpc` 的 DISCOVER 才能真正上线，`wlan0` 才会拿到自己的地址。
 本轮的全部中间结论与三处修复都已入库（carrier、devif_poll+net_lock、tx 完成清 `d_len`）。
 
+#### BY.27 第 82 轮：**发送方向打通了**（不是 iob 的问题，是我自己留的早退）
+
+上一轮把原因归到"必须用 iob 模型"，这一轮先做了一件事：**回读自己的代码**。
+`hosted_netdev_txavail()` 里还留着上一版的开头：
+
+```c
+  if (priv->txfn == NULL || dev->d_len == 0)
+    {
+      return;            /* ← 通知到达时 d_len 本来就是 0，于是永远走不到 devif_poll */
+    }
+```
+
+也就是说 `devif_poll()` 从未被执行——不是模型不对，是这行早退把它挡掉了。删掉之后再测：
+
+```
+eh_hosted_netdev: txavail len=0 txfn=yes channel=yes bifup=1
+eh_hosted_netdev: txpoll len=50
+eh_hosted_nuttx: probe broadcast sendto -> 8 (errno=0)      ← 手工广播成功发出
+eh_hosted_netdev: txpoll len=304                            ← 这就是 DHCP DISCOVER
+eh_hosted_netdev: txpoll len=304
+eh_hosted_netdev: txpoll len=304
+```
+
+**主机 → 链路方向从"发不出去"变成"发得出去"**：手工广播 8 字节成功、DHCP 的 DISCOVER
+（304 字节帧）连续上线。这条路上的三处修复（carrier、`devif_poll`+`net_lock`、TX 完成清 `d_len`）
+都是必需的，只是最后卡在我自己的早退上。
+
+另外补了一处**真实语义**：本接口必须用**从机自己的 MAC** 发送。端口原来用一个本地管理地址占位
+（`02:00:00:00:00:01`），而 AP 只认它认识的那个站点地址，否则直接丢弃。站点的 MAC 没有 RPC 取法
+（`StaConnected` 事件只带 AP 的 BSSID），但**收到的帧的目的地址就是它**，于是接收路径顺手学下来：
+
+```
+eh_hosted_netdev: station MAC learnt …
+eh_hosted_nuttx: station MAC learnt before DHCP
+```
+
+**本轮仍未闭合的**（下一轮继续）：
+
+1. DISCOVER 出去了但**没有 DHCP 应答回来**（主机侧只收到 IPv4 的 590/42 字节帧，没有 342 字节的 OFFER）；
+   要先确认从机的 network-split 是否真把主机的帧转到了空口上；
+2. 带 IP 的那条 261 字节消息**在数据通道上也没出现**（加了"非 IPv4/ARP 帧"的打印，一行都没有）——
+   说明它还堵在从机的 `event_id=0` 队列里，两条取 IP 的路都还差一截。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

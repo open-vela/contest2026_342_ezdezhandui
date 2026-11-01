@@ -1,0 +1,344 @@
+[esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***
+[esp32p4] [INF] [boot] chip revision: v3.2
+[esp32p4] [INF] [boot] efuse block revision: v1.2
+[esp32p4] [INF] [boot.esp32p4] SPI Speed      : 80MHz
+[esp32p4] [INF] [boot.esp32p4] SPI Mode       : DIO
+[esp32p4] [INF] [boot.esp32p4] SPI Flash Size : 4MB
+[esp32p4] [INF] [boot] Enabling RNG early entropy source...
+[esp32p4] [INF] Image index: 0, Swap type: none
+[esp32p4] [INF] Disabling RNG early entropy source...
+[esp32p4] [INF] br_image_off = 0x20000
+[esp32p4] [INF] ih_hdr_size = 0x20
+[esp32p4] [INF] Loading image 0 - slot 0 from flash, area id: 1
+[esp32p4] [INF] DRAM segment: start=0x20000, size=0x0, vaddr=0x4ff00000
+[esp32p4] [INF] IRAM segment: start=0x20080, size=0xb8f8, vaddr=0x4ff40000
+[esp32p4] [INF] LP_IRAM segment: paddr=0002b978h, vaddr=30100024h, size=00088h (   136) load
+[esp32p4] [INF] Mapped IROM: vaddr=0x40000000 paddr=0x30000 len=0x110000
+[esp32p4] [INF] start=0x4ff48620
+I (10809) hex_psram: vendor id    : 0x0d (AP)
+I (10810) hex_psram: Latency      : 0x01 (Fixed)
+I (10810) hex_psram: DriveStr.    : 0x00 (25 Ohm)
+I (10811) hex_psram: dev id       : 0x03 (generation 4)
+I (10816) hex_psram: density      : 0x07 (256 Mbit)
+I (10820) hex_psram: good-die     : 0x06 (Pass)
+I (10825) hex_psram: SRF          : 0x02 (Slow Refresh)
+I (10830) hex_psram: BurstType    : 0x00 ( Wrap)
+I (10834) hex_psram: BurstLen     : 0x03 (2048 Byte)
+I (10839) hex_psram: BitMode      : 0x01 (X16 Mode)
+I (10843) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)
+I (10849) hex_psram: DriveStrength: 0x00 (1/1)
+I (10853) MSPI Timing: Enter psram timing tuning
+I (11013) esp_psram: Found 32MB PSRAM device
+ABCDES8311: speaker PA enabled (GPIO53)
+ES8311 ready: I2S0 (MCLK=13 BCLK=12 WS=10 DOUT=9 DIN=11), I2C0 addr 0x18 -> /dev/audio/pcm0
+esp_hosted_sdio: companion reset: GPIO54 held low 500 ms
+esp_hosted_sdio: companion enable held high (GPIO54), settling 1000 ms
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: verid=5342270a status=00000106 cdetect=00000000 clkena=00000002
+esp_hosted_sdio: ctrl=00000030 bmod=00000000 rintsts=00000000 clkdiv=0000fa00
+esp_hosted_sdio: CIU reset bit clear -- CIU is running (bit0 of ctrl: 0)
+esp_hosted_sdio: clkrst sys=0e057038 peri01=01800601 peri02=388e6e00 ref2=00000115
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_hosted_sdio: probe 1/4 -> -5, retrying
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)
+esp_hosted_sdio: CCCR 0x04 interrupt enable 02 -> 03 (ret 0)
+esp_hosted_sdio: card bus width requested 4 bit (CCCR 0x07 was 42, ret 0)
+esp_hosted_sdio: host-ready mask 01 written (ret 0), readback 00 (ret 0)
+esp_hosted_sdio: starting receive loop (400 rounds)
+esp_hosted_sdio: diag FN0 CCCR00=32(r0) FN0 BLKSIZ=0200 FN1 BLKSIZ=0200(r0) INT_RAW/PKT_LEN t0=0040cc00/3c00c003 t1=0040cc00/3c00c003
+esp_sdmmc: FIFO has data: raw=00000020 rxdr=1 txdr=0 status=0003a4b1
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: dwait[1] t=50ms status=000ba901 fifo=5 datbusy=0 mc=0 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_sdmmc: FIFO has data: raw=00020020 rxdr=1 txdr=0 status=000ba901
+esp_hosted_sdio: diag window 0x50 x20 ret=0 bytes=0040cc00 0040cc00 0040cc00 0040cc00 0040cc00
+esp_hosted_sdio: sweep[0] FN1@0x60 size= 1 ret=0 first=3c 5a 5a 5a err=00000000
+esp_hosted_sdio: sweep[0] FN1@0x60 size= 2 ret=0 first=3c 3c 5a 5a err=00000000
+esp_hosted_sdio: sweep[0] FN1@0x60 size= 4 ret=0 first=3c 3c 3c 3c err=00000000
+esp_hosted_sdio: sweep[0] FN1@0x50 INT_RAW ret=0 bytes=00 00 00 00
+esp_hosted_sdio: sweep[0] FN1@0x60 size= 8 ret=0 first=3c 00 3c 00 err=00000000
+esp_hosted_sdio: sweep[0] FN1@0x60 size=16 ret=0 first=3c 00 c0 03 err=00000000
+esp_hosted_sdio: sweep[0] FN1@0x60 size=20 ret=0 first=3c 00 c0 03 err=00000000
+esp_hosted_sdio: sweep[0] FN1@0x60 size=32 ret=0 first=3c 00 c0 03 err=00000000
+esp_hosted_sdio: sweep[0] FN1@0x60 size=60 ret=0 first=3c 00 c0 03 err=00000000
+esp_hosted_sdio: sweep[0] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
+esp_hosted_sdio: rxloop[0] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: INT_CLR as one 4-byte CMD53 write: ret 0
+esp_hosted_sdio: rxloop[0] len=802816 ret=0 tail=05 00 30 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 0) ***
+esp_hosted_sdio: rxloop[1] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[2] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[3] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[4] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[5] card-intr=1 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[5] len=360 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 5) ***
+esp_hosted_sdio: rxloop[6] len=452 ret=0 tail=03 00 50 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 6) ***
+esp_hosted_sdio: rxloop[10] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[14] len=752 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 14) ***
+esp_hosted_sdio: rxloop[15] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p1=0/3c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[15] len=844 ret=0 tail=03 00 50 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 15) ***
+esp_hosted_sdio: sweep[1] probe FN1@0x60 size= 1 ret=0 first=4c 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[20] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p2=0/4c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[22] len=1144 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 22) ***
+esp_hosted_sdio: rxloop[23] len=1236 ret=0 tail=03 00 50 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 23) ***
+esp_hosted_sdio: rxloop[25] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p2=0/4c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[30] card-intr=1 ab=2147483647 00 00 sw=0/0/0 max=60 p2=0/4c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[30] len=1536 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 30) ***
+esp_hosted_sdio: rxloop[31] len=1628 ret=0 tail=03 00 50 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 31) ***
+esp_hosted_sdio: sweep[2] probe FN1@0x60 size= 1 ret=0 first=5c 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[35] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p3=0/5c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[39] len=1928 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 39) ***
+esp_hosted_sdio: rxloop[40] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p3=0/5c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[40] len=2020 ret=0 tail=03 00 50 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 40) ***
+esp_hosted_sdio: rxloop[45] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p3=0/5c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[47] len=2320 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 47) ***
+esp_hosted_sdio: rxloop[48] len=2412 ret=0 tail=03 00 50 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 48) ***
+esp_hosted_sdio: rxloop[50] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p3=0/5c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[3] probe FN1@0x60 size= 1 ret=0 first=6c 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[55] card-intr=1 ab=2147483647 00 00 sw=0/0/0 max=60 p4=0/6c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[55] len=2712 ret=0 tail=03 00 1d 01
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 55) ***
+esp_hosted_sdio: rxloop[56] len=2804 ret=0 tail=03 00 50 00
+esp_hosted_sdio: *** PACKET DATA RECEIVED (round 56) ***
+esp_hosted_sdio: rxloop[60] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p4=0/6c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[65] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p4=0/6c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[70] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p4=0/6c cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[4] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[75] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p5=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[80] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p5=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[85] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p5=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[5] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[90] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p6=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[95] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p6=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[100] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p6=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[105] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p6=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[6] FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: sweep[6] FN1@0x60 size= 2 ret=0 first=f4 f4 5a 5a err=00000000
+esp_hosted_sdio: sweep[6] FN1@0x60 size= 4 ret=0 first=f4 f4 f4 f4 err=00000000
+esp_hosted_sdio: sweep[6] FN1@0x60 size= 8 ret=0 first=f4 0a f4 0a err=00000000
+esp_hosted_sdio: sweep[6] FN1@0x60 size=16 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[6] FN1@0x60 size=20 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[6] FN1@0x60 size=32 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[6] FN1@0x60 size=60 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[6] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
+esp_hosted_sdio: rxloop[110] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p7=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[115] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p7=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[120] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p7=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[7] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[125] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p8=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[130] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p8=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[135] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p8=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[140] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p8=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[8] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[145] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p9=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[150] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p9=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[155] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p9=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[160] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p9=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[9] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[165] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p10=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[170] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p10=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[175] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p10=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[10] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[180] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p11=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[185] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p11=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[190] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p11=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[195] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p11=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[11] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[200] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p12=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[205] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p12=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[210] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p12=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[12] FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: sweep[12] FN1@0x60 size= 2 ret=0 first=f4 f4 5a 5a err=00000000
+esp_hosted_sdio: sweep[12] FN1@0x60 size= 4 ret=0 first=f4 f4 f4 f4 err=00000000
+esp_hosted_sdio: sweep[12] FN1@0x60 size= 8 ret=0 first=f4 0a f4 0a err=00000000
+esp_hosted_sdio: sweep[12] FN1@0x60 size=16 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[12] FN1@0x60 size=20 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[12] FN1@0x60 size=32 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[12] FN1@0x60 size=60 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[12] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
+esp_hosted_sdio: rxloop[215] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p13=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[220] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p13=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[225] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p13=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[230] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p13=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[13] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[235] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p14=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[240] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p14=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[245] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p14=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[250] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p14=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[14] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[255] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p15=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[260] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p15=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[265] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p15=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[15] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[270] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p16=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[275] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p16=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[280] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p16=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[285] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p16=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[16] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[290] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p17=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[295] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p17=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[300] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p17=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[17] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[305] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p18=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[310] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p18=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[315] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p18=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[320] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p18=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[18] FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: sweep[18] FN1@0x60 size= 2 ret=0 first=f4 f4 5a 5a err=00000000
+esp_hosted_sdio: sweep[18] FN1@0x60 size= 4 ret=0 first=f4 f4 f4 f4 err=00000000
+esp_hosted_sdio: sweep[18] FN1@0x60 size= 8 ret=0 first=f4 0a f4 0a err=00000000
+esp_hosted_sdio: sweep[18] FN1@0x60 size=16 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[18] FN1@0x60 size=20 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[18] FN1@0x60 size=32 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[18] FN1@0x60 size=60 ret=0 first=f4 0a 60 2f err=00000000
+esp_hosted_sdio: sweep[18] summary max_ok=60 r1=0 r4=0 r20=0 r60=0
+esp_hosted_sdio: rxloop[325] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p19=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[330] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p19=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[335] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p19=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[340] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p19=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[19] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[345] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p20=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[350] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p20=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[355] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p20=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[20] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[360] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p21=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[365] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p21=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[370] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p21=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[375] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p21=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[21] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[380] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p22=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[385] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p22=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: rxloop[390] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p22=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: sweep[22] probe FN1@0x60 size= 1 ret=0 first=f4 5a 5a 5a err=00000000
+esp_hosted_sdio: rxloop[395] card-intr=0 ab=2147483647 00 00 sw=0/0/0 max=60 p23=0/f4 cccr=32 f0b=0200 f1b=0200 w0=0040cc00/3c00c003 w1=0040cc00/3c00c003
+esp_hosted_sdio: receive loop done, 15 packet(s) with data
+esp_hosted_sdio: high speed: card reports 01, enable ret 0, now 03
+esp_hosted_sdio: high speed: clock raised
+esp_hosted_sdio: card function ready (FN1, 512-byte blocks), frame layer up (hdr v1, 12-byte headers, checksum on)
+esp_hosted_sdio: slave PACKET_LEN   [00060] = f4 (ret 0)
+esp_hosted_sdio: slave TOKEN_RDATA  [00044] = 00 (ret 0)
+esp_hosted_sdio: slave SCRATCH0     [0006c] = 00 (ret 0)
+esp_hosted_sdio: slave SCRATCH7     [0008c] = 00 (ret 0)
+esp_hosted_sdio: scratch14 loopback: wrote 5a (ret 0), read 5a (ret 0) -- MATCHES
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00002000 des0=8000001c ctrl=02000030
+esp_hosted_sdio: CMD53 read 1x512 from FN1: ret 0, first word 00000000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_hosted_sdio: INT_RAW=004c7800 new_packet(bit23)=0
+esp_hosted_sdio: slave LEN=f4 0a 60 TOKEN=00020000
+esp_sdmmc: dwait[1] t=50ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_sdmmc: dwait[2] t=100ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_sdmmc: dwait[3] t=150ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_sdmmc: dwait[4] t=200ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_sdmmc: dwait[5] t=250ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_sdmmc: dwait[6] t=300ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_sdmmc: dwait[7] t=350ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_sdmmc: dwait[8] t=400ms status=0001ad06 fifo=0 datbusy=0 mc=1 idsts=00000000 des0=00000000 ctrl=02000030
+esp_hosted_sdio: clean-window TX write ret -110, TOKEN 00020000 -> 00020000
+esp_hosted_sdio: packet queued: raw=2f600af4 len=2804
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00001000 [re=0 rcrc=0 dcrc=0 rto=0 drto=0 hto=0 frun=0 hle=1 sbe=0 ebe=0]
+esp_sdmmc: clock-update command did NOT complete (cmd=a0212000 rintsts=00000010 ctrl=02000030) -- falling back to a controller reset
+esp_sdmmc: card clock was left off by a clock change (ctrl=02000030 cmd=20212000), re-enabling it
+esp_hosted_sdio: data clock switched to the 25 MHz default speed
+MIPI PHY LDO ch3 @ 2500mV enabled
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+Backlight disabled on GPIO26 (J1->J6 jumper required)
+LCD power/reset path ready (EK79007)
+SC2336 chip ID: 0xcb3a
+Camera registered on /dev/video0
+MIPI-DSI host registered (2 lanes @ 900 Mbps)
+Configuring DPI 1024x600 @ 52 MHz...
+EK79007 panel init...
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+EK79007: panel initialized (2 lanes, 900 Mbps/lane)
+Starting DSI video...
+DSI-DMA[before-arm] fb=0x48000040 lli=0x4ff6a200 nc=0x8ff6a200 isr=0 rst=0 chen0=00000000 ist=00000000 cist=00000000 sar=00000000 dar=00000000 bts=00000000 ctl=00001200 llp=00000000 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[after-arm] fb=0x48000040 lli=0x4ff6a200 nc=0x8ff6a200 isr=0 rst=1 chen0=00000002 ist=00000000 cist=00000000 sar=48000240 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[t200ms] fb=0x48000040 lli=0x4ff6a200 nc=0x8ff6a200 isr=14 rst=15 chen0=00000002 ist=00000000 cist=00000000 sar=4810ea00 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+Backlight enabled on GPIO26 (J1->J6 jumper required)
+/dev/fb0 ready 1024x600 RGB565 @ 0x48000040 (1228800 bytes)
+/dev/fb0 registered (EK79007)
+I2C0 @400000 Hz: ACK from 0x18
+I2C0 @400000 Hz: ACK from 0x30
+I2C0 @400000 Hz: ACK from 0x5d
+I2C0 @400000 Hz: scan done, 3 device(s)
+I2C0 @100000 Hz: ACK from 0x18
+I2C0 @100000 Hz: ACK from 0x30
+I2C0 @100000 Hz: ACK from 0x5d
+I2C0 @100000 Hz: scan done, 3 device(s)
+GT911: raw ID at 0x5d = 39 31 31 00
+GT911: product ID "911" at 0x5d
+GT911: cfg x_max=1024 y_max=600 touch_num=5 (panel is 1024x600)
+GT911: no INT line routed; running in polling mode
+GT911 touchscreen registered at /dev/input0 (0x5d)
+DNS nameserver set to 192.168.1.1
+
+NuttShell (NSH)
+nsh> 

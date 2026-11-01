@@ -461,6 +461,93 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
       }
   }
 
+  /* Connect test (goal stage 4's connect / DHCP evidence).
+   *
+   * The credentials are NOT in this file: they come from the build's own config
+   * (ESP_WIFI_TEST_SSID / _PASSWORD / _SSID_ALT), so nothing
+   * secret is part of the delivered tree.  Empty SSID means "do not run it".
+   *
+   * Two names are tried in turn because the companion is a 2.4 GHz-only part: an
+   * AP that exists only on 5 GHz never shows up in its scan, and the same
+   * router's 2.4 GHz interface is the one that can actually be joined.
+   */
+
+#ifdef ESP_WIFI_TEST_SSID
+  if (strlen(ESP_WIFI_TEST_SSID) > 0)
+    {
+      FAR const char *names[2] =
+        {
+          ESP_WIFI_TEST_SSID,
+#ifdef ESP_WIFI_TEST_SSID_ALT
+          ESP_WIFI_TEST_SSID_ALT
+#else
+          ""
+#endif
+        };
+
+      for (int t = 0; t < 2; t++)
+        {
+          wifi_config_t ccfg;
+          wifi_ap_record_t info;
+          esp_err_t     crc;
+          bool          up = false;
+
+          if (names[t][0] == '\0')
+            {
+              continue;
+            }
+
+          memset(&ccfg, 0, sizeof(ccfg));
+          strlcpy((FAR char *)ccfg.sta.ssid, names[t], sizeof(ccfg.sta.ssid));
+          strlcpy((FAR char *)ccfg.sta.password,
+                  ESP_WIFI_TEST_PASSWORD,
+                  sizeof(ccfg.sta.password));
+
+          crc = eh_host_wifi_set_config(WIFI_IF_STA, &ccfg);
+          syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+                 "%s: RPC wifi_set_config(\"%s\") -> %d\n",
+                 ENTRY_TAG, names[t], crc);
+
+          if (crc == ESP_OK)
+            {
+              crc = eh_host_wifi_connect();
+              syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+                     "%s: RPC wifi_connect(\"%s\") -> %d\n",
+                     ENTRY_TAG, names[t], crc);
+            }
+
+          /* The association shows up as sta_get_ap_info succeeding; give it a
+           * dozen seconds, which is what the companion's own scan+join takes.
+           */
+
+          for (int w = 0; crc == ESP_OK && w < 12; w++)
+            {
+              nxsig_sleep(1);
+
+              memset(&info, 0, sizeof(info));
+              if (eh_host_wifi_sta_get_ap_info(&info) == ESP_OK)
+                {
+                  syslog(LOG_INFO,
+                         "%s: connected to \"%s\" ssid=\"%s\" rssi=%d ch=%u\n",
+                         ENTRY_TAG, names[t], (FAR const char *)info.ssid,
+                         (int)info.rssi, (unsigned)info.primary);
+                  up = true;
+                  break;
+                }
+            }
+
+          if (up)
+            {
+              break;
+            }
+
+          syslog(LOG_WARNING, "%s: could not join \"%s\"\n",
+                 ENTRY_TAG, names[t]);
+        }
+    }
+
+#endif /* ESP_WIFI_TEST_SSID */
+
   return OK;
 }
 

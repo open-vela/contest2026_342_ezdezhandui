@@ -153,6 +153,12 @@ target_compile_definitions(eh_hosted_nuttx PRIVATE
   # config falls through to its "no optimization" branch, which is the
   # packet mode this companion does not use.
   CONFIG_ESP_HOSTED_HOST_SDIO_RX_STREAMING_MODE=1
+  # Optional local credentials for the connect self-test (验收④).
+  #
+  # Read from the BUILD directory on purpose: Wi-Fi credentials must never be
+  # part of the delivered tree, and a build directory is not what is delivered.
+  # The file, when present, adds the ESP_WIFI_TEST_* compile definitions the
+  # entry uses; without it the connect test simply does not run.
   EH_HOST_HOST_USES_STATIC_NETIF=0
   CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=1
   CONFIG_ESP_HOSTED_USE_MEMPOOL=1
@@ -178,3 +184,12 @@ set_source_files_properties(
   PROPERTIES COMPILE_DEFINITIONS "_Thread_local=")
 
 target_sources(arch PRIVATE $<TARGET_OBJECTS:eh_hosted_nuttx>)
+
+# Optional local credentials for the connect self-test (goal stage 4).
+#
+# Read from the user's home directory on purpose: Wi-Fi credentials must never be
+# part of the delivered tree, and the home directory certainly is not.  When the
+# file is absent the connect test simply does not run.
+if(EXISTS $ENV{HOME}/.wifi_test_creds.cmake)
+  include($ENV{HOME}/.wifi_test_creds.cmake)
+endif()

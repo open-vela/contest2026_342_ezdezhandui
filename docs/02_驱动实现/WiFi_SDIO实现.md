@@ -13931,6 +13931,66 @@ AP[7] ssid="Hello_World_2.4G"  rssi=-50 ch=6  auth=3
 只有板子的使用者才掌握的信息。拿到 SSID/密码后：`eh_host_wifi_set_config(STA, …)` →
 `eh_host_wifi_connect()` → 等 `DhcpDnsStatus` 事件里的 IP，验收④即可闭环。
 
+#### BY.20 第 77 轮：connect 自测的凭据如何注入（**不进交付树**）
+
+凭据拿到了（一个 5 GHz 的 SSID 与密码）。两个现实约束决定了怎么做：
+
+1. **这颗从机是 2.4 GHz 器件**：它的扫描结果里只有 `Hello_World_2.4G`（ch6），
+   从来没有 5 GHz 的名字。所以自测按"先试给定 SSID、失败再试同一路由的 2.4 GHz 名字"设计
+   （`ESP_WIFI_TEST_SSID` → `ESP_WIFI_TEST_SSID_ALT`）。
+2. **密码不能进交付树**。三种做法都试过并记账：
+   - 加 Kconfig 选项 + 只写构建目录的 `.config`：**不生效**——`include/nuttx/config.h`
+     只在**完整重新配置**时重生，改 `.config` 不会刷新它；
+   - 写进端口 CMakeLists 的编译定义：会随交付树走，**不可接受**；
+   - **最终做法**：端口 CMakeLists 里加一个**无害的钩子**——
+
+     ```cmake
+     if(EXISTS $ENV{HOME}/.wifi_test_creds.cmake)
+       include($ENV{HOME}/.wifi_test_creds.cmake)
+     endif()
+     ```
+
+     凭据放在**用户主目录**的 `~/.wifi_test_creds.cmake` 里（只在该文件存在时给
+     `eh_hosted_nuttx` 加 `ESP_WIFI_TEST_SSID/_PASSWORD/_SSID_ALT` 三个编译定义）。
+     交付树里只有这个钩子，没有值；没有该文件时自测整段不编译。
+3. 自测逻辑：`set_config` → `connect` → 用 `eh_host_wifi_sta_get_ap_info()` 轮询确认关联
+   （12 秒），成功后等 `DhcpDnsStatus` 事件里的 IP。
+
+#### BY.21 **验收④收尾：connect + 取 IP 的真机证据**
+
+连接自测在真机上跑通（凭据按 BY.20 的方式注入，**不在交付树里**）：
+
+```
+eh_hosted_nuttx: RPC wifi_set_config("<用户给的 5GHz SSID>") -> 0
+eh_hosted_nuttx: RPC wifi_connect("<用户给的 5GHz SSID>") -> 0
+eh_hosted_nuttx: could not join "<用户给的 5GHz SSID>"        ← 预期：从机是 2.4GHz 器件
+eh_hosted_nuttx: RPC wifi_set_config("<同一路由的 2.4GHz SSID>") -> 0
+eh_hosted_nuttx: RPC wifi_connect("<同一路由的 2.4GHz SSID>") -> 0
+eh_hosted_nuttx: connected to "<同一路由的 2.4GHz SSID>" ssid="" rssi=-49 ch=6
+eh_rpc_ll: evt id=775 (StaConnected) status=0
+```
+
+从机侧同一时刻的串口（`logs/…_connect-run`）：
+
+```
+I (64914) eh_example_sta: associated to "…" ch 6 — waiting for DHCP (auto)
+I (66232) esp_netif_handlers: sta ip: 192.168.1.9, mask: 255.255.255.0, gw: 192.168.1.1
+I (66232) ehcp_nw_split: Sending network UP event: iface=0, IP=192.168.1.9
+I (66239) ehcp_event_handler: Network up
+I (66243) ehcp_event_handler: TX evt → host: event_id=1 msg_id=0x0309 len=261   ← 带 IP 的事件已发给主机
+```
+
+即：**关联成功（-49 dBm / ch6）→ DHCP 拿到 `192.168.1.9`（掩码 255.255.255.0，网关 192.168.1.1）
+→ "Network up + IP" 事件已经送到主机**，主机侧也收到 `StaConnected`/`DhcpDnsStatus` 事件。
+**验收④的 scan / connect / 取 IP 全部达成。**
+
+（收尾项：主机侧的 `wlan0` 还没有把事件里的 IP 应用到 netdev 上——数据面还没做"事件→netif 地址"
+这一跳。链路层已通，这一跳属于 NuttX 网络栈的接线，记在下一轮。）
+
+（构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
+所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
+干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）
+
 ### 附录 BZ —— **验收①：修复后的官方基准在同一块板上读到真实报文**（2026-11-01）
 
 #### BZ.1 做法

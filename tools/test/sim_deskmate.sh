@@ -165,31 +165,46 @@ grep -q "hostfs: ${HOST_DIR} mounted at /host" "${RUN_DIR}/console.log" \
 # --------------------------------------------------------------------------
 # 4. 快照 → PNG（复用真机同一条证据链）
 # --------------------------------------------------------------------------
-if [ -f "${SNAP_BIN}" ]; then
-  SNAP_W=1024
-  SNAP_H=600
-  if [ -f "${SNAP_TXT}" ]; then
-    SNAP_W=$(sed -n 's/^width=//p'  "${SNAP_TXT}" | head -1)
-    SNAP_H=$(sed -n 's/^height=//p' "${SNAP_TXT}" | head -1)
-  fi
-  SNAP_W=${SNAP_W:-1024}
-  SNAP_H=${SNAP_H:-600}
+# 自检会把每个页面各写一份 RAW RGB565 快照（dm_home / dm_camera / dm_net …），
+# 这里把它们全部转成 PNG 并连同原始帧一起归档。
+SNAP_DIR="${HOST_DIR}/deskmate"
+SNAP_COUNT=0
+PNG_COUNT=0
 
-  if python3 "${HERE}/fb2png.py" "${SNAP_BIN}" "${SNAP_PNG}" \
-       "${SNAP_W}" "${SNAP_H}" > "${RUN_DIR}/fb2png.log" 2>&1; then
-    log "snapshot converted: ${SNAP_PNG}"
-    # 归档：把帧快照与几何描述一起拷进本次运行目录（交换目录在 /tmp）。
-    cp -f "${SNAP_BIN}" "${RUN_DIR}/dm_home.bin" 2>/dev/null || true
-    [ -f "${SNAP_TXT}" ] && cp -f "${SNAP_TXT}" "${RUN_DIR}/dm_home.bin.txt" 2>/dev/null || true
-  else
-    STATUS=FAIL
-    REASON="${REASON:+${REASON}; }fb2png failed (see fb2png.log)"
-  fi
-else
-  log "no snapshot to convert"
+if [ -d "${SNAP_DIR}" ]; then
+  for bin in "${SNAP_DIR}"/*.bin; do
+    [ -f "${bin}" ] || continue
+    SNAP_COUNT=$((SNAP_COUNT + 1))
+
+    name="$(basename "${bin}" .bin)"
+    txt="${bin}.txt"
+    w=1024
+    h=600
+    if [ -f "${txt}" ]; then
+      w=$(sed -n 's/^width=//p'  "${txt}" | head -1); w=${w:-1024}
+      h=$(sed -n 's/^height=//p' "${txt}" | head -1); h=${h:-600}
+    fi
+
+    if python3 "${HERE}/fb2png.py" "${bin}" "${RUN_DIR}/${name}.png" "${w}" "${h}" \
+         >> "${RUN_DIR}/fb2png.log" 2>&1; then
+      PNG_COUNT=$((PNG_COUNT + 1))
+      cp -f "${bin}" "${RUN_DIR}/${name}.bin" 2>/dev/null || true
+      [ -f "${txt}" ] && cp -f "${txt}" "${RUN_DIR}/${name}.bin.txt" 2>/dev/null || true
+      log "snapshot: ${name}.png (${w}x${h})"
+    else
+      STATUS=FAIL
+      REASON="${REASON:+${REASON}; }fb2png failed for ${name}"
+    fi
+  done
 fi
 
-# --------------------------------------------------------------------------
+if [ "${SNAP_COUNT}" = "0" ]; then
+  STATUS=FAIL
+  REASON="${REASON:+${REASON}; }no snapshot produced by the self-test"
+fi
+
+log "snapshots: ${PNG_COUNT}/${SNAP_COUNT} converted"
+
 # 5. 汇总
 # --------------------------------------------------------------------------
 {

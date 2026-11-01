@@ -35,6 +35,15 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 # 作品仓内目录 -> openvela 工作区目标前缀
+# 只读保护区（作品仓内路径）：另一条对话在开发的模拟器 UI 及其 sim/emulator 侧配置。
+# 它们**绝不进本仓交付**——copyfile 部署会把旧副本盖回别人的工作区。
+PROTECTED_REPO_PATHS = (
+    "app/apps/examples/deskmate",
+    "nuttx/drivers/net/wifi_sim.c",
+    "nuttx/boards/sim/sim/sim/configs/deskmate",
+    "board/vela",                 # vendor/openvela（goldfish/vela 板级）
+)
+
 GROUPS = [
     ("nuttx",          "nuttx"),
     ("board/esp32p4",  "vendor/espressif/boards/esp32p4"),
@@ -75,14 +84,30 @@ def tree_entries():
                 if name == ".deleted-files":
                     continue
                 rel = os.path.relpath(os.path.join(dirpath, name), root)
-                out.append((sub + "/" + rel, dest_prefix + "/" + rel))
+                src = sub + "/" + rel
+                if any(src == q or src.startswith(q + "/")
+                       for q in PROTECTED_REPO_PATHS):
+                    continue
+                out.append((src, dest_prefix + "/" + rel))
     return out
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只校验不写入")
+    ap.add_argument("--prune", action="store_true",
+                    help="删除作品仓内的保护区残留（另一条对话的模拟器 UI）后再生成")
     args = ap.parse_args()
+
+    if args.prune:
+        import shutil
+        n = 0
+        for q in PROTECTED_REPO_PATHS:
+            full = os.path.join(REPO, q)
+            if os.path.exists(full):
+                shutil.rmtree(full) if os.path.isdir(full) else os.remove(full)
+                n += 1
+        print(f"prune: 已删除作品仓内 {n} 个保护区残留路径")
 
     with open(XML, encoding="utf-8") as f:
         lines = f.read().split("\n")
@@ -101,6 +126,8 @@ def main():
     extras = [(s, d) for s, d in existing
               if not any(s == g or s.startswith(g + "/") for g in GROUP_DIRS)
               and not any(s.startswith(p) for p in LEGACY_PREFIXES)
+              and not any(s == q or s.startswith(q + "/")
+                          for q in PROTECTED_REPO_PATHS)
               and d not in wanted_dests]
 
     wanted = tree_entries()

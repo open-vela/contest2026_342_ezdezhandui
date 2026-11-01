@@ -17,14 +17,16 @@ AI 硬件产品创新 + 新硬件平台适配（双赛道）。
 ## 三、目录结构
 
 ```text
-nuttx/                     # 移植文件树①：NuttX 内核 / arch / 驱动 / 链接脚本（评审直接可读）
+nuttx/                     # 移植文件树①：NuttX 内核 / arch / 驱动 / 链接脚本 + 模拟器应用层配置
 board/esp32p4/             # 移植文件树②：板级源码 + defconfig（openvela vendor 风格）
-app/apps/                  # 移植文件树③：apps 侧改动（camera 示例 / lvgl 端口 / netinit / mbedtls）
+board/vela/                # 应用层文件树：goldfish 官方模拟器验收配置
+app/apps/                  # 移植文件树③：apps 侧改动（deskmate 应用层 / camera / lvgl / netinit / mbedtls）
 app/ai_agent/              # 移植文件树④：ai_agent 应用（含自定义 Skill 定义）
 tools/                     # 工具集 —— 按用途分三类，索引见 tools/README.md
   ├── engineering/         #   📐 工程相关：export / manifest 校验 / revision 锁定 / 日志转换
   ├── build_flash/         #   🔥 构建烧录：MCUboot 两镜像烧录 / 一键演示 / USB 说明
   └── test/                #   🔬 测试取证：串口 harness / 里程碑断言 / 摄像头·失聪诊断 / WS 对话 / 视频合成
+docs/05_应用层/            # ★ 应用层设计与模拟器闭环（DeskMate 中控 UI）
 docs/                      # 规划 + 框架 + 测试 + 复盘 + 状态 + 踩坑笔记 #01~#07 + 真机证据
   ├── 00_openvela系统框架解读.md   # ★ openvela 整体架构（repo/分层/配置/构建/启动）
   ├── 01_开发规划文档.md           # 需求 / 差距分析 / 评分对照 / 收尾计划
@@ -104,7 +106,12 @@ tools/build_flash/usb_stable.sh
 python3 tools/test/board.py reset                 # 复位并抓启动日志
 python3 tools/test/board.py run "free" "ai_agent"
 
-# 5.（可选）一键演示与复现
+# 5.（可选）**应用层：模拟器一键闭环**（无 X11 / 无摄像头 / 无 root）
+tools/test/sim_deskmate.sh                                     # 构建 sim → 无头跑 UI 与逻辑 → 断言 → 出 PNG
+#   证据在 /tmp/deskmate-runs/<时间戳>/（console.log + 每页 PNG + result.txt），判定行 `RESULT: PASS`
+#   要归档进仓：tools/test/sim_deskmate.sh --out logs/sim-deskmate
+
+# 6.（可选）一键演示与复现
 tools/test/verify_aiagent.sh                                   # P0→P6 + 12 skills + eth0 + cron 断言
 python3 tools/test/ws_demo.py --host <板IP> --port 28789 \
         --send "只回复：你好" --wait 280                        # LLM 端到端对话复现
@@ -115,6 +122,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 
 | 功能 | 实现 | 赛题点 |
 |---|---|---|
+| **应用层：DeskMate 中控 UI** | `apps/examples/deskmate`（LVGL 九宫格外的五页：首页/相机/对话/网络/设置）：摄像头 V4L2 预览 + 帧差主动事件、eth0/wlan0 状态与 WiFi 扫描连接、触摸导航、agent 对话；**同一套代码可在模拟器无头跑通并出 PNG 证据** | ① + ③ + 完整性（本轮新增） |
 | openvela 移植 ESP32-P4X-C5 | 板级+芯片移植（MCUboot 二级引导 + flash XIP：text+rodata 迁入 flash，**SRAM 静态占用 460KB → 120.3KB**/512KB）→ console/ETH/PSRAM | 适配赛道核心 |
 | LLM 对话 | ai_agent + MiMo（`llm_router` 多后端）；**端到端已实测**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`） | ① Agent 上硬件 |
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |

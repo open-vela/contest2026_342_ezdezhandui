@@ -193,3 +193,10 @@ target_sources(arch PRIVATE $<TARGET_OBJECTS:eh_hosted_nuttx>)
 if(EXISTS $ENV{HOME}/.wifi_test_creds.cmake)
   include($ENV{HOME}/.wifi_test_creds.cmake)
 endif()
+
+# The port uses NuttX's own DHCP client to give wlan0 an address over the link
+# (goal stage 4), and that API lives in the apps tree.
+# CMAKE_SOURCE_DIR is the nuttx/ directory, and the apps tree is its sibling.
+target_include_directories(eh_hosted_nuttx PRIVATE
+  ${CMAKE_SOURCE_DIR}/../apps/include)
+message(STATUS "eh_hosted: apps include = ${CMAKE_SOURCE_DIR}/../apps/include")

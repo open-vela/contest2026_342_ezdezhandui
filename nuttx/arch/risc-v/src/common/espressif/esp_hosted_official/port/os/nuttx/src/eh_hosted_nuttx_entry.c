@@ -26,6 +26,9 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
+
+#include "netutils/dhcpc.h"
 #include <nuttx/signal.h>
 
 #include "esp_gpio.h"
@@ -248,6 +251,10 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
       syslog(LOG_ERR, "%s: wlan0 registration failed: %d\n", ENTRY_TAG, ret);
       return ret;
     }
+
+  /* Bring the interface up before anything sends through it. */
+
+  (void)esp_hosted_netdev_up();
 
   /* Listen for the address the companion gets over DHCP. */
 
@@ -640,6 +647,49 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                * host's receive path idle and waiting, which is what the netdev
                * needs to get its address.
                */
+
+              /* Obtain wlan0's own address over the link (goal stage 4: 取 IP).
+               *
+               * The companion holds a DHCP lease of its own, but wlan0 is a
+               * separate interface on this side and needs one too.  The data
+               * path carries real Ethernet frames (measured: 590-byte IPv4
+               * frames with the companion's MAC), so NuttX's own DHCP client can
+               * negotiate it through the link -- which is a stronger end-to-end
+               * proof than reading the companion's address out of an event.
+               */
+
+              {
+                FAR void *hc = dhcpc_open("wlan0", NULL, 0);
+
+                if (hc == NULL)
+                  {
+                    syslog(LOG_ERR, "%s: dhcpc_open(wlan0) failed\n", ENTRY_TAG);
+                  }
+                else
+                  {
+                    struct dhcpc_state ds;
+                    int drc;
+
+                    memset(&ds, 0, sizeof(ds));
+                    drc = dhcpc_request(hc, &ds);
+                    if (drc == OK)
+                      {
+                        syslog(LOG_INFO, "%s: DHCP over wlan0 -> %s\n",
+                               ENTRY_TAG, inet_ntoa(ds.ipaddr));
+                        (void)esp_hosted_netdev_apply_ip(
+                                (FAR const uint8_t *)&ds.ipaddr.s_addr,
+                                (FAR const uint8_t *)&ds.netmask.s_addr,
+                                (FAR const uint8_t *)&ds.default_router.s_addr);
+                      }
+                    else
+                      {
+                        syslog(LOG_ERR, "%s: dhcpc_request -> %d\n",
+                               ENTRY_TAG, drc);
+                      }
+
+                    dhcpc_close(hc);
+                  }
+              }
 
               syslog(LOG_INFO, "%s: bouncing the link for a fresh network-up "
                      "event\n", ENTRY_TAG);

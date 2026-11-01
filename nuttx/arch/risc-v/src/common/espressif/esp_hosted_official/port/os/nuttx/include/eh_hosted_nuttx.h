@@ -45,6 +45,8 @@ int esp_hosted_netdev_register(void);
  * DhcpDnsStatus event: dhcp_ip / dhcp_nm / dhcp_gw, four bytes each).
  */
 
+int esp_hosted_netdev_up(void);
+
 int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
                                FAR const uint8_t *gw);
 

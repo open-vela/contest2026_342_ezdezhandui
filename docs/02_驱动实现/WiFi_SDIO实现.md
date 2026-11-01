@@ -14067,6 +14067,60 @@ I (205174) ehcp_event_handler: TX evt → host: event_id=0 msg_id=0x0309 len=261
 做完这一步：IP 事件会以数据帧形式到 `hosted_netdev_rx`，由它解析并把地址交给
 `esp_hosted_netdev_apply_ip()`（本轮已就位），`ifconfig wlan0` 即可见地址。
 
+#### BY.24 第 80 轮：数据面其实是通的 —— `wlan0` 收到了**真实 IPv4 帧**
+
+上一轮的推断需要修正：数据通道**已经在排空**（`bus_rx: iftype:1` 一路不断），
+而且 `hosted_netdev_rx` 收到的是**货真价实的以太网帧**：
+
+```
+eh_hosted_netdev: rx frame len=590: 10 bd a3 89 70 d0  88 00 33 77 ba 69  08 00  45 00 …
+                                   ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^  ^^^^^
+                                   目的 MAC（本 STA）   源 MAC（AP）        IPv4   版本/IHL
+```
+
+- 目的 MAC `10:bd:a3:89:70:d0` 正是从机 STA 的 MAC；
+- 源 MAC `88:00:33:77:ba:69` 正是它关联上的那个 AP；
+- `0800` + `4500` = IPv4 头。
+
+也就是说 **SDIO 链路 → 传输层 → netdev 的接收路径整条打通了**（这也是将来 `ping` 跑通的基础）。
+
+既然数据面通，取地址就不必依赖那条时有时无的 261 字节事件，而可以走 **NuttX 自己的 DHCP 客户端**：
+在关联成功之后用 `dhcpc_open("wlan0")` / `dhcpc_request()` 通过链路协商一个属于本机的地址，
+成功后再交给已就位的 `esp_hosted_netdev_apply_ip()`——这比"从事件里读出从机的地址"更强：
+它是**本机接口真的从 AP 拿到租约**。
+
+（为此给端口 target 加了 `apps/include` 头文件路径——`netutils/dhcpc.h` 在 apps 树里，
+架构代码默认看不到它。）
+
+#### BY.25 第 80 轮（续）：接收路径的一个**空指针调用**被抓住并修好
+
+为了让本机接口自己拿地址，先要让它能收发。两条真机结论：
+
+**1) 接口必须先 `IFF_UP`**：`NuttX` 只有在接口 up 时才会把帧交给驱动的 `d_txavail()`。
+实测"没 up 就不发"：DHCP 的 DISCOVER 一次都没到驱动（`txavail` 日志 0 行），
+从机侧也看不到任何来自主机的流量。加了 `esp_hosted_netdev_up()`（注册后立即 up）之后才有后续。
+
+**2) up 之后第一帧就崩：`netdev_input(dev, NULL, false)` 是空指针调用。**
+
+```
+riscv_exception: EXCEPTION: Instruction access fault. MCAUSE: 00000001, EPC: 00000000
+```
+
+`netdev_input()` 的第二个参数是 **L3 输入回调**（文档原文：*callback - Input callback of L3
+stack*），传 NULL 就是跳到地址 0；而这个调用在本文件里还是**隐式声明**（头文件没包含），
+所以编译器没有报错、只给了 warning —— 这正是它一直没被发现的原因。
+
+修法照抄同一架构家族的以太网驱动（`arch/risc-v/src/esp32c3-legacy/esp32c3_wlan.c`）：
+按 EtherType 分派给 `ipv4_input()/arp_input()`，然后若 `d_len > 0`（ARP 应答、ICMP 回显等）
+直接经 `txfn` 发回。
+
+真机结果（`logs/…_dhcp-fixed`）：关联正常（rssi=-49 ch=6）、`wlan0 up (IFF_UP set)`、
+**4 个 590 字节 IPv4 帧被正常分派进 L3，无 panic**。
+
+**仍差一步**：DHCP 客户端跑了但 `d_txavail` 仍未被调用（`dhcpc_request -> -1`），
+即 NuttX 还没把 DISCOVER 交给驱动。下一轮从 `dhcpc` 的 socket/sendto 路径与接口路由状态入手
+（接口此时还没有地址，NuttX 的路由查找是否因此拒绝发送，是首先要验的假设）。
+
 （构建系统的一个副作用记在这里：`build.sh` 只在**构建目录不存在**时才做 configure，
 所以任何需要重新配置的改动（新增 Kconfig/CMake 钩子）都必须删掉 `cmake_out/...` 重来；
 干净配置后还要把 `<build>/include/arch/board` 软链指回本板 include，见附录 BZ.6。）

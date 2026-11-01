@@ -39,11 +39,14 @@
 #include <nuttx/config.h>
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <syslog.h>
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/net/netdev.h>
+#include <nuttx/net/ip.h>
+#include <nuttx/net/ethernet.h>
 #include <nuttx/wireless/wireless.h>
 
 #include "eh_common_interface.h"
@@ -116,6 +119,20 @@ static void hosted_netdev_txavail(FAR struct net_driver_s *dev)
    * sends it there.
    */
 
+  {
+    static int tx_trace;
+
+    if (tx_trace < 20)
+      {
+        tx_trace++;
+        syslog(LOG_INFO,
+               "%s: txavail len=%u txfn=%s channel=%s bifup=%d\n",
+               NETDEV_TAG, (unsigned)dev->d_len,
+               priv->txfn ? "yes" : "no",
+               priv->channel ? "yes" : "no", (int)priv->bifup);
+      }
+  }
+
   if (priv->txfn == NULL || dev->d_len == 0)
     {
       return;
@@ -124,6 +141,8 @@ static void hosted_netdev_txavail(FAR struct net_driver_s *dev)
   ret = priv->txfn(priv->channel->api_chan, dev->d_buf, dev->d_len);
   if (ret != ESP_OK)
     {
+      syslog(LOG_ERR, "%s: tx failed: %d (len %u)\n", NETDEV_TAG, ret,
+             (unsigned)dev->d_len);
       NETDEV_TXERRORS(dev);
       return;
     }
@@ -148,11 +167,92 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
 
   (void)h;
 
-  if (priv->bifup && buf != NULL && len > 0 && len <= HOSTED_NETDEV_BUFSIZE)
+  /* Show what actually arrives on this channel, for a bounded while.
+   *
+   * The companion reports the DHCP address in a DhcpDnsStatus message that its
+   * log tags event_id=0 -- the data channel -- while the copies this host's RPC
+   * layer receives carry link=0/dhcp=0 (appendix BY.23).  If that message comes
+   * through here it is not an Ethernet frame, so printing the first bytes is
+   * what tells its shape apart from real traffic (appendix BY.24).
+   */
+
+  {
+    static int rx_trace;
+
+    if (rx_trace < 40 && len > 0)
+      {
+        FAR const unsigned char *b = (FAR const unsigned char *)buf;
+        char line[3 * 16 + 1];
+        unsigned k;
+        unsigned n = len < 16 ? (unsigned)len : 16;
+
+        rx_trace++;
+
+        for (k = 0; k < n; k++)
+          {
+            snprintf(&line[k * 3], 4, " %02x", b[k]);
+          }
+
+        line[n * 3] = '\0';
+        syslog(LOG_INFO, "%s: rx frame len=%u:%s\n", NETDEV_TAG,
+               (unsigned)len, line);
+      }
+  }
+
+  if (priv->bifup && buf != NULL && len > 0 && len <= HOSTED_NETDEV_BUFSIZE &&
+      len >= NET_LL_HDRLEN(&priv->dev))
     {
+      FAR struct eth_hdr_s *eth;
+
       memcpy(priv->dev.d_buf, buf, len);
       priv->dev.d_len = (uint16_t)len;
-      netdev_input(&priv->dev, NULL, false);
+
+      /* Hand the frame to the right layer, the way an Ethernet driver does.
+       *
+       * This used to call netdev_input(&dev, NULL, false): netdev_input takes
+       * the L3 input callback as its second argument, so a NULL there is a call
+       * through a null pointer -- measured as "Instruction access fault,
+       * EPC: 00000000" the moment the interface came up and the first frame
+       * arrived (appendix BY.25).  The call was also an implicit declaration
+       * here (the header was missing), which is how it went unnoticed.
+       */
+
+      eth = (FAR struct eth_hdr_s *)priv->dev.d_buf;
+
+#ifdef CONFIG_NET_IPv4
+      if (eth->type == HTONS(ETHTYPE_IP))
+        {
+          ipv4_input(&priv->dev);
+        }
+      else
+#endif
+#ifdef CONFIG_NET_ARP
+      if (eth->type == HTONS(ETHTYPE_ARP))
+        {
+          arp_input(&priv->dev);
+        }
+      else
+#endif
+        {
+          NETDEV_RXDROPPED(&priv->dev);
+          priv->dev.d_len = 0;
+        }
+
+      /* A reply the stack wants to send goes straight back out (ARP answers,
+       * ICMP echo, and so on), exactly as the other flat-buffer drivers do.
+       */
+
+      if (priv->dev.d_len > 0 && priv->txfn != NULL)
+        {
+          if (priv->txfn(priv->channel->api_chan, priv->dev.d_buf,
+                         priv->dev.d_len) != ESP_OK)
+            {
+              NETDEV_TXERRORS(&priv->dev);
+            }
+
+          priv->dev.d_len = 0;
+        }
+
       NETDEV_RXPACKETS(&priv->dev);
     }
   else
@@ -423,6 +523,30 @@ static int hosted_netdev_ifdown(FAR struct net_driver_s *dev)
  *   OK on success, a negated errno otherwise.
  *
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: esp_hosted_netdev_up
+ *
+ * Description:
+ *   Bring wlan0 up before anything tries to send through it.
+ *
+ *   NuttX only hands a frame to the driver's d_txavail() when the interface is
+ *   IFF_UP; without this the DHCP client's own DISCOVER never left the host
+ *   (measured: no d_txavail call at all, and the companion saw nothing from the
+ *   host; appendix BY.25).  Registering the interface is not the same thing as
+ *   bringing it up.
+ *
+ ****************************************************************************/
+
+int esp_hosted_netdev_up(void)
+{
+  FAR struct hosted_netdev_s *priv = &g_hosted_netdev;
+
+  netdev_ifup(&priv->dev);
+
+  syslog(LOG_INFO, "%s: wlan0 up (IFF_UP set)\n", NETDEV_TAG);
+  return OK;
+}
 
 /****************************************************************************
  * Name: esp_hosted_netdev_apply_ip

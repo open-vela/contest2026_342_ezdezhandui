@@ -1,0 +1,1452 @@
+[esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***
+[esp32p4] [INF] [boot] chip revision: v3.2
+[esp32p4] [INF] [boot] efuse block revision: v1.2
+[esp32p4] [INF] [boot.esp32p4] SPI Speed      : 80MHz
+[esp32p4] [INF] [boot.esp32p4] SPI Mode       : DIO
+[esp32p4] [INF] [boot.esp32p4] SPI Flash Size : 4MB
+[esp32p4] [INF] [boot] Enabling RNG early entropy source...
+[esp32p4] [INF] Image index: 0, Swap type: none
+[esp32p4] [INF] Disabling RNG early entropy source...
+[esp32p4] [INF] br_image_off = 0x20000
+[esp32p4] [INF] ih_hdr_size = 0x20
+[esp32p4] [INF] Loading image 0 - slot 0 from flash, area id: 1
+[esp32p4] [INF] DRAM segment: start=0x20000, size=0x0, vaddr=0x4ff00000
+[esp32p4] [INF] IRAM segment: start=0x20080, size=0xb928, vaddr=0x4ff40000
+[esp32p4] [INF] LP_IRAM segment: paddr=0002b9a8h, vaddr=30100024h, size=00088h (   136) load
+[esp32p4] [INF] Mapped IROM: vaddr=0x40000000 paddr=0x30000 len=0x120000
+[esp32p4] [INF] start=0x4ff48620
+I (11608) hex_psram: vendor id    : 0x0d (AP)
+I (11608) hex_psram: Latency      : 0x01 (Fixed)
+I (11609) hex_psram: DriveStr.    : 0x00 (25 Ohm)
+I (11610) hex_psram: dev id       : 0x03 (generation 4)
+I (11614) hex_psram: density      : 0x07 (256 Mbit)
+I (11619) hex_psram: good-die     : 0x06 (Pass)
+I (11623) hex_psram: SRF          : 0x02 (Slow Refresh)
+I (11628) hex_psram: BurstType    : 0x00 ( Wrap)
+I (11633) hex_psram: BurstLen     : 0x03 (2048 Byte)
+I (11637) hex_psram: BitMode      : 0x01 (X16 Mode)
+I (11642) hex_psram: Readlatency  : 0x04 (14 cycles@Fixed)
+I (11647) hex_psram: DriveStrength: 0x00 (1/1)
+I (11651) MSPI Timing: Enter psram timing tuning
+I (11812) esp_psram: Found 32MB PSRAM device
+ABCDES8311: speaker PA enabled (GPIO53)
+ES8311 ready: I2S0 (MCLK=13 BCLK=12 WS=10 DOUT=9 DIN=11), I2C0 addr 0x18 -> /dev/audio/pcm0
+esp_hosted_sdio: companion reset: GPIO54 held low 500 ms
+esp_hosted_sdio: companion enable held high (GPIO54), settling 1000 ms
+esp_hosted_sdio: SDIO host ready on slot 1
+esp_hosted_sdio: verid=5342270a status=00000106 cdetect=00000000 clkena=00000002
+esp_hosted_sdio: ctrl=00000030 bmod=00000000 rintsts=00000000 clkdiv=0000fa00
+esp_hosted_sdio: CIU reset bit clear -- CIU is running (bit0 of ctrl: 0)
+esp_hosted_sdio: clkrst sys=0e057038 peri01=01800601 peri02=388e6e00 ref2=00000115
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_hosted_sdio: probe 1/4 -> -5, retrying
+esp_hosted_sdio: companion enumerated (sdio_probe returned 0)
+esp_hosted_sdio: CCCR 0x04 interrupt enable 02 -> 03 (ret 0)
+esp_hosted_sdio: card bus width requested 4 bit (CCCR 0x07 was 42, ret 0)
+esp_hosted_sdio: host-ready mask 01 written (ret 0), readback 00 (ret 0)
+esp_hosted_sdio: leaving the card clock at the identification rate for the official stack
+esp_sdmmc: ISR error raw=00000104 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_hosted_sdio: controller reset + clock reprogrammed, now resetting the companion (500 ms low, then 10 s to come up)
+MIPI PHY LDO ch3 @ 2500mV enabled
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+Backlight disabled on GPIO26 (J1->J6 jumper required)
+LCD power/reset path ready (EK79007eh_hosted_nuttx): 
+starting official esp-hosted host stack
+SC2336 chip ID: 0xcb3a
+eh_hosted_nuttx: D1 test: as input+pullup -> 1
+Camera registered on /dev/video0
+MIPI-DSI host registered (2 lanes @ 900 Mbps)
+Configuring DPI 1024x600 @ 52 MHz...
+EK79007 panel init...
+LCD reset pulsed on GPIO27 (J1->J6 jumper required)
+eh_hosted_nuttx: D1 test: driven high -> readback 0 (1 = nothing else pulls it low)
+eh_hosted_nuttx: D1 toggle 0 -> wrote 0, read 0
+EK79007: panel initialized (2 lanes, 900 Mbps/lane)
+Starting DSI video...
+DSI-DMA[before-arm] fb=0x48000040 lli=0x4ff6b640 nc=0x8ff6b640 isr=0 rst=0 chen0=00000000 ist=00000000 cist=00000000 sar=00000000 dar=00000000 bts=00000000 ctl=00001200 llp=00000000 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[after-arm] fb=0x48000040 lli=0x4ff6b640 nc=0x8ff6b640 isr=0 rst=1 chen0=00000002 ist=00000000 cist=00000000 sar=48000240 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+DSI-DMA[t200ms] fb=0x48000040 lli=0x4ff6b640 nc=0x8ff6b640 isr=14 rst=15 chen0=00000002 ist=00000000 cist=00000000 sar=48077380 dar=50105000 bts=000257ff ctl=001e1b41 llp=00000001 cfg=0000000f st=00000000 dstat=00000000 brg=00000000
+Backlight enabled on GPIO26 (J1->J6 jumper required)
+/dev/fb0 ready 1024x600 RGB565 @ 0x48000040 (1228800 bytes)
+/dev/fb0 registered (EK79007)
+I2C0 @400000 Hz: ACK from 0x18
+I2C0 @400000 Hz: ACK from 0x30
+I2C0 @400000 Hz: ACK from 0x5d
+I2C0 @400000 Hz: scan done, 3 device(s)
+I2C0 @100000 Hz: ACK from 0x18
+I2C0 @100000 Hz: ACK from 0x30
+I2C0 @100000 Hz: ACK from 0x5d
+I2C0 @100000 Hz: scan done, 3 device(s)
+GT911: raw ID at 0x5d = 39 31 31 00
+GT911: product ID "911" at 0x5d
+GT911: cfg x_max=1024 y_max=600 touch_num=5 (panel is 1024x600)
+GT911: no INT line routed; running in polling mode
+GT911 touchscreen registered at /dev/input0 (0x5d)
+eh_hosted_nuttx: D1 toggle 1 -> wrote 1, read 0
+DNS nameserver set to 192.168.1.1
+eh_hosted_nuttx: D1 toggle 2 -> wrote 0, read 0
+eh_hosted_nuttx: D1 test: restored -> 1
+eh_hosted_nuttx: transport config: sdio tx_q=20 rx_q=20 width=4 clk=40000 kHz
+eh_mcu_transport: transport_init: probing bus backend
+eh_sdio: transport[host]: SDIO 4-bit 40000 kHz CLK=-1 CMD=-1 D0=-1 D1=-1 D2=-1 D3=-1 RESET=0
+eh_sdio: SDIO clock freq set to [40000]KHz, Max possible (on PCB) is 50000KHz
+eh_sdio: sdio bus init done
+eh_mcu_transport: transport_init: bus backend ueh_sdiop: 
+seh_host_feat_rpcd:i oe_vdta_trae_gtios_trexr_:b umfs_gt_aisdk= 7s6t9a rctbe=d0x
+40043294 ctx=0
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+esp_sdmmc: ISR error raw=00000100 [re=0 rcrc=0 dcrc=0 rto=1 drto=0 hto=0 frun=0 hle=0 sbe=0 ebe=0]
+eh_host_port_sdio: SDIO probe succeeded on try 2
+eh_host_port_sdio: CCCR 0x02 IOEx before: 00
+eh_host_port_sdio: CCCR 0x02 IOEx after: 02
+eh_host_port_sdio: CCCR 0x03 IO_RDY=02 after 1 try/tries
+eh_host_port_sdio: CCCR 0x04 INT_ENABLE before: 00
+eh_host_port_sdio: CCCR 0x04 INT_ENABLE after: 03 (want 03)
+eh_host_port_sdio: FN0 block size read back 512 (ret 0)
+eh_host_port_sdio: FN1 block size read back 512 (ret 0)
+eh_host_port_sdio: card ready: slot 1, 4-bit, block 512, CLK io_-1 CMD io_-1 D0..D3 -1,-1,-1,-1
+eh_sdio: Card init success, TRANSPORT_RX_ACTIVE
+eh_sdio: SDIO Host operating in STREAMING MODE
+eh_sdio: Open data path at slave
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdioe:h _Shtoasrtt_ipnogr tS_DsIdOi op:r oread_regc eenters si dr=x1  taadsdkr=
+0x3ff55050 size=4 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 40 cc 00 (bit23=1)
+eh_host_port_sdio: read_reg enter id=2 addr=0x3ff55060 size=4 ret=0
+eh_host_port_sdio: watchdog INT_RAW=00cc4000 (newpkt=1) LEN=62914620
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#1)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=3 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 40 cc 00 (bit23=1)
+eh_sdio: Intr: 00CC4000
+eh_sdio: len_from_slave: 60
+eh_sdio: buf 0 size: 512
+eh_host_port_sdio: read_block enter id=1 addr=0x1f7c4 size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7c4 (masked would be 0x3c4) size=512 ret=0 bytes=05 00 30 00 0c 00 00 00 00 00 00 33 22 2e 12 01
+eh_host_port_sdio: payload read addr=0x1f7c4 size=512: 05 00 30 00 0c 00 00 00 00 00 00 33 22 2e 12 01
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdioe:h _bhuoss_tr_xp:o ritf_tsydpieo::5 read_reg
+ eh_init_evtenter:  isdl=a4v ea dcdhri=p0 xi3df:f 505x005d0  (sesp32c6i)ze
+=eh_init_evt4:  rceatp=a0bi
+leh_host_port_sdioi:t itersa:n s0pxo0r1t 
+Ieh_init_evtN:T _FReAaWt urreeasd :s urpepto=r0t ebdy taerse=:00
+ eh_init_evt7:0  [7Cc c*  0W0L A(Nb iotv2e3r= 1S)DI
+Oeh
+_eh_init_evth:o sstl_apvoer tr_xs dqiuoe:u eread_reg  senteri zied:= 52 0ad
+deh_init_evtr:= 0sxl3afvfe5 5t0x6 0q useiuzee =s4i zree:t =200
+
+eeh_init_evth:_ hcoosptr_opcoersts_osrd ifoi:r mwwaatrceh:d o0gx 0I0N0T3_0R0A0Wa=0
+0eh_init_evtc:c 7e0x0t0e n(dneedw pckatp=a1b)i lLiEtNi=e3s7:7 408x707020000
+010
+eh_init_evt: Extended Features supported:
+eh_init_evt: [3C * WLAN
+eh_init_evt: SDIO buf-config: e2h mode=0 bufsz=15872B, h2e mode=0 bufsz=15872B
+eh_init_evt: coprocessor transport size: 1536
+eh_init_evt: RPC version negotiated: V2
+eh_init_evt: esp-hosted fw versions: host=3.0.10 coprocessor=3.0.10 (match)
+eh_init_evt: SDIO SW_AGGR negotiated (e2h=15872B h2e=15872B)
+eh_init_evt: SDIO mode: slave=streaming host=streaming
+eh_init_evt: chip=0x0d (esp32c6) fw=0x0003000a caps=0x01 ext=0x00000010
+eh_host_port_sdio: read_reg enter id=6 addr=0x3ff55044 size=4 ret=0
+eh_host_port_sdio: write_block enter id=1 addr=0x1f7e0 size=512 ret=0
+eh_hosted_nuttx: companion connected, transport ready
+eh_hosted_netdev: wlan0 registered (STA channel bound)
+eh_hosted_netdev: wlan0 up
+eh_hosted_netdev: wlan0 up (IFF_UP set)
+eh_host_feat_rpc: evt_register: msg_id=777 cb=0x40040d3e ctx=0
+eh_hosted_nuttx: leaving the companion's Wi-Fi initialized/started (no RPC wifi_init)
+eh_host_port_sdio: read_reg enter id=7 addr=0x3ff55044 size=4 ret=0
+eh_host_port_sdio: write_block enter id=2 addr=0x1f7dc size=512 ret=0
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#2)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=8 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 f8 cc 00 (bit23=1)
+eh_sdio: Intr: 00CCF800
+eh_sdio: len_from_slave: 300
+eh_sdio: buf 1 size: 512
+eh_host_port_sdio: read_block enter id=2 addr=0x1f6d4 size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f6d4 (masked would be 0x2d4) size=512 ret=0 bytes=03 00 1d 01 0c 00 00 00 0c 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f6d4 size=512: 03 00 1d 01 0c 00 00 00 0c 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr -eh_sdio-:- b
+uesh__rhxo:s ti_fptoyrpte_:s3di
+o: read_reg enter id=9 addr=0x3ff55050 size=4 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 70 cc 00 (bit23=1)
+eh_host_port_sdio: read_reg enter id=10 addr=0x3ff55060 sizeeh_rpc_ll=:4  rrxe:t =k0in
+de=hevt_ hiods=t7_7p7o r(tDhcpDnsStatus_)s duiiod:= 0wa
+teh_rpc_llc:h deovgt  IiNdT=_7R7A7W =(0DhcpDnsStatus0)c cs7t0a0t0u s(=n0ew
+peh_host_feat_rpck:t =e1v)t _LdEiNs=p4a7t3c9h5:6 8m0s4g_
+id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#3)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=11 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 70 cc 00 (bit23=1)
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 92
+eh_host_port_sdio: read_block enter id=3 addr=0x1f7a4 size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7a4 (masked would be 0x3a4) size=512 ret=0 bytes=03 00 50 00 0c 00 00 00 0d 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f7a4 size=512: 03 00 50 00 0c 00 00 00 0d 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr --eh_sdioeh_host_feat_rpc-::  
+breuehsq__uhreoxss:tt :_i pfnotory tpr_ees:sd3pioo
+n:seh_rpc_ll e:read_reg   urenterix d:i= d1k= i1mn2sd g=a_evtdi ddir=d=2=067x073 6f( f5(50StaDisconnected50)00 5 u0mi sds)=i0z
+eeh_hosted_nuttx
+=:eh_rpc_ll4 : R rPeeCvt t=w 0iifd
+i=_eh_host_port_sdio7s:7e 6tt _r(maStaDisconnectedon)ds eps(otSraTttA u)Is N=-T0>_ R
+-Aeh_host_feat_rpc1W:  
+reeh_hosted_nuttxev:at d_s:dk iirspepptai=tn0cg h b:Ry PtmCes sgw=_i0if0di =_77s07t 6ac rcst u 0b(0st ch(rebi ibstel2ra3sv==e10 )a
+p
+eh_host_feat_rpcpe: h a_elhvrotes_atdd_iyps opsr
+NuttShell (NSH)
+attta_crshtd:ei dom :st ghread_reg_e i enterdr =ai7dd7i=6o1 )3h a
+adeh_wifid :dn ros= e0stxu_3bcfsofcn5rf5ii0bg6e 0ri sfsai
+czee==nsh> STA4  srseitd==0"Hello_World_5G
+"e h(_1h4o sbty_tpeosr)t_
+sdio: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=507511268
+eh_host_port_sdio: write_block enter id=3 addr=0x1f7b8 size=512 ret=0
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#4)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=14 addr=0x3ff55050 size=20 ret=0
+eh_host_port_sdio: transport INT_RAW read: ret=0 bytes=00 f0 cc 00 (bit23=1)
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 32
+eh_host_port_sdio: read_block enter id=4 addr=0x1f7e0 size=512 ret=0
+eh_host_port_sdio: read_block addr=0x1f7e0 (masked would be 0x3e0) size=512 ret=0 bytes=03 00 14 00 0c 00 00 00 0e 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f7e0 size=512: 03 00 14 00 0c 00 00 00 0e 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr -eh_sdio-:- b
+uesh__rhxo:s ti_fptoyrpte_:s3di
+o: read_reg enter id=15 addr=0x3ff55050 size=4 ret=0
+eh_host_port_sdio: read_reg enter id=16 addr=0x3ff55060 size=4 ret=0
+eh_host_port_sdio: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=545260040
+eh_rpc_ll: rx: kind=evt id=769 (ESPInit) uid=0
+eh_rpc_ll: evt id=769 (ESPInit) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=769 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=769 -> cb[0]=0x40043294 ctx=0
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#5)
+eh_sdio: --- SDIO intr received ---
+eh_host_port_sdio: read_reg enter id=17 addr=0x3ff55050 size=20 ret=0
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 36
+eh_host_port_sdio: read_block addr=0x1f7dc (masked would be 0x3dc) size=512 ret=0 bytes=03 00 16 00 0c 00 00 00 0f 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f7dc size=512: 03 00 16 00 0c 00 00 00 0f 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr --eh_sdio-: 
+beuhs__hroxs:t _ipfotrytp_es:d3io
+: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=859833140
+eh_rpc_ll: rx: kind=resp id=516 (SetWifiMode) uid=1
+eh_host_feat_rpc: rx: no waiter for uid=1 (late response?) dropping
+eh_host_feat_rpc: request: no response uid=2 msg_id=284 (5000 ms)
+eh_hosted_nuttx: RPC wifi_set_config("Hello_World_5G") -> -1 (advisory)
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#6)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 300
+eh_host_port_sdio: read_block addr=0x1f6d4 (masked would be 0x2d4) size=512 ret=0 bytes=03 00 1d 01 0c 00 00 00 10 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f6d4 size=512: 03 00 1d 01 0c 00 00 00 10 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr --eh_sdio-: 
+beuhs__hroxs:t _ipfotrytp_es:d3io
+: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=956302224
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#7)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 92
+eh_host_port_sdio: read_block addr=0x1f7a4 (masked would be 0x3a4) size=512 ret=0 bytes=03 00 50 00 0c 00 00 00 11 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f7a4 size=512: 03 00 50 00 0c 00 00 00 11 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr --eh_sdio-: 
+beuhs__hroxs:t _ipfotrytp_es:d3io
+: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=994050996
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) uid=0
+eh_rpc_ll: evt id=776 (StaDisconnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 had no subscribers
+eh_host_feat_rpc: request: no response uid=3 msg_id=282 (5000 ms)
+eh_hosted_nuttx: RPC wifi_connect("Hello_World_5G") -> -1
+eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion (#8)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_host_port_sdio: read_block addr=0x1f7dc (masked would be 0x3dc) size=512 ret=0 bytes=03 00 16 00 0c 00 00 00 12 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f7dc size=512: 03 00 16 00 0c 00 00 00 12 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr --eh_sdio-: 
+beuhs__hroxs:t _ipfotrytp_es:d3io
+: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=1031799768
+eh_rpc_ll: rx: kind=resp id=540 (WifiSetConfig) uid=2
+eh_host_feat_rpc: rx: no waiter for uid=2 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 36
+eh_host_port_sdio: read_block addr=0x1f7dc (masked would be 0x3dc) size=512 ret=0 bytes=03 00 16 00 0c 00 00 00 13 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f7dc size=512: 03 00 16 00 0c 00 00 00 13 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr --eh_sdio-: 
+beuhs__hroxs:t _ipfotrytp_es:d3io
+: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=273679620
+eh_rpc_ll: rx: kind=resp id=538 (WifiConnect) uid=3
+eh_host_feat_rpc: rx: no waiter for uid=3 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 300
+eh_host_feat_rpc: request: no response uid=4 msg_id=294 (5000 ms)
+eh_host_port_sdio: read_block addr=0x1f6d4 (masked would be 0x2d4) size=512 ret=0 bytes=03 00 1d 01 0c 00 00 00 14 00 00 00 01 06 00 52
+eh_host_port_sdio: payload read addr=0x1f6d4 size=512: 03 00 1d 01 0c 00 00 00 14 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr --eh_sdio-: 
+beuhs__hroxs:t _ipfotrytp_es:d3io
+: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=370148704
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 92
+eh_host_port_sdio: payload read addr=0x1f7a4 size=512: 03 00 50 00 0c 00 00 00 15 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=412091784
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) uid=0
+eh_rpc_ll: evt id=776 (StaDisconnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 had no subscribers
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 16 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=454034864
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=4
+eh_host_feat_rpc: rx: no waiter for uid=4 (late response?) dropping
+eh_host_feat_rpc: request: no response uid=5 msg_id=294 (5000 ms)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 17 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=495977944
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=5
+eh_host_feat_rpc: rx: no waiter for uid=5 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 18 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=495977944
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=6
+eh_host_port_sdio: slave interrupt (hit #1)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 19 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=537921024
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=7
+eh_host_port_sdio: slave interrupt (hit #2)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 1a 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=579864104
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=8
+eh_host_port_sdio: slave interrupt (hit #3)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 1b 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=621807184
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=9
+eh_host_port_sdio: slave interrupt (hit #4)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 1c 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=663750264
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=10
+eh_host_port_sdio: slave interrupt (hit #5)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 1d 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=705693344
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=11
+eh_host_port_sdio: slave interrupt (hit #6)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 1e 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=747636424
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=12
+eh_host_port_sdio: slave interrupt (hit #7)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 1f 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=789579504
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=13
+eh_host_port_sdio: slave interrupt (hit #8)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 20 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=831522584
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=14
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 21 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=873465664
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=15
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 22 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=915408744
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=16
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 23 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=957351824
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=17
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 24 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=999294904
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=18
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 25 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=1041237984
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=19
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 26 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=10487816
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=20
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 27 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=52430896
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=21
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 28 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=94373976
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=22
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 29 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=136317056
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=23
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 2a 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=178260136
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=24
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 2b 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=220203216
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=25
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 2c 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=262146296
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=26
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 2d 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=304089376
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=27
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_host_port_sdio: payload read addr=0x1f7dc size=512: 03 00 16 00 0c 00 00 00 2e 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=341838148
+eh_rpc_ll: rx: kind=resp id=538 (WifiConnect) uid=28
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 2f 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=383781228
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=29
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 300
+eh_host_port_sdio: payload read addr=0x1f6d4 size=512: 03 00 1d 01 0c 00 00 00 30 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=00ccf000 (newpkt=1) LEN=794823412
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 92
+eh_host_port_sdio: payload read addr=0x1f7a4 size=512: 03 00 50 00 0c 00 00 00 31 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=836766492
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) uid=0
+eh_rpc_ll: evt id=776 (StaDisconnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 had no subscribers
+eh_host_feat_rpc: request: no response uid=30 msg_id=294 (5000 ms)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 40
+eh_host_port_sdio: payload read addr=0x1f7d8 size=512: 03 00 19 00 0c 00 00 00 32 00 00 00 01 06 00 52
+eh_sdio: --- Wait for SDIO intr eh_sdio-:- -bu
+se_hr_xh:o sitf_tpyopret:_3sd
+io: watchdog INT_RAW=004c7000 (newpkt=0) LEN=836766492
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=30
+eh_host_feat_rpc: rx: no waiter for uid=30 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=878709572
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=31
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=920652652
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=32
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=962595732
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=33
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=1004538812
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=34
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=1046481892
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=35
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=15731724
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=36
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=57674804
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=37
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=99617884
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=38
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=141560964
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=39
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=183504044
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=40
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=225447124
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=41
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=267390204
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=42
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=309333284
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=43
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=351276364
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=44
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=393219444
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=45
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=435162524
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=46
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=477105604
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=47
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=519048684
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=48
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=560991764
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=49
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=602934844
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=50
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=644877924
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=51
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=686821004
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=52
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=724569776
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=538 (WifiConnect) uid=53
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=766512856
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=54
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 300
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=104861792
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 92
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=146804872
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) uid=0
+eh_rpc_ll: evt id=776 (StaDisconnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 had no subscribers
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 40
+eh_host_feat_rpc: request: no response uid=55 msg_id=294 (5000 ms)
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=146804872
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=55
+eh_host_feat_rpc: rx: no waiter for uid=55 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=188747952
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=56
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=230691032
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=57
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=272634112
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=58
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=314577192
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=59
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=356520272
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=60
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=398463352
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=61
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=440406432
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=62
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=482349512
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=63
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=524292592
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=64
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=566235672
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=65
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=608178752
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=66
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=650121832
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=67
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=692064912
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=68
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=734007992
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=69
+eh_host_port_sdio: slave interrupt (hit #64)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=775951072
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=70
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=817894152
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=71
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=859837232
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=72
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=901780312
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=73
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=943723392
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=74
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=985666472
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=75
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=1027609552
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=76
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=1069552632
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=77
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=34608156
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=538 (WifiConnect) uid=78
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=76551236
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=79
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 300
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=487593420
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 92
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=529536500
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) uid=0
+eh_rpc_ll: evt id=776 (StaDisconnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 had no subscribers
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 40
+eh_host_feat_rpc: request: no response uid=80 msg_id=294 (5000 ms)
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=529536500
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=80
+eh_host_feat_rpc: rx: no waiter for uid=80 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=571479580
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=81
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=613422660
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=82
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=655365740
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=83
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=697308820
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=84
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=739251900
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=85
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=781194980
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=86
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=823138060
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=87
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=865081140
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=88
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=907024220
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=89
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=948967300
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=90
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=990910380
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=91
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=1032853460
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=92
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=1074796540
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=93
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=44046372
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=94
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=85989452
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=95
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=127932532
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=96
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=169875612
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=97
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=211818692
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=98
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=253761772
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=99
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=295704852
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=100
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=337647932
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=101
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=379591012
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=102
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=417339784
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=538 (WifiConnect) uid=103
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=004c7000 (newpkt=0) LEN=459282864
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=104
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 300
+eh_sdio: --- Wait for SDIO intr ---
+eh_host_port_sdio: watchdog INT_RAW=00cc7000 (newpkt=1) LEN=870325048
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 92
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) uid=0
+eh_rpc_ll: evt id=776 (StaDisconnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 had no subscribers
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 40
+eh_host_feat_rpc: request: no response uid=105 msg_id=294 (5000 ms)
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=105
+eh_host_feat_rpc: rx: no waiter for uid=105 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=106
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=107
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=108
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=109
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=110
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=111
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=112
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=113
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=114
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=115
+eh_hosted_nuttx: could not join "Hello_World_5G"
+eh_wifi: set_config iface=STA ssid="Hello_World_2.4G" (16 bytes)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=540 (WifiSetConfig) uid=116
+eh_hosted_nuttx: RPC wifi_set_config("Hello_World_2.4G") -> 0 (advisory)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=538 (WifiConnect) uid=117
+eh_hosted_nuttx: RPC wifi_connect("Hello_World_2.4G") -> 0
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 40
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=118
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 84
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 604
+eh_sdio: buf 1 size: 1024
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=119
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 84
+eh_sdio: bus_rx: iftype:1
+eh_hosted_netdev: rx frame len=590: 10 bd a3 89 70 d0 88 00 33 77 ba 69 08 00 45 00
+eh_hosted_netdev: station eh_sdioM:A C- -l-e aWranitt  1f0o:rb dS:DaI3O: 8i9n:t7r0 :-d-0-
+
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=775 (StaConnected) uid=0
+eh_rpc_ll: evt id=775 (StaConnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=775 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=775 had no subscribers
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 604
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:1
+eh_hosted_netdev: rx frame len=590: 10 bd a3 89 70 d0 88 00 33 77 ba 69 08 00 45 00
+eh_host_feat_rpc: request: no response uid=120 msg_id=294 (5000 ms)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 304
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=1 dhcp=1 ip=192.168.1.9
+eh_hosted_netdev: wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1 (from the DhcpDnsStatus event)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 56
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:1
+eh_hosted_netdev: rx frame len=42: 10 bd a3 89 70 d0 88 00 33 77 ba 69 08 06 00 01
+eh_host_feat_rpc: request: no response uid=121 msg_id=294 (5000 ms)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 100
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=120
+eh_host_feat_rpc: rx: no waiter for uid=120 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 100
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=121
+eh_host_feat_rpc: rx: no waiter for uid=121 (late response?) dropping
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 100
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=122
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 100
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=123
+eh_hosted_nuttx: connected to "Hello_World_2.4G" ssid="Hello_World_2.4G" rssi=-48 ch=6
+eh_hosted_netdev: carrier on
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 100
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=609 (GetDhcpDnsStatus) uid=124
+eh_hosted_nuttx: Req_GetDhcpDnsStatus(353) -> 0 resp=yes
+eh_hosted_nuttx: dhcp status iface=0 link=1 dhcp=1 ip=192.168.1.9
+eh_hosted_netdev: wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1 (from the DhcpDnsStatus event)
+eh_hosted_netdev: txavail len=0 txfn=yes channel=yes bifup=1
+eh_hosted_netdev: txpoll len=50
+eh_hosted_nuttx: probe broadcast sendto -> 8 (errno=0)
+eh_hosted_nuttx: station MAC learnt before DHCP
+eh_hosted_netdev: txavail len=0 txfn=yes channel=yes bifup=1
+eh_hosted_netdev: txpoll len=304
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 004CF000
+eh_sdio: --- Wait for SDIO intr ---
+eh_hosted_netdev: txavail len=0 txfn=yes channel=yes bifup=1
+eh_hosted_netdev: txpoll len=304
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00408000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_hosted_netdev: txavail len=0 txfn=yes channel=yes bifup=1
+eh_hosted_netdev: txpoll len=304
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00408000
+eh_sdio: --- Wait for SDIO intr ---
+eh_hosted_nuttx: dhcpc_request -> -1
+eh_hosted_nuttx: bouncing the link for a fresh network-up event
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCC000
+eh_sdio: len_from_slave: 36
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 300
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=539 (WifiDisconnect) uid=125
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 92
+eh_sdio: bus_rx: iftype:3
+eh_sdio: --- Wait for SDIO intr ---
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpceh_sdio::  ebvuts__drixs:p aitfcthy:p em:s3g_
+id=777 subscribers=1
+eh_host_feat_rpc: evt_dispatch: msg_id=777 -> cb[0]=0x40040d3e ctx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=0 dhcp=0 ip=0.0.0.0
+eh_rpc_ll: rx: kind=evt id=776 (StaDisconnected) uid=0
+eh_rpc_ll: evt id=776 (StaDisconnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=776 had no subscribers
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 84
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 1208
+eh_sdio: buf 1 size: 1536
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=evt id=775 (StaConnected) uid=0
+eh_rpc_ll: evt id=775 (StaConnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=775 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=775 had no subscribers
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CC7000
+eh_sdio: len_from_slave: 304
+eh_sdio: bus_rx: iftype:1
+eh_hosted_netdev: rx frame len=590: 10 bd a3 89 70 d0 88 00 33 77 ba 69 08 00 45 00
+eh_sdio: bus_rx: iftype:1
+eh_hosted_netdev: rx frame len=590: 10 bd a3 89 70 d0 88 00 33 77 ba 69 08 00 45 00
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: bus_rx: iftype:3
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 36
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_rpc_ll: rx: kind=evt id=777 (DhcpDnsStatus) uid=0
+eh_rpc_ll: evt id=777 (DhcpDnsStatus) status=0
+eh_host_feat_rpc: evt_dispatch: msgeh_sdioeh_sdio_::i  dIb=nu7ts7r_7:r  xs0:u0 bCisCfc7tr0yi0pb0ee:r
+3seh_sdio=:
+1 l
+eeh_host_feat_rpcn:_ fervotm__dsilsapvaet:c h8:4 m
+seh_sdiog:eh_sdio_ :i- d-b=-u7 s7W_7ar ix-t:>   ficofbrt[ y0Sp]De=I:0O3x 4i
+0n0t4r0 d-3-e- c
+tx=0
+eh_hosted_nuttx: DhcpDnsStatus iface=0 link=1 dhcp=1 ip=192.168.1.9
+eh_hosted_netdev: wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1 (from the DhcpDnsStatus event)
+eh_rpc_ll: rx: kind=resp id=538 (WifiConnect) uid=126
+eh_rpc_ll: rx: kind=evt id=775 (StaConnected) uid=0
+eh_rpc_ll: evt id=775 (StaConnected) status=0
+eh_host_feat_rpc: evt_dispatch: msg_id=775 subscribers=0
+eh_host_feat_rpc: evt_dispatch: msg_id=775 had no subscribers
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 100
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=550 (WifiStaGetApInfo) uid=127
+eh_hosted_nuttx: re-associated after the bounce (rssi=-49 ch=6)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00CCF000
+eh_sdio: len_from_slave: 100
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: bus_rx: iftype:3
+eh_rpc_ll: rx: kind=resp id=609 (GetDhcpDnsStatus) uid=128
+eh_hosted_nuttx: dhcp status raw: 02 00 00 00 61 02 00 00 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+eh_hosted_nuttx: TCP 192.168.1.1:80 over wlan0 -> failed (soerr=101)
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 004C7000
+eh_sdio: --- Wait for SDIO intr ---

@@ -14574,7 +14574,7 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
 |---|---|
 | P4 构建 | 通过（`build completed successfully`），构建图为 `esp32p4/esp_hosted/**` |
 | P4 真机 | 迁移后重新烧写：`connected … rssi=-50 ch=6`、`DhcpDnsStatus … link=1 dhcp=1 ip=192.168.1.9`、`wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1` |
-| 共享层引用 | `grep` 于 `common/espressif/{Kconfig,Make.defs,CMakeLists.txt}`：`esp_hosted`/`esp_sdmmc`/`eh_frame`/`platform_include` 命中 0 |
+| 共享层引用 | `grep` 于 `common/espressif/{Kconfig,Make.defs,CMakeLists.txt}`：`esp_hosted`/`esp_sdmmc`/`eh_frame`/`platform_include` 命中 **0**（两条 include 路径也搬到了 P4 的 CMake，连同空的 `if(CONFIG_ESPRESSIF_MIPI_CSI)` 块与悬空注释一起清理） |
 | 其它芯片 | 见 CA.4：静态证明（共享层对 P4 代码引用为 0；被移除的两条 include 只被 P4 使用） |
 | 清单一致性 | `python3 tools/engineering/gen_manifest_copyfiles.py --check` → ✅ |
 
@@ -14592,7 +14592,11 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
      `arch/risc-v/src/esp32p4/CMakeLists.txt` 定义（`platform_include/sys/lock.h` 因它而存在），
      `freertos_compat` 是 MIPI-CSI（P4）路径的垫片；在 c6 等路径下无任何源码包含它们；
    - **交付不再覆盖共享层**：该目录整体不进作品仓，别人的检出保留自己那份。
-2. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，
+2. **本轮的收尾清理**：`vendor/espressif/chips/esp32p4/esp_hosted`（早前手工同步的端口镜像，
+   已无任何构建引用）删除；`vendor/espressif/chips/esp32p4/nuttx_build/CMakeLists.txt` 里
+   指向旧位置的两处路径改到 `nuttx/arch/risc-v/src/esp32p4/esp_hosted/...`
+   （该文件不参与 `build.sh` 的构建，也不进作品仓，属整理性质）。
+3. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，
    走错会退回 make 并在 `nuttx/` 源码树留下 `Make.defs`、`include/arch` 等残留，
    下一次 CMake 配置会依次报 `Please distclean previous make build` 和
    `Stale artifacts from a previous Kconfig-based Make build`（按提示删掉即可；

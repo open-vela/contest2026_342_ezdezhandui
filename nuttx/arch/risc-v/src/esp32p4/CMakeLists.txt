@@ -42,10 +42,14 @@ endif()
 
 # Headers of the cluster: the driver, the transport, the vendored frame layer and
 # the port's compatibility shims.
+# FreeRTOS compatibility headers: the vendored ESP-IDF HAL sources compiled for
+# P4 (MIPI-CSI capture path) include <platform/os.h> shims; the port's copies of
+# them live with the cluster.
 target_include_directories(arch PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/sdmmc
   ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/transport
-  ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/compat/platform_include)
+  ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/compat/platform_include
+  ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/compat/freertos_compat)
 
 # ESP-Hosted frame layer (vendored byte-for-byte from espressif/esp-hosted-mcu;
 # see esp_hosted/frame/README.md). Only built for the hosted-SDIO configuration.

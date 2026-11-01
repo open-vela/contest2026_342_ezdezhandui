@@ -26,7 +26,7 @@ tools/                     # 工具集 —— 按用途分三类，索引见 too
   ├── engineering/         #   📐 工程相关：export / manifest 校验 / revision 锁定 / 日志转换
   ├── build_flash/         #   🔥 构建烧录：MCUboot 两镜像烧录 / 一键演示 / USB 说明
   └── test/                #   🔬 测试取证：串口 harness / 里程碑断言 / 摄像头·失聪诊断 / WS 对话 / 视频合成
-docs/05_应用层/            # ★ 应用层设计与模拟器闭环（DeskMate 中控 UI）
+docs/30_实现/            # ★ 应用层设计与模拟器闭环（DeskMate 中控 UI）
 docs/                      # 规划 + 框架 + 测试 + 复盘 + 状态 + 踩坑笔记 #01~#07 + 真机证据
   ├── 00_openvela系统框架解读.md   # ★ openvela 整体架构（repo/分层/配置/构建/启动）
   ├── 01_开发规划文档.md           # 需求 / 差距分析 / 评分对照 / 收尾计划
@@ -127,7 +127,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | LLM 对话 | ai_agent + MiMo（`llm_router` 多后端）；**端到端已实测**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`） | ① Agent 上硬件 |
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
 | 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |
-| LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实（证据 `docs/04_证据/验证截图_LVGL界面_1024x600.png`） | ① + 加分 |
+| LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实（证据 `docs/40_验证与证据/截图与对照日志/验证截图_LVGL界面_1024x600.png`） | ① + 加分 |
 | 事件主动（摄像头）| ✅ **openvela 下可用**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 抓帧稳定（`camera_verify.sh` 13/13 断言通过，15/15 帧）。**根因**是 ESP32-P4 的 CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 从未初始化 ISP 输入模块 → 修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`（`esp_csi_isp_bypass_init()`）。复测：`tools/test/camera_verify.sh` | ③ |
 
 > 逐项真机证据与根因见 `docs/01_开发流程/STATUS.md`；测试体系与结果见 `docs/01_开发流程/功能闭环测试.md`。
@@ -148,7 +148,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 - ✅ **移植与引导**：`repo sync` 即得完整工作树（329 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
 - ✅ **真机闭环**：`tools/build_flash/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
 - ✅ **联网**：eth0 DHCP `192.168.1.105` RUNNING（主机同网段，ICMP 通）；DNS 可用
-- ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/04_证据/验证截图_LVGL界面_1024x600.png`
+- ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/40_验证与证据/截图与对照日志/验证截图_LVGL界面_1024x600.png`
 - ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`）；「启动后整机失聪」已定位并修复（根因见 `docs/01_开发流程/开发过程复盘与改进清单.md` §26.7）
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
 - ✅ **摄像头出帧**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定抓帧 —— `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15、连跑两轮一致（`--preview` 可见真实画面）；根因是 CSI bridge 与 ISP 共享而 openvela 未初始化 ISP 输入模块，修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`

@@ -1,0 +1,141 @@
+#
+# apps/examples/deskmate/Kconfig
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+menuconfig EXAMPLES_DESKMATE
+	tristate "DeskMate control-panel UI"
+	default n
+	depends on GRAPHICS_LVGL
+	---help---
+		DeskMate: the LVGL touch control-panel application layer for the
+		openvela / ESP32-P4 board.
+
+		It puts the four board capabilities into one product UI:
+
+		  - camera   : V4L2 capture preview (/dev/video0)
+		  - ethernet : eth0 link / address status
+		  - WiFi     : wlan0 scan / connect / signal (wapi ioctls)
+		  - touch    : /dev/input0 through the LVGL NuttX indev
+
+		plus an agent bridge (local ai_agent over WebSocket, or a built-in
+		offline responder) and a proactive event engine.
+
+		The same application code also builds for the NuttX simulator and
+		for the openvela goldfish emulator, where the display can be an
+		in-memory buffer so the UI and its logic can be driven headless by
+		the `dm_selftest` / script scenarios and snapshotted to PNG.
+
+if EXAMPLES_DESKMATE
+
+config EXAMPLES_DESKMATE_PROGNAME
+	string "Program name"
+	default "deskmate"
+
+config EXAMPLES_DESKMATE_PRIORITY
+	int "Task priority"
+	default 100
+
+config EXAMPLES_DESKMATE_STACKSIZE
+	int "Stack size"
+	default 32768
+
+choice
+	prompt "Display backend"
+	default EXAMPLES_DESKMATE_DISPLAY_FBDEV if VIDEO_FB
+	default EXAMPLES_DESKMATE_DISPLAY_MEM
+
+config EXAMPLES_DESKMATE_DISPLAY_FBDEV
+	bool "Framebuffer device (/dev/fb0)"
+	depends on VIDEO_FB
+	---help---
+		Draw through the NuttX fbdev driver exposed by the board: the
+		ESP32-P4 MIPI-DSI panel, the goldfish GPU framebuffer, or the
+		simulator X11 window.
+
+config EXAMPLES_DESKMATE_DISPLAY_MEM
+	bool "In-memory display (headless)"
+	---help---
+		Let LVGL render into a full-screen buffer owned by the application.
+		Needed on hosts without a framebuffer device (headless CI) and used
+		as the deterministic snapshot source.
+
+endchoice
+
+config EXAMPLES_DESKMATE_WIDTH
+	int "Display width (in-memory backend)"
+	default 1024
+	depends on EXAMPLES_DESKMATE_DISPLAY_MEM
+
+config EXAMPLES_DESKMATE_HEIGHT
+	int "Display height (in-memory backend)"
+	default 600
+	depends on EXAMPLES_DESKMATE_DISPLAY_MEM
+
+config EXAMPLES_DESKMATE_FB_PATH
+	string "Framebuffer device path"
+	default "/dev/fb0"
+	depends on EXAMPLES_DESKMATE_DISPLAY_FBDEV
+
+config EXAMPLES_DESKMATE_INPUT_DEVPATH
+	string "Touchscreen device path"
+	default "/dev/input0"
+	depends on INPUT_TOUCHSCREEN
+
+config EXAMPLES_DESKMATE_HOSTFS_PATH
+	string "Host directory to mount at /host (empty = none)"
+	default ""
+	---help---
+		Simulator convenience: when non-empty the application mounts a NuttX
+		hostfs exposing this host directory at /host, so snapshots taken
+		inside the simulator land on the host where the test scripts read
+		them.  Leave empty on real hardware.
+
+config EXAMPLES_DESKMATE_EXIT_AFTER
+	int "Exit automatically after N seconds (0 = never)"
+	default 0
+	---help---
+		Headless test convenience: stop the UI loop and return after N
+		seconds.  Zero keeps the application running until it is killed.
+
+config EXAMPLES_DESKMATE_FONT_SIMSUN
+	bool "Use the built-in SimSun 16 CJK font"
+	default n
+	select LV_FONT_SIMSUN_16_CJK
+	---help---
+		Fallback for CJK labels when the generated subset font is not
+		available.  Costs roughly 150 KB of flash.
+
+config EXAMPLES_DESKMATE_AGENT_MODE
+	string "Agent bridge backend (mock | ws | off)"
+	default "mock"
+	---help---
+		mock : offline responder, answers from the device state.  Makes the
+		       conversation and the proactive engine testable without a
+		       network or an API key.
+		ws   : WebSocket client to the ai_agent built-in server
+		       (127.0.0.1:28789 by default).
+		off  : the bridge is disabled.
+
+config EXAMPLES_DESKMATE_WIFI_BSS
+	string "Write this wifi_sim BSS table at startup (empty = none)"
+	default ""
+	---help---
+		Simulator convenience: the wifi_sim pseudo wireless driver reads its
+		access point table from CONFIG_WIFI_SIM_CONFDIR/bss.  Point this at
+		that file (e.g. "/tmp/wifi/bss" together with
+		CONFIG_WIFI_SIM_CONFDIR="/tmp/wifi") to have the network page list
+		access points on a host with no radio.
+
+config EXAMPLES_DESKMATE_CAMERA_DEVPATH
+	string "Camera device path"
+	default "/dev/video0"
+	---help---
+		V4L2 capture device.  When it cannot be opened the camera HAL falls
+		back to a synthetic moving pattern, which is what the simulator uses.
+
+endif # EXAMPLES_DESKMATE

@@ -14622,6 +14622,17 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
    | 2 | `esp_touch.c/.h`、`esp_adc.c/.h` | 同上 | `CONFIG_ESPRESSIF_TOUCH` / `CONFIG_ESPRESSIF_ADC` | P4 整机构建通过；两文件 `-fsyntax-only` 均 rc=0；板级 include 改为 `"drivers/esp_touch.h"`、`"drivers/esp_adc.h"`；共享层引用 0；`manifest --check` 通过 |
    | 3 | `esp_csi.c/.h`、`esp_dedic_gpio.c/.h` | 同上 | `CONFIG_ESPRESSIF_MIPI_CSI` / `CONFIG_ESPRESSIF_DEDICATED_GPIO` | P4 整机构建通过（本板 `MIPI_CSI=y`，`esp_csi.c` 真编译通过）；两文件 `-fsyntax-only` 均 rc=0；三个板级 include 改路径；共享层引用 0；`manifest --check` 通过 |
    | 4 | `esp_mipi_dsi.c/.h`、`esp_emac.c/.h` | 同上 | `CONFIG_ESPRESSIF_MIPI_DSI` / `CONFIG_ESPRESSIF_EMAC` | P4 整机构建通过（本板两者均 `=y`，即真编译通过）；两文件 `-fsyntax-only` rc=0；7 个板级 include（tab5 3 处 + function-ev-board 4 处）改路径；共享层引用 0；`manifest --check` 通过 |
+   | 5 | `esp_i2s.c/.h` | 同上 | `CONFIG_ESPRESSIF_I2S` | P4 整机构建通过（本板 `=y`，真编译）；`-fsyntax-only` rc=0；2 个板级 include 改路径；共享层引用 0；`manifest --check` 通过 |
+
+   **收尾（2026-11-01）**：9 个本项目自有驱动全部搬完（18 个 .c/.h 文件）。
+   - 本板真编译的 4 个：`esp_csi`、`esp_emac`、`esp_i2s`、`esp_mipi_dsi`（对应对象在
+     `<build>/.../arch/.../esp32p4/drivers/*.o`）；其余 5 个（touch/adc/lirc/nxdiag/dedic_gpio）
+     在本板 config 未开启，用工程真实编译参数 `-fsyntax-only` 逐个验证 rc=0；
+   - **真机复验**（`logs/<时间戳>_drivers-moved`）：`connected … rssi=-48 ch=6`、
+     `DhcpDnsStatus … link=1 dhcp=1 ip=192.168.1.9`、`wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1`；
+   - 交付：共享 espressif 层 **131 → 113** 个文件（搬走的 18 个），`esp32p4/drivers` 18 个，
+     `nuttx` 仍 554 个文件，**待删除条目 0**，`manifest --check` 通过；
+   - 未动 tracked 的上游共享文件（`esp_gpio.c`、`esp_spi.c`、`esp_rmt.c`、`esp_temperature_sensor.c` 等）。
 
    - 搬迁时把 `#include "espressif/esp_nxdiag.h"` 改为同目录 `"esp_nxdiag.h"`（新目录已在 include 路径上）。
    - 注意：这两项在本板 defconfig 里**未开启**，所以整机构建只证明挂接正确；驱动本体的编译用工程参数单独验证（上面的 `-fsyntax-only`）。

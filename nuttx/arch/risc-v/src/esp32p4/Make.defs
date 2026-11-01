@@ -72,6 +72,10 @@ ifeq ($(CONFIG_ESPRESSIF_EMAC),y)
 CHIP_CSRCS += drivers/esp_emac.c
 endif
 
+ifeq ($(CONFIG_ESPRESSIF_I2S),y)
+CHIP_CSRCS += drivers/esp_i2s.c
+endif
+
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)drivers
 VPATH += drivers
 

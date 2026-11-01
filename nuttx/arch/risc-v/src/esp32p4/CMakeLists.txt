@@ -104,6 +104,10 @@ if(CONFIG_ESPRESSIF_EMAC)
   target_sources(arch PRIVATE drivers/esp_emac.c)
 endif()
 
+if(CONFIG_ESPRESSIF_I2S)
+  target_sources(arch PRIVATE drivers/esp_i2s.c)
+endif()
+
 target_include_directories(arch PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/drivers)
 

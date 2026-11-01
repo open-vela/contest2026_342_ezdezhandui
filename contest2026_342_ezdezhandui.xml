@@ -72,8 +72,6 @@
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c_bitbang.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c_bitbang.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c_slave.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2s.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2s.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2s.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2s.h"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_idle.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_idle.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_irq.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_irq.c"/>
     <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_irq.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_irq.h"/>
@@ -168,6 +166,8 @@
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_dedic_gpio.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_dedic_gpio.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_emac.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_emac.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_emac.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_emac.h"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_i2s.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_i2s.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_i2s.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_i2s.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.c"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_lirc.h"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/drivers/esp_mipi_dsi.c" dest="nuttx/arch/risc-v/src/esp32p4/drivers/esp_mipi_dsi.c"/>

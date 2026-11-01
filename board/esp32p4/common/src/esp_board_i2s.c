@@ -38,7 +38,7 @@
 
 #include <arch/board/board.h>
 
-#include "espressif/esp_i2s.h"
+#include "drivers/esp_i2s.h"
 
 /****************************************************************************
  * Public Functions

@@ -89,7 +89,7 @@
 
 #include "espressif/esp_gpio.h"
 #include "espressif/esp_i2c.h"
-#include "espressif/esp_i2s.h"
+#include "drivers/esp_i2s.h"
 #include "esp_board_i2c.h"
 
 #include <arch/board/esp32p4_audio_es8311.h>

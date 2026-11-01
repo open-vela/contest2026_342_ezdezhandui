@@ -25,6 +25,21 @@
     <copyfile src="app/apps/examples/audiotest/Makefile" dest="apps/examples/audiotest/Makefile"/>
     <copyfile src="app/apps/examples/audiotest/audiotest_main.c" dest="apps/examples/audiotest/audiotest_main.c"/>
     <copyfile src="app/apps/examples/camera/camera_main.c" dest="apps/examples/camera/camera_main.c"/>
+    <copyfile src="app/apps/examples/deskmate/CMakeLists.txt" dest="apps/examples/deskmate/CMakeLists.txt"/>
+    <copyfile src="app/apps/examples/deskmate/Kconfig" dest="apps/examples/deskmate/Kconfig"/>
+    <copyfile src="app/apps/examples/deskmate/Makefile" dest="apps/examples/deskmate/Makefile"/>
+    <copyfile src="app/apps/examples/deskmate/deskmate_main.c" dest="apps/examples/deskmate/deskmate_main.c"/>
+    <copyfile src="app/apps/examples/deskmate/src/dm_config.h" dest="apps/examples/deskmate/src/dm_config.h"/>
+    <copyfile src="app/apps/examples/deskmate/src/dm_log.h" dest="apps/examples/deskmate/src/dm_log.h"/>
+    <copyfile src="app/apps/examples/deskmate/src/dm_selftest.c" dest="apps/examples/deskmate/src/dm_selftest.c"/>
+    <copyfile src="app/apps/examples/deskmate/src/dm_selftest.h" dest="apps/examples/deskmate/src/dm_selftest.h"/>
+    <copyfile src="app/apps/examples/deskmate/src/hal/dm_display.c" dest="apps/examples/deskmate/src/hal/dm_display.c"/>
+    <copyfile src="app/apps/examples/deskmate/src/hal/dm_display.h" dest="apps/examples/deskmate/src/hal/dm_display.h"/>
+    <copyfile src="app/apps/examples/deskmate/src/hal/dm_touch.c" dest="apps/examples/deskmate/src/hal/dm_touch.c"/>
+    <copyfile src="app/apps/examples/deskmate/src/hal/dm_touch.h" dest="apps/examples/deskmate/src/hal/dm_touch.h"/>
+    <copyfile src="app/apps/examples/deskmate/src/ui/dm_i18n.h" dest="apps/examples/deskmate/src/ui/dm_i18n.h"/>
+    <copyfile src="app/apps/examples/deskmate/src/ui/dm_ui.c" dest="apps/examples/deskmate/src/ui/dm_ui.c"/>
+    <copyfile src="app/apps/examples/deskmate/src/ui/dm_ui.h" dest="apps/examples/deskmate/src/ui/dm_ui.h"/>
     <copyfile src="app/apps/netutils/netinit/Kconfig" dest="apps/netutils/netinit/Kconfig"/>
     <copyfile src="app/apps/netutils/netinit/netinit.c" dest="apps/netutils/netinit/netinit.c"/>
     <copyfile src="app/apps/system/nxplayer/nxplayer_main.c" dest="apps/system/nxplayer/nxplayer_main.c"/>
@@ -562,6 +577,7 @@
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.mk" dest="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.mk"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch"/>
+    <copyfile src="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig" dest="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig"/>
     <copyfile src="nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
     <copyfile src="nuttx/drivers/audio/es8311.c" dest="nuttx/drivers/audio/es8311.c"/>
     <copyfile src="nuttx/drivers/input/gt9xx.c" dest="nuttx/drivers/input/gt9xx.c"/>
@@ -675,6 +691,7 @@
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/twai/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/twai/defconfig"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/ulp/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/ulp/defconfig"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/usbconsole/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/usbconsole/defconfig"/>
+    <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/verify-drivers/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/verify-drivers/defconfig"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/watchdog/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/watchdog/defconfig"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/configs/webpanel/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/webpanel/defconfig"/>
     <copyfile src="board/esp32p4/esp32p4-function-ev-board/include/board.h" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/include/board.h"/>

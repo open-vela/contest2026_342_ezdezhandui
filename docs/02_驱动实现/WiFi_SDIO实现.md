@@ -14634,6 +14634,34 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
      `nuttx` 仍 554 个文件，**待删除条目 0**，`manifest --check` 通过；
    - 未动 tracked 的上游共享文件（`esp_gpio.c`、`esp_spi.c`、`esp_rmt.c`、`esp_temperature_sensor.c` 等）。
 
+## CA.5 迁移成果的完整验证（2026-11-01 晚，工具可复跑）
+
+验证工具：**`tools/engineering/verify_migration.py`**（交付，可重复运行）
+
+```
+python3 tools/engineering/verify_migration.py --static    # V1 静态一致性矩阵
+python3 tools/engineering/verify_migration.py --compile   # V2 全量 -c 编译矩阵
+```
+
+| 层级 | 内容 | 结果 |
+|---|---|---|
+| **V1 静态** | ① 共享层对已搬走文件零引用；② 每个搬走的 `.c` 在 P4 的 `CMakeLists.txt` 与 `Make.defs` 里各出现恰好一次；③ P4 构建挂接引用的 13 个 Kconfig 符号都存在；④ 文件计数 | ✅ 全过（0 问题） |
+| **V2 编译矩阵** | 用工程真实编译参数 `-c` 编译"必过集"：9 个搬走的驱动 + 本配置真正参与构建的 16 个共享层源文件 = **25 个，0 失败**；另有 42 个共享层文件因本板未开启对应 CONFIG 而跳过（列出并注明原因） | ✅ |
+| **V3a 逐驱动** | 本板未开启的 5 个驱动，用真实编译参数 + 各自开关的 `-D` 逐个编译：`esp_touch`/`esp_adc`/`esp_dedic_gpio`/`esp_nxdiag`/`esp_lirc` 全部 **rc=0**（`esp_lirc` 还需 `-DCONFIG_RMT_DEFAULT_RX_BUFFER_SIZE=1024`——该符号由 RMT 的 Kconfig 派生，是本验证方法的 stub 需要，不是代码问题） | ✅ 9/9 编译通过 |
+| **V3b 整机（全驱动配置）** | 新增 `vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/verify-drivers/defconfig`：在 nsh 基础上打开 `ESPRESSIF_TOUCH/ADC/DEDICATED_GPIO`、`ESP_RMT`+`DRIVERS_RC`，让 4 个原本不参与构建的驱动进入真实整机构建 | 见 CA.6（构建中） |
+| **V4 交付** | `export.py --apply --manifest` + `gen_manifest_copyfiles.py --check`；待删除条目 0；`nuttx` 554、共享层 112（浅）+1 嵌套、`esp32p4/drivers` 18 | ✅ |
+
+**验证方法的两条经验**（都写进脚本注释）：
+1. **include 解析不要自研**：工程头来自构建目录（生成头、软链、esp-hal-3rdparty 的 `-I`），交给编译器（V2）才算数；
+2. **"必过集"要按本配置构建图取**：共享层里大量文件因 CONFIG 未开启而不参与构建，硬编译它们会得到"缺少 IDF 注入头"这类**方法性失败**，与搬迁无关。
+
+## CA.6 环境限制（未在本次全部执行的两项）
+
+本机做**全新 out-of-tree 构建**时，CMake 会去 clone `esp-hal-3rdparty`（约 **700 MB**，实测 ~40–50 MB/min）。因此：
+
+- 新增的 `verify-drivers` 整机构建：clone 完成后可正常构建（hal 树 + `_deps/.../populate-stamp` 已缓存，重跑会跳过 clone）；
+- **另两块 P4 板（tab5、pico）的构建**与**主板的干净重建**同理，需要各自完成一次 clone 或预热缓存；本次未跑完，作为后续项记录（命令：`./build.sh vendor/espressif/boards/esp32p4/esp32p4-tab5/configs/nsh --cmake -j8`，pico 同理；跑前/跑后按 BZ.6 还原 `arch/risc-v/include/board` 软链）。
+
    - 搬迁时把 `#include "espressif/esp_nxdiag.h"` 改为同目录 `"esp_nxdiag.h"`（新目录已在 include 路径上）。
    - 注意：这两项在本板 defconfig 里**未开启**，所以整机构建只证明挂接正确；驱动本体的编译用工程参数单独验证（上面的 `-fsyntax-only`）。
 7. **构建目录的坑（本轮踩过两次）**：`build.sh -b <dir>` 与 `--cmake` 的先后顺序会影响是否走 CMake，

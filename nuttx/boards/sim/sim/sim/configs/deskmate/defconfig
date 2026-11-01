@@ -1,0 +1,53 @@
+#
+# Simulated target configuration for the DeskMate control panel.
+#
+# This is a *headless* simulator configuration: it needs neither an X11
+# display nor /dev/video0 on the host, so the UI and its logic can be built and
+# driven on any Linux machine (CI included).
+#
+#   ./build.sh nuttx/boards/sim/sim/sim/configs/deskmate --cmake -j8
+#
+# The application renders into its own RGB565 frame buffer (the "mem" display
+# backend), is driven by the script indev and writes snapshots through hostfs.
+# See tools/test/sim_deskmate.sh for the one-command run.
+#
+# For an interactive window instead, build configs/lvgl_fb (needs an X11 host)
+# and run `lvgldemo`, or flip EXAMPLES_DESKMATE_DISPLAY_FBDEV with VIDEO_FB.
+#
+
+CONFIG_ARCH="sim"
+CONFIG_ARCH_BOARD="sim"
+CONFIG_ARCH_BOARD_SIM=y
+CONFIG_ARCH_CHIP="sim"
+CONFIG_ARCH_SIM=y
+CONFIG_BOARDCTL=y
+CONFIG_BUILTIN=y
+CONFIG_DEBUG_SYMBOLS=y
+CONFIG_EXAMPLES_DESKMATE=y
+CONFIG_EXAMPLES_DESKMATE_DISPLAY_MEM=y
+CONFIG_EXAMPLES_DESKMATE_EXIT_AFTER=0
+CONFIG_EXAMPLES_DESKMATE_HEIGHT=600
+CONFIG_EXAMPLES_DESKMATE_HOSTFS_PATH=""
+CONFIG_EXAMPLES_DESKMATE_PROGNAME="deskmate"
+CONFIG_EXAMPLES_DESKMATE_STACKSIZE=65536
+CONFIG_EXAMPLES_DESKMATE_WIDTH=1024
+CONFIG_FS_HOSTFS=y
+CONFIG_GRAPHICS_LVGL=y
+CONFIG_IDLETHREAD_STACKSIZE=4096
+CONFIG_INIT_ENTRYPOINT="nsh_main"
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_LOG=y
+CONFIG_LV_USE_NUTTX=y
+CONFIG_NSH_BUILTIN_APPS=y
+# Long command lines: the scripted runs pass absolute host paths to deskmate.
+CONFIG_NSH_LINELEN=512
+CONFIG_START_DAY=1
+CONFIG_START_MONTH=11
+CONFIG_START_YEAR=2026
+CONFIG_SYSTEM_NSH=y
+CONFIG_USEC_PER_TICK=1000

@@ -25,6 +25,25 @@ include common/espressif/Make.defs
 
 CHIP_CSRCS += esp_chip_rev.c esp32p4_atomic.c
 
+# P4-only SDIO / ESP-Hosted cluster, moved out of the shared espressif layer
+# (plan 2026-11-01; see arch/risc-v/src/esp32p4/esp_hosted/).
+
+ifeq ($(CONFIG_ESPRESSIF_SDMMC),y)
+CHIP_CSRCS += esp_hosted/sdmmc/esp_sdmmc.c
+endif
+
+ifeq ($(CONFIG_ESPRESSIF_HOSTED_SDIO),y)
+CHIP_CSRCS += esp_hosted/transport/esp_hosted_sdio.c
+CHIP_CSRCS += esp_hosted/frame/src/eh_frame.c
+endif
+
+INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)sdmmc
+INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)transport
+INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)frame$(DELIM)include
+INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)frame$(DELIM)shim
+INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)esp_hosted$(DELIM)compat$(DELIM)platform_include
+VPATH += esp_hosted$(DELIM)sdmmc esp_hosted$(DELIM)transport esp_hosted$(DELIM)frame$(DELIM)src
+
 CFLAGS += ${DEFINE_PREFIX}_RETARGETABLE_LOCKING
 
 # TODO: Remove these flags once ulp/lp_core/lp_core.c is updated.

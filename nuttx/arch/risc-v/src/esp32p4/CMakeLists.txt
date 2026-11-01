@@ -28,6 +28,49 @@ set(SRCS esp_chip_rev.c esp32p4_atomic.c)
 target_compile_definitions(arch PRIVATE _RETARGETABLE_LOCKING)
 target_compile_options(arch PRIVATE -Wno-array-bounds -Wno-stringop-overflow)
 
+# ── P4-only SDIO / ESP-Hosted cluster ────────────────────────────────────────
+# Moved out of the shared espressif layer (plan 2026-11-01): the shared files are
+# compiled for every ESP32 family, these are selected only by ESP32-P4 symbols.
+
+if(CONFIG_ESPRESSIF_SDMMC)
+  target_sources(arch PRIVATE esp_hosted/sdmmc/esp_sdmmc.c)
+endif()
+
+if(CONFIG_ESPRESSIF_HOSTED_SDIO)
+  target_sources(arch PRIVATE esp_hosted/transport/esp_hosted_sdio.c)
+endif()
+
+# Headers of the cluster: the driver, the transport, the vendored frame layer and
+# the port's compatibility shims.
+target_include_directories(arch PRIVATE
+  ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/sdmmc
+  ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/transport
+  ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/compat/platform_include)
+
+# ESP-Hosted frame layer (vendored byte-for-byte from espressif/esp-hosted-mcu;
+# see esp_hosted/frame/README.md). Only built for the hosted-SDIO configuration.
+if(CONFIG_ESPRESSIF_HOSTED_SDIO)
+  set(_eh_frame_src ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/frame/src/eh_frame.c)
+  target_sources(arch PRIVATE ${_eh_frame_src})
+
+  # eh_frame.c picks its endian helpers with `#ifdef __KERNEL__` first, and the
+  # NuttX build defines __KERNEL__ -- so it would try to pull <asm/byteorder.h>
+  # (a Linux-only header) instead of taking the plain little-endian branch.
+  # Undefining it, for this one source, selects the correct branch: NuttX on
+  # RISC-V here is little-endian, which is exactly what that branch implements.
+  set_source_files_properties(${_eh_frame_src} PROPERTIES COMPILE_OPTIONS "-U__KERNEL__")
+  target_include_directories(arch PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/frame/include
+    ${CMAKE_CURRENT_LIST_DIR}/esp_hosted/frame/shim)
+endif()
+
+# NuttX port layer of the official esp-hosted host stack (appendix AS).
+# Selected only by CONFIG_ESPRESSIF_HOSTED_OFFICIAL; the port's own sources and
+# include paths live in its CMakeLists.
+if(CONFIG_ESPRESSIF_HOSTED_OFFICIAL)
+  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/esp_hosted/official/port/os/nuttx)
+endif()
+
 if(SRCS)
   target_sources(arch PRIVATE ${SRCS})
 endif()

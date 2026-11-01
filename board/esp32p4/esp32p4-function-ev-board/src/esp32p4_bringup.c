@@ -84,10 +84,10 @@
 #endif
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
-#  include "espressif/esp_hosted_sdio.h"
+#  include "esp_hosted/transport/esp_hosted_sdio.h"
 #endif
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
-#  include "esp_hosted_official/port/os/nuttx/include/eh_hosted_nuttx.h"
+#  include "esp_hosted/official/port/os/nuttx/include/eh_hosted_nuttx.h"
 #endif
 
 #ifdef CONFIG_ESPRESSIF_SPI

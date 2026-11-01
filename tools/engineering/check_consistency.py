@@ -82,6 +82,21 @@ def load_copyfiles():
         dest = el.get("dest")
         if src and dest:
             pairs.append((src, dest))
+    # <linkfile> 也可用于整棵子树（symlink）：展开成逐文件比较，
+    # 只处理 src 落在本仓内的那些（AI skills 项目的 linkfile 不属于本仓）
+    for el in root.iter("linkfile"):
+        src = el.get("src")
+        dest = el.get("dest")
+        if not src or not dest:
+            continue
+        full = os.path.join(REPO, src)
+        if not os.path.isdir(full):
+            continue
+        for dirpath, _, files in os.walk(full):
+            for f in files:
+                rel = os.path.relpath(os.path.join(dirpath, f), full)
+                pairs.append((os.path.join(src, rel),
+                              os.path.join(dest, rel).replace(os.sep, "/")))
     return pairs
 
 

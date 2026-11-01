@@ -33,6 +33,7 @@ import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+WS = os.environ.get("OPENVELA_WS", "/home/ez/share/openvela")
 XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 # 作品仓内目录 -> openvela 工作区目标前缀
 # 只读保护区（作品仓内路径）：另一条对话在开发的模拟器 UI 及其 sim/emulator 侧配置。
@@ -92,9 +93,103 @@ def tree_entries():
     return out
 
 
+def linkfile_groups(entries, threshold=20):
+    """找出可以用**一条 <linkfile>** 代替逐文件 <copyfile> 的自包含子树。
+
+    判定（全部满足，计数一律**递归**）：
+      1. 子树在工作区里没有任何 tracked 文件 —— 整棵子树都归本项目（全是新增/改动），
+         用 symlink 替换不会遮住上游内容；
+      2. 子树里工作区的文件数 == 待交付条目数 —— 否则 symlink 会丢掉文件；
+      3. 文件数 >= threshold；
+      4. 结构一致：src 与 dest 去掉各自前缀后逐文件相同（纯前缀替换）。
+    只保留互不包含的**最大**子树。
+    """
+    import subprocess
+
+    by_dest = {d: (s_, d) for s_, d in entries}
+    dests = list(by_dest)
+
+    # 候选：每条 dest 的所有祖先目录
+    cand = set()
+    for d in dests:
+        parts = d.split("/")
+        for i in range(1, len(parts)):
+            cand.add("/".join(parts[:i]))
+
+    # 项目根 -> tracked 文件清单（缓存）
+    cache = {}
+
+    def split_proj(ws_rel):
+        if ws_rel.startswith("vendor/espressif/"):
+            return "vendor/espressif", ws_rel[len("vendor/espressif/"):]
+        if ws_rel.startswith("packages/ai_agent/"):
+            return "packages/ai_agent", ws_rel[len("packages/ai_agent/"):]
+        top = ws_rel.split("/", 1)[0]
+        return top, ws_rel[len(top) + 1:]
+
+    def tracked_under(ws_dir):
+        proj, rel = split_proj(ws_dir)
+        if proj not in cache:
+            r = subprocess.run(["git", "-C", os.path.join(WS, proj), "ls-files"],
+                               capture_output=True, text=True)
+            cache[proj] = r.stdout.splitlines()
+        return [f for f in cache[proj] if f == rel or f.startswith(rel + "/")]
+
+    def ws_files(ws_dir):
+        full = os.path.join(WS, ws_dir)
+        if not os.path.isdir(full):
+            return []
+        out = []
+        for root, _, fs in os.walk(full):
+            for f in fs:
+                out.append(os.path.relpath(os.path.join(root, f), full))
+        return out
+
+    ok = []
+    for d in sorted(cand, key=lambda x: (x.count("/"), x)):
+        items = [(s_, dd) for s_, dd in entries
+                 if dd == d or dd.startswith(d + "/")]
+        if len(items) < threshold:
+            continue
+        if tracked_under(d):
+            continue
+        wf = ws_files(d)
+        if len(wf) != len(items):
+            continue
+        # 结构一致：src/dest 去前缀后逐文件相同
+        repo_dir = None
+        good = True
+        for s_, dd in items:
+            rel = dd[len(d) + 1:]
+            if not s_.endswith("/" + rel):
+                good = False
+                break
+            r_dir = s_[: len(s_) - len(rel) - 1]
+            if repo_dir is None:
+                repo_dir = r_dir
+            elif repo_dir != r_dir:
+                good = False
+                break
+        if not good or not repo_dir:
+            continue
+        ok.append((len(items), d, repo_dir))
+
+    ok.sort(key=lambda t: -t[0])
+    chosen = []
+    for n, d, r in ok:
+        if any(d == cd or d.startswith(cd + "/") for _, cd, _r in chosen):
+            continue
+        chosen.append((n, d, r))
+    return [(r, d, n) for n, d, r in chosen]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只校验不写入")
+    ap.add_argument("--linkfile-threshold", type=int, default=20,
+                    help="自包含子树文件数达到该值时改用一条 <linkfile>（默认 20）")
+    ap.add_argument("--no-linkfile", action="store_true",
+                    help="关闭 linkfile 混合策略，全部用 <copyfile>")
     ap.add_argument("--prune", action="store_true",
                     help="删除作品仓内的保护区残留（另一条对话的模拟器 UI）后再生成")
     args = ap.parse_args()
@@ -113,6 +208,7 @@ def main():
         lines = f.read().split("\n")
 
     first = next(i for i, l in enumerate(lines) if COPYFILE_RE.match(l))
+    LINKFILE_RE = re.compile(r'(\s*)<linkfile src="([^"]+)" dest="([^"]+)"\s*/>')
     last = max(i for i, l in enumerate(lines) if COPYFILE_RE.match(l))
 
     existing = []
@@ -120,6 +216,15 @@ def main():
         m = COPYFILE_RE.match(l)
         if m:
             existing.append((m.group(2), m.group(3)))
+
+    def ours(src):
+        return any(src == g or src.startswith(g + "/") for g in GROUP_DIRS)
+
+    old_links = []
+    for l in lines[:first]:
+        m = LINKFILE_RE.match(l)
+        if m and ours(m.group(2)):
+            old_links.append((m.group(2), m.group(3)))
 
     # 树外条目（例如仓根文档）原样保留，且在清单末尾
     wanted_dests = {d for _s, d in tree_entries()}
@@ -131,6 +236,22 @@ def main():
               and d not in wanted_dests]
 
     wanted = tree_entries()
+
+    # ── 混合策略：自包含子树用一条 <linkfile>，其余逐文件 <copyfile> ──────────
+    links = [] if args.no_linkfile else linkfile_groups(wanted, args.linkfile_threshold)
+    if links:
+        link_srcs = [r for r, _d, _n in links]
+        kept = []
+        for src, dest in wanted:
+            if any(src == r or src.startswith(r + "/") for r in link_srcs):
+                continue
+            kept.append((src, dest))
+        dropped = len(wanted) - len(kept)
+        wanted = kept
+        print("linkfile 子树 : %d 个（替代 %d 条 copyfile）" % (len(links), dropped))
+        for r, d, n in links:
+            print("   ~ %s  (%d 文件)  ->  %s" % (r, n, d))
+
     wanted.sort(key=lambda sd: (sd[1].split("/")[0], sd[0]))
 
     old_set = {s for s, _ in existing}
@@ -211,14 +332,23 @@ def main():
             print("   " + p)
         return 1
 
+    link_added = [x for x in links if (x[0], x[1]) not in old_links]
+    link_removed = [x for x in old_links if x not in [(r, d) for r, d, _n in links]]
+
     if args.check:
-        if added or removed:
+        if added or removed or link_added or link_removed:
             print("\n❌ 清单与文件树不一致（--check 模式不写入）")
+            for r, d, n in link_added:
+                print("   + linkfile %s -> %s (%d 文件)" % (r, d, n))
+            for r, d in link_removed:
+                print("   - linkfile %s -> %s" % (r, d))
             return 1
-        print("\n✅ 清单与文件树一致")
+        print("\n✅ 清单与文件树一致（linkfile %d 条）" % len(links))
         return 0
 
-    out = lines[:first]
+    out = [l for l in lines[:first]
+           if not (LINKFILE_RE.match(l) and ours(LINKFILE_RE.match(l).group(2)))]
+    out += ['    <linkfile src="%s" dest="%s"/>' % (r, d) for r, d, _n in links]
     out += ['    <copyfile src="%s" dest="%s"/>' % (s, d) for s, d in wanted]
     out += ['    <copyfile src="%s" dest="%s"/>' % (s, d) for s, d in extras]
     out += ['  </project>', '</manifest>', '']
@@ -226,7 +356,8 @@ def main():
     with open(XML, "w", encoding="utf-8") as f:
         f.write("\n".join(out))
 
-    print("\n✅ 已写入 %s（%d 条 copyfile）" % (os.path.relpath(XML, REPO), len(wanted) + len(extras)))
+    print("\n✅ 已写入 %s（%d 条 copyfile + %d 条 linkfile）"
+          % (os.path.relpath(XML, REPO), len(wanted) + len(extras), len(links)))
     return 0
 
 

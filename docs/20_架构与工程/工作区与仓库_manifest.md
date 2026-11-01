@@ -17,6 +17,25 @@ openvela 是 `repo` 多仓工作区：`nuttx`、`apps`、`vendor/espressif`、`p
 
 - 映射由 `<copyfile src="..." dest="..."/>` 表达（`src` 相对作品仓、`dest` 相对工作区根）。
 
+### 混合策略（2026-11-01 起）
+
+`<copyfile>` **只支持文件**（repo 工具对目录直接报错），所以：
+
+- **整棵子树都属于本项目**（该目录在工作区里 0 个 tracked 文件）、文件数 ≥ 20、且
+  `src`/`dest` 去前缀后逐文件一致 → 用**一条 `<linkfile>`**（symlink）代替逐文件条目；
+- 其余仍用 `<copyfile>` 逐文件声明。
+
+当前结果：**3 条 linkfile 替代 489 条 copyfile**，清单从 754 条降到 **231 条 copyfile + 3 条 linkfile**：
+
+| linkfile | 文件数 |
+|---|---|
+| `nuttx/arch/risc-v/src/esp32p4` → 同名 | 407 |
+| `board/esp32p4/esp32p4-function-ev-board` → `vendor/espressif/boards/…` | 59 |
+| `board/esp32p4/esp32p4-tab5` → `vendor/espressif/boards/…` | 23 |
+
+关闭方式：`gen_manifest_copyfiles.py --no-linkfile`（回落为全 copyfile）；阈值可调
+`--linkfile-threshold N`。模拟部署校验：copyfile 231 条内容全一致、linkfile 3 条解析正确。
+
 ## 两个必须知道的限制
 
 1. **`<copyfile>` 不支持目录**：repo 工具对目录会直接报错（"copying from directory not supported"），

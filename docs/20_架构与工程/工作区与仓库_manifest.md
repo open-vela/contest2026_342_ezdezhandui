@@ -25,23 +25,25 @@ openvela 是 `repo` 多仓工作区：`nuttx`、`apps`、`vendor/espressif`、`p
   `src`/`dest` 去前缀后逐文件一致 → 用**一条 `<linkfile>`**（symlink）代替逐文件条目；
 - 其余仍用 `<copyfile>` 逐文件声明。
 
-当前结果：**3 条 linkfile 替代 489 条 copyfile**，清单从 754 条降到 **231 条 copyfile + 3 条 linkfile**：
+当前结果：**3 条 linkfile 替代 610 条 copyfile**，清单为 **116 条 copyfile + 3 条 linkfile**：
 
 | linkfile | 文件数 |
 |---|---|
-| `nuttx/arch/risc-v/src/esp32p4` → 同名 | 407 |
+| `nuttx/arch/risc-v/src/esp32p4` → 同名（含 `espressif/` 整层） | 528 |
 | `board/esp32p4/esp32p4-function-ev-board` → `vendor/espressif/boards/…` | 59 |
 | `board/esp32p4/esp32p4-tab5` → `vendor/espressif/boards/…` | 23 |
 
 关闭方式：`gen_manifest_copyfiles.py --no-linkfile`（回落为全 copyfile）；阈值可调
-`--linkfile-threshold N`。模拟部署校验：copyfile 231 条内容全一致、linkfile 3 条解析正确。
+`--linkfile-threshold N`。模拟部署校验：copyfile 内容全一致、linkfile 3 条解析正确。
 
 ## 两个必须知道的限制
 
 1. **`<copyfile>` 不支持目录**：repo 工具对目录会直接报错（"copying from directory not supported"），
    所以"整文件夹替换"要靠逐个文件条目，或改用 `<linkfile>`（symlink，可指向目录）。
-2. **manifest 不能表达"删除"**：交付只能新增/覆盖文件；所以共享层里被我们改过的 tracked 文件
-   只能留在原地（不能"搬走"，否则交付会缺文件）。
+2. **manifest 不能表达"删除"**：交付只能新增/覆盖文件。所以 2026-11-02 的搬迁在评审端的
+   表现是：基线的 `common/espressif/**` 仍在原处，但**不被任何构建文件引用**（死文件）；
+   我们交付的是新位置 `arch/risc-v/src/esp32p4/espressif/**` 的整层。工作区里那批
+   tracked 文件显示为 "删除"，属于"搬走"，不是"交付缺文件"。
 
 ## 只读保护区
 
@@ -56,29 +58,47 @@ vendor/openvela
 
 对账与受控同步见 `tools/engineering/check_consistency.py` 与 `sync_and_restore.sh`。
 
-## 公共层（`common/espressif`）最小交付集
+## 通用层零写入：`arch/risc-v/src/common/` 只剩 1 个文件（2026-11-02）
 
-**原则**：公共层的改动一律挪进独立文件（P4 侧 `arch/risc-v/src/esp32p4/**`）；只有当基线版本会导致构建/启动失败（真 BUG）时才在公共层保留交付。当前**例外清单为空**。
+**背景**：上一版做法是"公共层最小交付集"—— 从 113 个文件里挑出真正参与构建的 45 个交付，
+其余留给评审端基线。但这样交付仍然**写进通用层**：Espressif 内容占着
+`arch/risc-v/src/common/espressif/**`，通用部分被芯片内容污染。
 
-**判定依据**（脚本可复跑：`tools/engineering/shared_minimal.py`）：
+**现在的做法**：整层搬进芯片目录，通用层不再被写入任何本项目文件。
 
-1. 应用构建图（`build.ninja`）里真正编译的公共层源文件：**19 个**；
-2. 这些编译单元 + 全部 P4 编译单元跑 `-MM` 得到的直属公共层头闭包：**16 个**；
-3. 公共层构建文件（`Kconfig`/`Make.defs`/`CMakeLists.txt`/`Bootloader.*`/`Wireless.*`/`esp_ulp.*`/`ulp*`）：**11 个**；
-4. ⇒ 最小集 **46 个**；不交付 **67 个**（既不被编译、也不被 include，评审端用基线版本）。
+| | 迁移前 | 迁移后（2026-11-02） |
+|---|---|---|
+| Espressif 层位置 | `nuttx/arch/risc-v/src/common/espressif/` | `nuttx/arch/risc-v/src/esp32p4/espressif/` |
+| Espressif 层交付 | 45 条 `<copyfile>`（写在通用层） | 随 `esp32p4` 的 **1 条 `<linkfile>`**（528 文件） |
+| 通用层交付条目 | 48 | **1**（仅 `common/CMakeLists.txt`） |
 
-**永不交付**：`common/espressif/platform_include/sys/lock.h`（本项目新增的兼容副本；P4 侧 `esp32p4/esp_hosted/compat/platform_include/sys/lock.h` 内容相同且在 include 路径上，共享层没有任何构建文件引用它）。
+**唯一保留的通用层交付：`common/CMakeLists.txt`**（把 `riscv_mtimer.c` 改成
+`if(CONFIG_ONESHOT)` 条件编译）。删不掉的理由是实测的：
 
-**实测验证（2026-11-01）**：把这 67 个文件在工作区还原成基线版本（tracked 用 `git checkout HEAD --`，untracked 移走）后：
+1. 基线**无条件**编译 `riscv_mtimer.c`，而本板配置（`CONFIG_ONESHOT_COUNT=n`）下它编译必失败：
+   `struct oneshot_operations_s` 没有 clkcnt 成员，实测报
+   `'const struct oneshot_operations_s' has no member named 'start_absolute'`；
+2. CMake 侧无法从芯片目录摘掉通用层的源文件 —— `arch/risc-v/src/CMakeLists.txt` 先
+   `add_subdirectory(chip)` 再 `add_subdirectory(common)`，而源文件属性按目录隔离：
+   `HEADER_FILE_ONLY`、`DIRECTORY`、`TARGET_DIRECTORY`、`set_property(TARGET ... SOURCES)`
+   四组在 CMake 3.22 上实测全部无效；
+3. Make 路径**可以**从芯片侧摘除，所以 `common/Make.defs` 已不再交付：
+   `esp32p4/Make.defs` 里用 `CMN_CSRCS := $(filter-out riscv_mtimer.c,$(CMN_CSRCS))`
+   （与该层既有的 `riscv_vectors.S` filter-out 同一套路）。
 
-- 应用构建 3 秒通过 ⇒ 证明确实**不在构建图中**；
-- 烧写（含 MCUboot 引导器路径）后真机三项复现：`MCUboot` → `NuttShell`、`connected to "Hello_World_2.4G" rssi=-49`、`DhcpDnsStatus iface=0 link=1 dhcp=1 ip=192.168.1.9`、`wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1`（证据目录 `logs/20261101-211034_shared-minimal`）。
+断言：`gen_manifest_copyfiles.py --assert-shared-max 1`（默认）与
+`check_consistency.py` 的"通用层交付条目 ≤ 1"。
 
-**结果**：manifest 从 231 条 copyfile 降到 **163 条**（另有 3 条 linkfile）；公共层条目 113 → **45**，且其中**没有任何我们改过的文件**。
+**另外两处通用层改动的去向**
 
-**残余风险**：若评审端打开了某个我们关闭的 `CONFIG_ESPRESSIF_*`，被裁掉的文件会退回基线版本 —— 该功能可能不可用，但**不会导致构建失败**（基线版本存在）。
+| 原通用层改动 | 现在在哪 |
+|---|---|
+| `common/riscv_doirq.c` 的早启动 `g_running_task == NULL` 守卫 | 下沉到 `esp32p4/espressif/esp_irq.c` 的 `riscv_dispatch_irq()`（P4 全部 trap 的唯一入口：`esp_vectors.S → exception_common → riscv_dispatch_irq`），通用文件回到基线 |
+| `common/Make.defs` 的 `riscv_mtimer` 条件编译 | 由芯片目录的 `filter-out` 取代 |
 
-**回退**：`python3 tools/engineering/gen_manifest_copyfiles.py --no-shared-minimal`（一条命令恢复交付全部公共层文件）。
+**回退**：把 `esp32p4/espressif/` 整目录搬回 `common/espressif/`，用
+`git -C nuttx checkout HEAD -- arch/risc-v/src/common/{Make.defs,riscv_doirq.c}` 恢复被删的
+通用层文件并重新部署旧副本，最后重跑 `gen_manifest_copyfiles.py`。
 
 ## 清空验证（clean-room，2026-11-01）
 
@@ -86,7 +106,7 @@ vendor/openvela
 linkfile 子树整棵移走），再**只按 manifest 部署**（`<copyfile>` 复制 + `<linkfile>` 建符号链接），
 得到与评审端 `repo sync` 后一致的树。结果与经验：
 
-- 部署 163 条 copyfile + 3 条 linkfile 后，工作区 `nuttx/arch/risc-v/src/esp32p4` 等三处变为
+- 部署 116 条 copyfile + 3 条 linkfile 后，工作区 `nuttx/arch/risc-v/src/esp32p4` 等三处变为
   指向作品仓的符号链接（与评审端一致），`check_consistency.py` ✅ 一致；
 - 坑 1：**不要复用旧构建目录**再重跑 CMake —— 重跑时 `NUTTX_DEFCONFIG` 环境变量丢失，会在
   `cmake/nuttx_kconfig.cmake:48` 报 `string sub-command REGEX ... needs at least 5 arguments`。
@@ -128,3 +148,33 @@ endif()
 **另一个坑（工作区脏数据）**：`nuttx/arch/risc-v/include/board` 曾经指向 **esp32c6-devkitc**（早期 C6 交叉
 构建实验的残留），会让 P4 构建拿到错误的板级头文件（表现为 `BOARD_MIPI_DSI_* undeclared`）。重配前请确认
 该链接指向 P4 板级 include。
+
+## clean-room 复验：通用层零写入之后（2026-11-02 12:41）
+
+搬迁（espressif 层搬进芯片目录 + 守卫下沉 + MCUboot 工作树移出交付树）之后，再走一次
+"评审端状态"的完整链路：
+
+**做法**：把工作区共享层还原成评审端形态（`common/espressif/**` 回基线、`Make.defs` 与
+`riscv_doirq.c` 回基线、`CMakeLists.txt` 保留我们的版本），然后用**全新构建目录**
+（`cmake_out/esp32p4-verify-move`，只预置 700 MB 的 `esp-hal-3rdparty` 缓存）从零 configure + build。
+
+| 检查项 | 结果 |
+|---|---|
+| 全新 configure + build | ✅ 通过（`#### build completed successfully`） |
+| 固件 | `nuttx.bin` **1,830,912 字节**，与搬迁前逐字节同尺寸；`cmp -l` 只差 43 字节，全部落在启动时间戳字符串（`Nov  2 2026 12:41:08` vs `09:04:28`）⇒ 功能等价 |
+| 构建图 | 老路径源文件 **0** 处；新路径 `esp32p4/espressif/*` **37** 处；`riscv_mtimer.c` **未编译** |
+| 烧录 | `usb_stable.sh` 两镜像 hash 校验通过（MCUboot 24608 B 从搬迁后的 `nuttx/bootloader-esp32p4` 重建） |
+| 真机三项 | ✅ 见下（证据目录 `logs/20261102-124236_espressif-move`） |
+| IRQ 守卫回归 | ✅ NSH 里执行 `exit`（8510a00 的复现场景）后串口**继续**输出 19 组 WiFi/SDIO 心跳 ⇒ 未复现"整机失聪"（同目录 `irq_guard_regression.txt`） |
+
+```
+[esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***
+NuttShell (NSH)
+connected to "Hello_World_2.4G" ssid="Hello_World_2.4G" rssi=-46 ch=6
+DhcpDnsStatus iface=0 link=1 dhcp=1 ip=192.168.1.9
+wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1
+```
+
+> 与上一轮（12:41 之前）唯一的差别是**这次没有逻辑分析仪**（USB 上没插 Saleae），
+> 所以只抓了串口；分析仪波形属于附加证据，不属于三项验收。
+

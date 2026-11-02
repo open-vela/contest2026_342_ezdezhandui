@@ -25,7 +25,7 @@
 | 桌伴 DeskMate | 本项目作品名：openvela + ai_agent 的 7 英寸智能视觉中控屏 |
 | C6 / 从机 | 板载 ESP32-C6，跑 esp-hosted **从机**固件，经 SDIO 与 P4 相连 |
 | 官方栈 / 官方端口 | `espressif/esp-hosted-mcu` 的主机栈 + 本仓 `arch/risc-v/src/esp32p4/esp_hosted/official/` 中的 NuttX 移植层 |
-| 共享层 | `arch/risc-v/src/common/espressif/`（esp32c3/c6/h2/p4 共用） |
+| 共享层 | `arch/risc-v/src/esp32p4/espressif/`（esp32c3/c6/h2/p4 共用） |
 | P4 自有代码 | `arch/risc-v/src/esp32p4/`（含 `esp_hosted/` 与 `drivers/`） |
 | 保护区 | 另一条对话在开发的模拟器 UI（`apps/examples/deskmate` 等），本仓不交付、不同步 |
 | 交付 / 部署 | 作品仓按 manifest `<copyfile>` 映射回 openvela 工作区 |

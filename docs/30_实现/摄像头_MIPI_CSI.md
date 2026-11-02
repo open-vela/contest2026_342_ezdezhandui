@@ -206,7 +206,7 @@ dev->n_lanes.n_lanes = lanes_num - 1;     /* 读到 1 表示 2 lane，完全正�
 
 | 文件 | 开关 | 作用 |
 |---|---|---|
-| `nuttx/arch/risc-v/src/common/espressif/esp_csi.c` | `#define ESP_CSI_CAPTURE_DIAG 1` | 首帧启动 3 秒后连续打印 4 组 Host/Bridge/DW-GDMA 寄存器快照 + 一行结论 |
+| `nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c` | `#define ESP_CSI_CAPTURE_DIAG 1` | 首帧启动 3 秒后连续打印 4 组 Host/Bridge/DW-GDMA 寄存器快照 + 一行结论 |
 | `nuttx/drivers/video/sc2336.c` | `#define SC2336_TEST_PATTERN 1` | 打开传感器内部测试图案，区分"采集链路坏"与"传感器不发送" |
 
 开启后跑 `camera`，看这一行即可判定：
@@ -224,6 +224,6 @@ CAMDIAG[RESULT] ch0 dar 483a4dc0 -> 483a4dc0 : STATIC - no frames | brg int_raw=
 | 文件 | 改动 |
 |---|---|
 | `apps/examples/camera/camera_main.c` | 坑 1/2：RAW10 缓冲尺寸、64 字节对齐 |
-| `nuttx/arch/risc-v/src/common/espressif/esp_csi.c` | 诊断开关、寄存器快照、`ctlr start rc=` 日志 |
-| `nuttx/arch/risc-v/src/common/espressif/esp_mipi_dsi.c` | 坑 3：DSI 让出 ch0、去掉全局复位 |
+| `nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c` | 诊断开关、寄存器快照、`ctlr start rc=` 日志 |
+| `nuttx/arch/risc-v/src/esp32p4/drivers/esp_mipi_dsi.c` | 坑 3：DSI 让出 ch0、去掉全局复位 |
 | `nuttx/drivers/video/sc2336.c` | 寄存器表校验、测试图案开关、探针回读 |

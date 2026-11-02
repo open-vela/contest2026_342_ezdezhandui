@@ -57,7 +57,7 @@
 | 镜像封装：加 load header + 签名 | `nuttx/tools/espressif/espressif_mkimage.cmake`（MCUboot 分支） |
 | load header 生成器（新增） | `nuttx/tools/espressif/mcuboot_mkloadhdr.py` |
 | MCUboot 构建兼容 + XIP 映射补丁（新增） | `nuttx/tools/espressif/mcuboot_p4_fixup.sh`、`mcuboot_p4_loader_patch.py` |
-| 引导构建进默认构建图 | `arch/risc-v/src/common/espressif/{Bootloader.cmake,CMakeLists.txt}`（见坑 6） |
+| 引导构建进默认构建图 | `arch/risc-v/src/esp32p4/espressif/{Bootloader.cmake,CMakeLists.txt}`（见坑 6） |
 | 烧录改双镜像 | 项目侧 `tools/build_flash/usb_stable.sh` |
 
 ---
@@ -191,7 +191,7 @@
 
 1. **`bootloader` 目标不在 `all`**：干净树上跑文档里的构建命令，只出应用镜像，
    `nuttx/mcuboot-esp32p4.bin` 缺失 → 两镜像烧录流程必挂。
-   → `arch/risc-v/src/common/espressif/CMakeLists.txt` 加 `add_dependencies(nuttx_context bootloader)`。
+   → `arch/risc-v/src/esp32p4/espressif/CMakeLists.txt` 加 `add_dependencies(nuttx_context bootloader)`。
 2. **内层 configure 找不到 ninja**：外层用的是 openvela **预置 ninja**（不在 `PATH`），
    而 ExternalProject 会继承父工程的 `CMAKE_GENERATOR=Ninja`，
    于是内层报 `CMake was unable to find a build program corresponding to "Ninja"`。

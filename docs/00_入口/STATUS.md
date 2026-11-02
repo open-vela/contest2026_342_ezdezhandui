@@ -148,7 +148,7 @@
 > 联网仍靠 eth0。详见 `docs/30_实现/连接_WiFi_SDIO.md`。
 > **摄像头出帧已修复（10/22）**：根因 = ESP32-P4 的 **CSI bridge 与 ISP 共享**
 > （`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 从未初始化 ISP 输入模块；修复见
-> `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`（`esp_csi_isp_bypass_init()`），
+> `nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c`（`esp_csi_isp_bypass_init()`），
 > 验收 `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15（逐段结论修正史见 §四.4）。
 > 新增板端 V4L2 工具 `v4l2ctl`（`app/apps/system/v4l2ctl/`，manifest → `apps/system/v4l2ctl/`）。
 > 2026-09-18 提交前基线（保留）：**「agent 一启动整机失聪」已定位并修复**：`riscv_doirq()` 的早期引导保护
@@ -173,7 +173,7 @@
 | ai_agent 完整启动 | ✅ | P0→P6 全 rc=0，36 tools / **12 skills**，WebSocket 板端监听 28789、`All network services started!` |
 | **ai_agent 端到端对话** | ✅ | WS 28789 → 消息 → LLM → 回答（真机实测 `你好`；证据 `logs/verify-2026-09-17/agent_llm_ws.txt`）。链路修复见 `docs/90_归档/开发过程复盘与改进清单.md` §27（端点 401 / TCPBACKLOG RST / 计时被 TLS 改时钟）|
 | LVGL demo（显示+触摸）| ✅ | 最终固件上运行 `lvgldemo`（GT911 上电 + `/dev/fb0 1024x600 RGB565`），JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4，与首采一致；存档 `logs/verify-2026-09-17/lvgl_demo_final.png`）|
-| **摄像头出帧（赛题③前置）** | ✅ | SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定出帧：**PASS 13/13**、抓帧 15/15、连跑两轮一致（`tools/test/camera_verify.sh`）。根因 = CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 未初始化 ISP 输入模块 → 修复 `esp_csi_isp_bypass_init()`（`nuttx/arch/risc-v/src/common/espressif/esp_csi.c`）；结论三次修正的全过程见 §四.4 |
+| **摄像头出帧（赛题③前置）** | ✅ | SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定出帧：**PASS 13/13**、抓帧 15/15、连跑两轮一致（`tools/test/camera_verify.sh`）。根因 = CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 未初始化 ISP 输入模块 → 修复 `esp_csi_isp_bypass_init()`（`nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c`）；结论三次修正的全过程见 §四.4 |
 | **自定义 Skill ×2（赛题②）** | ✅ | `center-assistant` / `quick-note`；`Skills system ready (12 built-in)` |
 | **ES8311 音频 + 语音播放** | ✅ **驱动链路已编入固件** | 板级粘合 `esp32p4_audio_es8311.c`（唯一入口 + 功放控制），经 `es8311.c` + `esp_i2s.c`(GDMA) + `pcm_decode` 注册为 `/dev/audio/pcm0`；NSH `nxplayer` 播 WAV。构建 0 error、5 个音频符号 + `nxplayer_main` 落位、调用链反汇编核实。**上板出声待复测**（见 `docs/30_实现/音频_ES8311.md`）|
 | **cron 定时主动（赛题③）** | ✅ | `cron_service`/`tool_cron` 真实编入，`[cron] Cron started` |
@@ -181,7 +181,8 @@
 
 ## 二、当前交付
 
-- **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **329 条 copyfile** 自动映射（清单由 `tools/engineering/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
+- **通用层零写入（2026-11-02）**：espressif 共享层整层搬进 `nuttx/arch/risc-v/src/esp32p4/espressif/`，`arch/risc-v/src/common/` 只剩 1 个交付文件（`CMakeLists.txt`，riscv_mtimer 条件编译）；早启动 IRQ 守卫下沉到 `esp32p4/espressif/esp_irq.c`；MCUboot 工作树移到 `nuttx/bootloader-esp32p4/`（构建产物）。见 `docs/60_交付与提交/上游改动审计.md`
+- **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **116 条 copyfile + 3 条 linkfile** 自动映射（2026-11-02 起 Espressif 层整层随 `esp32p4` 的 linkfile 交付，通用层只剩 1 个文件）（清单由 `tools/engineering/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
 - **复现路径**：根 `00_入口/README.md` §四（init → sync → build → **两镜像烧录** → console，**无部署步骤**；copyfile 在 `repo sync` 时自动落位，且移植不删除任何上游文件）
 - **闭环工具**：`tools/test/board.py`（串口 harness/断言）、`tools/build_flash/usb_stable.sh`（两镜像烧录）、`tools/test/verify_aiagent.sh`（ai_agent 启动里程碑断言）、`tools/test/camera_verify.sh`（**摄像头出帧验收断言 13/13**）、`tools/test/camera_diag.sh`（摄像头链路一次性判定）、`tools/test/fb2png.py`（JTAG 帧缓冲→PNG 截图）、`tools/test/wedge_diag.sh`（agent 失聪现场 JTAG 取证）
 - **板端工具**：`v4l2ctl`（`app/apps/system/v4l2ctl/` → manifest 落位 `apps/system/v4l2ctl/`）—— NuttX 无 `v4l2-ctl`，用它做枚举/开流/抓帧（`v4l2ctl -d /dev/video0 --capture 3 --timeout 20`）

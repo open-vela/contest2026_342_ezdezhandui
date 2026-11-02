@@ -470,8 +470,8 @@ D0/D1/D2/D3  全部 100% 高（上拉电平，无人驱动）
 3. 或用厂商工具检查这颗 C6 的 SDIO 从机外设
 
 **主要文件：**
-- `nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.c`（约 2550 行）
-- `nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.c`（约 1250 行）
+- `nuttx/arch/risc-v/src/esp32p4/esp_hosted/sdmmc/esp_sdmmc.c`（约 2550 行）
+- `nuttx/arch/risc-v/src/esp32p4/esp_hosted/transport/esp_hosted_sdio.c`（约 1250 行）
 - `docs/30_实现/连接_WiFi_SDIO.md` 附录 A–AA（一百九十余节排查记录，含全部误判与更正）
 - `tools/test/pxview/`、`tools/test/tabby/`、`tools/test/c6_sdio_minimal/`、`tools/test/p4_sdio_host_idf/`
 

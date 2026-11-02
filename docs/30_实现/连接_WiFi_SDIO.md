@@ -1,5 +1,9 @@
 # WiFi（板载协处理器 / SDIO + ESP-Hosted）—— 现状调研与实现路线
 
+> ⚠️ **路径说明**：本文是当日工程日志，2026-11-02 起 Espressif 共享层已从
+> `nuttx/arch/risc-v/src/common/espressif/` 整体搬到 `nuttx/arch/risc-v/src/esp32p4/espressif/`；
+> 文中早于该日期的路径引用记录的是当时布局。
+
 > 版本：**2026-11-01（第 65 轮）** ·
 > 状态：**根因已定位并修复 —— 不是硬件问题，是移植层的功能缺陷。
 > 官方基线已在同一块板上读到真实报文载荷（附录 BZ），附录 BX 的"硬件/从机不可用"结论已撤回**
@@ -89,7 +93,7 @@ $ find . -iname "*esp-hosted*" -o -iname "*esp_hosted*"     # 全工作区
 也没有 SDMMC/SDIO host 驱动可复用：
 
 ```
-nuttx/arch/risc-v/src/common/espressif/     # 只有 esp_sdm.c（Σ-Δ 调制器，与 SD 无关）
+nuttx/arch/risc-v/src/esp32p4/espressif/     # 只有 esp_sdm.c（Σ-Δ 调制器，与 SD 无关）
 nuttx/arch/xtensa/src/esp32s3/esp32s3_sdmmc.c   # 2974 行，整套 sdio_ops_s，但只在 xtensa/S3
 ```
 
@@ -114,8 +118,8 @@ C5 模组对应脚复核一次。）
 
 | 文件 | 内容 |
 |---|---|
-| `nuttx/arch/risc-v/src/common/espressif/esp_sdmmc.c/.h` | P4 SDMMC/SDIO host 驱动（约 700 行）|
-| `nuttx/arch/risc-v/src/common/espressif/esp_hosted_sdio.c/.h` | 协处理器链路：host 拉起 → SDIO 枚举 → 里程碑状态 |
+| `nuttx/arch/risc-v/src/esp32p4/esp_hosted/sdmmc/esp_sdmmc.c/.h` | P4 SDMMC/SDIO host 驱动（约 700 行）|
+| `nuttx/arch/risc-v/src/esp32p4/esp_hosted/transport/esp_hosted_sdio.c/.h` | 协处理器链路：host 拉起 → SDIO 枚举 → 里程碑状态 |
 
 ### 3.1 为什么不照抄 S3 的驱动
 
@@ -696,7 +700,7 @@ EH_FRAME_CFG_HOST_MCU_SDIO_DEFAULT = {
 
 `eh_frame` 是纯逻辑，与总线无关。建议：
 
-1. 把它作为**独立组件**投放（`nuttx/arch/risc-v/src/common/espressif/eh_frame/`
+1. 把它作为**独立组件**投放（`nuttx/arch/risc-v/src/esp32p4/esp_hosted/frame/`
    或单独目录），不改一行上游代码；
 2. 传输层（SDIO）与帧层之间只通过「收一帧 / 发一帧」两个回调耦合；
 3. 帧层用主机侧 tarball 编译一个**本地单元测试**做 encode→decode 往返 ——
@@ -756,7 +760,7 @@ shim 只有 `esp_err.h` / `linux/types.h` / `sdkconfig.h` 三个头，
 帧层现在是**驱动的一部分**，不再是只在主机上跑的测试：
 
 ```
-nuttx/arch/risc-v/src/common/espressif/eh_frame/
+nuttx/arch/risc-v/src/esp32p4/esp_hosted/frame/
 ├── src/eh_frame.c              上游原样
 ├── include/                    上游原样（eh_frame.h + eh_common_* + eh_tlv_tags.h）
 ├── shim/linux/types.h          唯一的本地补充
@@ -2352,7 +2356,7 @@ SDIO 枚举、ESP-Hosted 控制面、`wlan0` 注册、DHCP、DNS、TCP 全通。
 | 数据传输 | **全程轮询 CMD52/CMD53**，`enable_dma(false)` | 走 NuttX SDIO 栈 + IDMAC |
 | 复位后等待 | **1000 ms** | 200 ms |
 | 时钟提交 | 仅在**改时钟时**才发 `update_clk_reg`；初始化阶段不发 | 每个 `SDIO_CLOCK` 都发 |
-| 代码归属 | 全部放在 **`chips/esp32p4/`**，完全不碰 `common/espressif/esp_sdmmc.c` | 改通用 `esp_sdmmc.c` |
+| 代码归属 | 全部放在 **`chips/esp32p4/`**，完全不碰 `esp32p4/esp_hosted/sdmmc/esp_sdmmc.c` | 改通用 `esp_sdmmc.c` |
 
 ## K.2 逐字比对过、确认**没有差异**的部分
 
@@ -2485,7 +2489,7 @@ esp_hosted_sdio: ref_clk2=00000101 (bit0 = PLL_F160M gated on)
 
 ## K.12 移植方案（下一轮执行）
 
-按参考仓库的结构，在 `nuttx/arch/risc-v/src/common/espressif/` 下新建：
+按参考仓库的结构，在 `nuttx/arch/risc-v/src/esp32p4/espressif/` 下新建：
 
 1. **`esp_hosted_sdio_prims.c`** —— 自己实现 CMD0/CMD5/CMD3/CMD7/CMD52/CMD53
    （轮询、无 DMA、1-bit），直接操作 `sdmmc_ll_*`，不经 NuttX `sdio.c`；
@@ -3161,7 +3165,7 @@ C6 侧:   IO18 <-> SD2_CMD     IO19 <-> SD2_CLK
 
 ### O.7.1 参考实现的路由方式与我的**不同**
 
-读参考仓库 `chips/esp32p4/common/espressif/esp_hosted_sdio.c` 的
+读参考仓库 `chips/esp32p4/esp32p4/esp_hosted/transport/esp_hosted_sdio.c` 的
 `esp_hosted_sdio_route_pins()` 发现，它并不是"六根线全接控制器"：
 
 ```
@@ -10513,7 +10517,7 @@ DSH 的 `mcp-pxview` 客户端显示 `server is disconnected`，但服务端活�
 #### 目录与职责（低耦合、高内聚）
 
 ```
-nuttx/arch/risc-v/src/common/espressif/esp_hosted/     ← 我方代码，只此一处
+nuttx/arch/risc-v/src/esp32p4/esp_hosted/     ← 我方代码，只此一处
 ├── port/
 │   ├── eh_host_port_nuttx_sdio.c    SDIO 端口层（9 个函数，见下表）
 │   ├── eh_host_port_nuttx_os.c      OS 原语（mutex/queue/task/timer/sleep）
@@ -11074,7 +11078,7 @@ IDF 侧参考实现共 **11 个文件 / 2,257 行**（`port/os/idf/src/`：
 
 #### AP.3 施工顺序（每步都要能单独验收）
 
-1. **骨架 + 空实现**：建 `nuttx/arch/risc-v/src/common/espressif/esp_hosted/`，
+1. **骨架 + 空实现**：建 `nuttx/arch/risc-v/src/esp32p4/esp_hosted/`，
    `Kconfig` 加 `CONFIG_ESPRESSIF_HOSTED_OFFICIAL`（`default n`），
    `espressif/CMakeLists.txt` 加一行钩子；验收 = **默认配置下产物与现在逐字节等价**、构建 0 error。
 2. **SDIO 端口**：9 个函数落地（复用现有 bring-up + `sdio_io_rw_*`）；
@@ -11170,7 +11174,7 @@ openocd ... -f board/esp32p4-builtin.cfg -c "init" -c "reset halt" -c "reset run
 
 #### AS.1 已入仓的官方栈（不是从零开始）
 
-`nuttx/arch/risc-v/src/common/espressif/esp_hosted_official/`（提交 `51a2a4a`，**136 个文件**，
+`nuttx/arch/risc-v/src/esp32p4/esp_hosted/official/`（提交 `51a2a4a`，**136 个文件**，
 已进 manifest）：
 
 ```
@@ -11243,7 +11247,7 @@ shim 清单（`port/os/nuttx/include/`）：`esp_err.h`、`esp_check.h`、`esp_l
 
 #### AT.2 坑一：树里已有一层 FreeRTOS 兼容层，但它**不全**
 
-`nuttx/arch/risc-v/src/common/espressif/freertos_compat/freertos/`
+`nuttx/arch/risc-v/src/esp32p4/esp_hosted/compat/freertos_compat/freertos/`
 （`FreeRTOS.h`、`queue.h`、`task.h`、`idf_additions.h`，在构建 include 路径里）已经定义了
 `SemaphoreHandle_t`、`xQueue*`、`vTaskDelay` 等，**不要再定义一份**（我第一版 shim 就撞在这，
 `conflicting types for SemaphoreHandle_t`）。
@@ -14512,13 +14516,13 @@ I (2034) p4sdio: window 0x54 x4  -> ESP_OK bytes=00000000
 
 ## CA.1 为什么做
 
-`arch/risc-v/src/common/espressif/` 是 **esp32c3 / esp32c3-legacy / esp32c6 / esp32h2 /
+`arch/risc-v/src/esp32p4/espressif/` 是 **esp32c3 / esp32c3-legacy / esp32c6 / esp32h2 /
 esp32p4 共用**的一层。P4 的工作把不少东西放进了这一层，风险有两条：
 
 1. **代码归属**：P4 专用实现（SDIO/ESP-Hosted 集群）和共享驱动混在同一目录里，
    任何按目录同步/fork 的操作都会把 P4 代码带到别的芯片；
 2. **交付范围**：作品仓的导出以 nuttx 的 **git 基线**为准，而该基线停在 **2026-07-14**，
-   落后工作区所用的 openvela drop 近四个月 —— 于是 `arch/.../common/espressif/` 下
+   落后工作区所用的 openvela drop 近四个月 —— 于是 `arch/.../esp32p4/espressif/` 下
    **131 个文件**（整片上上游更新，与本项目无关）都会被当成"改动"投递出去，
    部署到别人的检出上就等于**用本工作区的版本覆盖共享 ESP 层**。
 
@@ -14550,16 +14554,16 @@ esp32p4 共用**的一层。P4 的工作把不少东西放进了这一层，风�
   `"esp_hosted/official/port/os/nuttx/include/eh_hosted_nuttx.h"`
   （P4 芯片源码目录本来就在板级 include 路径上，已用编译命令核实）。
 
-**结果**：`common/espressif` 里对 `esp_hosted*` / `esp_sdmmc*` / `eh_frame` /
+**结果**：`esp32p4/espressif` 里对 `esp_hosted*` / `esp_sdmmc*` / `eh_frame` /
 `platform_include` 的引用为 **0**；构建图里出现的是
-`.../esp32p4/esp_hosted/{sdmmc,transport,frame}/**.o`，旧的 `common/espressif/...` 目标为 0。
+`.../esp32p4/esp_hosted/{sdmmc,transport,frame}/**.o`，旧的 `esp32p4/espressif/...` 目标为 0。
 
 ### 阶段 2：交付范围收窄
 
 `tools/engineering/export.py` 增加排除清单（这条与阶段 1 同等重要）：
 
 ```python
-NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
+NUTTX_DENY_PREFIXES = ("arch/risc-v/src/esp32p4/espressif/",)
 ```
 
 - 共享 ESP 层**整体不导出**（131 个文件被跳过，导出日志会打印计数）；
@@ -14574,7 +14578,7 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
 |---|---|
 | P4 构建 | 通过（`build completed successfully`），构建图为 `esp32p4/esp_hosted/**` |
 | P4 真机 | 迁移后重新烧写：`connected … rssi=-50 ch=6`、`DhcpDnsStatus … link=1 dhcp=1 ip=192.168.1.9`、`wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1` |
-| 共享层引用 | `grep` 于 `common/espressif/{Kconfig,Make.defs,CMakeLists.txt}`：`esp_hosted`/`esp_sdmmc`/`eh_frame`/`platform_include` 命中 **0**（两条 include 路径也搬到了 P4 的 CMake，连同空的 `if(CONFIG_ESPRESSIF_MIPI_CSI)` 块与悬空注释一起清理） |
+| 共享层引用 | `grep` 于 `esp32p4/espressif/{Kconfig,Make.defs,CMakeLists.txt}`：`esp_hosted`/`esp_sdmmc`/`eh_frame`/`platform_include` 命中 **0**（两条 include 路径也搬到了 P4 的 CMake，连同空的 `if(CONFIG_ESPRESSIF_MIPI_CSI)` 块与悬空注释一起清理） |
 | 其它芯片 | 见 CA.4：静态证明（共享层对 P4 代码引用为 0；被移除的两条 include 只被 P4 使用） |
 | 清单一致性 | `python3 tools/engineering/gen_manifest_copyfiles.py --check` → ✅ |
 
@@ -14585,7 +14589,7 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
    所以"交叉目标构建矩阵"在本检出里跑不起来（实测：C6 板配置报
    `No CMakeLists.txt found at nuttx/boards/risc-v/esp32c6/esp32c6-devkitc`）。
    替代的、更直接的证明是三条：
-   - **零引用**：`common/espressif` 的 `Kconfig` / `Make.defs` / `CMakeLists.txt` 里对
+   - **零引用**：`esp32p4/espressif` 的 `Kconfig` / `Make.defs` / `CMakeLists.txt` 里对
      `esp_hosted*`、`esp_sdmmc*`、`eh_frame`、`platform_include`、`freertos_compat`
      的引用均为 **0** —— 别的芯片编译的就是它自己的那份共享层，没有被塞进 P4 代码；
    - **被移除的两条 include 只有 P4 用**：`_RETARGETABLE_LOCKING` 只在
@@ -14596,7 +14600,7 @@ NUTTX_DENY_PREFIXES = ("arch/risc-v/src/common/espressif/",)
    已无任何构建引用）删除；`vendor/espressif/chips/esp32p4/nuttx_build/CMakeLists.txt` 里
    指向旧位置的两处路径改到 `nuttx/arch/risc-v/src/esp32p4/esp_hosted/...`
    （该文件不参与 `build.sh` 的构建，也不进作品仓，属整理性质）。
-3. **交付范围纠错（2026-11-01 晚）**：上一步曾把 `arch/.../common/espressif/` **整目录**
+3. **交付范围纠错（2026-11-01 晚）**：上一步曾把 `arch/.../esp32p4/espressif/` **整目录**
    从交付里排除，导致 131 个共享层文件不再进作品仓（提交里表现为 510 个删除）。
    工作区文件**从未被删**（67 个 `.c` 都在），manifest 也只能 copy/link、**不能删除**；
    但交付会缺 P4 端口的共享层改动。已恢复为**完整交付**（`nuttx` 554 文件、共享层 131 文件、

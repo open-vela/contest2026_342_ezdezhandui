@@ -140,6 +140,6 @@ esp_csi_data_set_buf: ERROR: buffer too small: 0x4ff6eda0, 153600 < 2592000
 
 | 文件 | 改动 |
 |---|---|
-| `nuttx/arch/risc-v/src/common/espressif/esp_mipi_dsi.c` | 坑 1/2/3：启动顺序、中断掩码、通道改 1 |
+| `nuttx/arch/risc-v/src/esp32p4/drivers/esp_mipi_dsi.c` | 坑 1/2/3：启动顺序、中断掩码、通道改 1 |
 | `apps/graphics/lvgl/lvgl/src/drivers/nuttx/lv_nuttx_touchscreen.c` | 坑 4：输入回调条件 |
 | `apps/graphics/lvgl/lvgl/src/drivers/nuttx/lv_nuttx_fbdev.c` | 坑 5：渲染门控 |

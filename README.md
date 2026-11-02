@@ -45,8 +45,8 @@ logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提�
 
 ## 四、运行方式
 
-交付形态是**文件树 + repo manifest copyfile 自动映射**，评审侧**零手工步骤**：
-仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **329 条 `<copyfile>`**
+交付形态是**文件树 + repo manifest 自动映射**，评审侧**零手工步骤**：
+仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **116 条 `<copyfile>` + 3 条 `<linkfile>`**
 在 `repo sync` 时把它们自动覆盖到工作区对应位置 ——
 
 | 作品仓 | 工作区 |
@@ -55,6 +55,11 @@ logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提�
 | `board/esp32p4/**` | `vendor/espressif/boards/esp32p4/**` |
 | `app/apps/**` | `apps/**` |
 | `app/ai_agent/**` | `packages/ai_agent/**` |
+
+`nuttx/arch/risc-v/src/esp32p4/`（528 文件，含 2026-11-02 搬入的 `espressif/` 整层）与两棵板级
+子树属于"整棵子树都归本项目"，用 3 条 `<linkfile>` 一条顶掉 610 条逐文件条目；其余走
+`<copyfile>`。**通用层 `arch/risc-v/src/common/` 只剩 1 个交付文件**（`CMakeLists.txt`，
+riscv_mtimer 条件编译），详见 `docs/60_交付与提交/上游改动审计.md`。
 
 清单与文件树的**严格一一对应**由 `tools/engineering/gen_manifest_copyfiles.py` 保证
 （`--check` 校验，直接运行则再生）。校验会**直接拒绝**两类"manifest 表达不了、
@@ -128,7 +133,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 | 自定义 Skill ×2 | 中控助手 `center-assistant`、速记工单 `quick-note`（内置 Skill 表，开机写入 /data/ai_agent/skills/） | ② |
 | 定时主动 | cron 真实运行（`cron_service`/`tool_cron` 编入，作业表移 PSRAM） | ③ |
 | LVGL 触控 UI | 7" 1024×600 MIPI-DSI（EK79007）+ GT911 触摸，真机渲染已核实（证据 `docs/40_验证与证据/截图与对照日志/验证截图_LVGL界面_1024x600.png`） | ① + 加分 |
-| 事件主动（摄像头）| ✅ **openvela 下可用**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 抓帧稳定（`camera_verify.sh` 13/13 断言通过，15/15 帧）。**根因**是 ESP32-P4 的 CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 从未初始化 ISP 输入模块 → 修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`（`esp_csi_isp_bypass_init()`）。复测：`tools/test/camera_verify.sh` | ③ |
+| 事件主动（摄像头）| ✅ **openvela 下可用**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 抓帧稳定（`camera_verify.sh` 13/13 断言通过，15/15 帧）。**根因**是 ESP32-P4 的 CSI bridge 与 ISP 共享（`SOC_ISP_SHARE_CSI_BRG=1`）而 openvela 从未初始化 ISP 输入模块 → 修复见 `nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c`（`esp_csi_isp_bypass_init()`）。复测：`tools/test/camera_verify.sh` | ③ |
 
 > 逐项真机证据与根因见 `docs/01_开发流程/STATUS.md`；测试体系与结果见 `docs/01_开发流程/功能闭环测试.md`。
 
@@ -151,7 +156,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 - ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/40_验证与证据/截图与对照日志/验证截图_LVGL界面_1024x600.png`
 - ✅ **ai_agent 端到端对话**：WS 28789 → 消息 → LLM → 真实回答（证据 `提交材料/ws_llm_endtoend.log`）；「启动后整机失聪」已定位并修复（根因见 `docs/01_开发流程/开发过程复盘与改进清单.md` §26.7）
 - ✅ **自定义 Skill ×2 已上机**（`Skills system ready (12 built-in)`，含 center-assistant / quick-note）；cron 真实启动；PSRAM 约 33.9 MB 可用
-- ✅ **摄像头出帧**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定抓帧 —— `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15、连跑两轮一致（`--preview` 可见真实画面）；根因是 CSI bridge 与 ISP 共享而 openvela 未初始化 ISP 输入模块，修复见 `nuttx/arch/risc-v/src/common/espressif/esp_csi.c`
+- ✅ **摄像头出帧**：SC2336 RAW8 1280×720@30（2 lane/336 Mbps）经 V4L2 稳定抓帧 —— `tools/test/camera_verify.sh` **PASS 13/13**、抓帧 15/15、连跑两轮一致（`--preview` 可见真实画面）；根因是 CSI bridge 与 ISP 共享而 openvela 未初始化 ISP 输入模块，修复见 `nuttx/arch/risc-v/src/esp32p4/drivers/esp_csi.c`
 - ✅ **提交与仓库**：全部提交经 fork 汇入 **PR #15（摄像头出帧修复 + 工程整理）** 与 **PR #16（manifest revision 重锁）**，历史提交见 PR #12（均已合并）；提交材料清单见 §八
 - 📌 详细状态与逐项证据见 `docs/01_开发流程/STATUS.md`、`docs/01_开发流程/功能闭环测试.md` §七、`docs/01_开发流程/开发过程复盘与改进清单.md`
 

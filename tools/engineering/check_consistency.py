@@ -49,30 +49,11 @@ PROTECTED = [
     "vendor/openvela",
 ]
 
-# 有意不交付的公共层文件（见 gen_manifest_copyfiles.py 的 SHARED_MINIMAL /
-# NEVER_DELIVER）：它们既不被编译、也不被 include，评审端用基线版本即可。
-# 这里从"未交付改动"里剔除，避免把有意设计报成问题。
-import re as _re
-
-
-def _shared_minimal():
-    gen = os.path.join(REPO, "tools/engineering/gen_manifest_copyfiles.py")
-    try:
-        text = open(gen, encoding="utf-8").read()
-    except OSError:
-        return set(), set()
-    m = _re.search(r"SHARED_MINIMAL = \{(.*?)\}", text, _re.S)
-    keep = set(_re.findall(r'"([^"]+)"', m.group(1))) if m else set()
-    n = _re.search(r"NEVER_DELIVER = \{(.*?)\}", text, _re.S)
-    never = set(_re.findall(r'"([^"]+)"', n.group(1))) if n else set()
-    return keep, never
-
-
-SHARED_KEEP, SHARED_NEVER = _shared_minimal()
 
 # 构建/工具噪声：既不该进交付，也不值得报成"未交付改动"
 NOISE_PREFIXES = (
     "build-esp32p4-bootloader/", "build-", "cmake_out/", "out/",
+    "bootloader-esp32p4/",     # MCUboot 工作树（构建产物，见 Bootloader.cmake）
     "chips/esp32p4/",          # vendor 侧构建脚手架（依赖树/生成物）
 )
 NOISE_NAMES = {
@@ -180,7 +161,13 @@ def under_protected(path):
     return any(path == p or path.startswith(p + "/") for p in PROTECTED)
 
 
-SHARED_PREFIX = "nuttx/arch/risc-v/src/common/espressif/"
+# 通用层（nuttx/arch/risc-v/src/common/）交付边界：2026-11-02 起 espressif 共享层
+# 已整体搬进芯片目录 arch/risc-v/src/esp32p4/espressif/，common/ 下只允许
+# CMakeLists.txt 一个交付文件（riscv_mtimer 条件编译，删不掉，理由见生成器注释）。
+SHARED_COMMON_PREFIX = "nuttx/arch/risc-v/src/common/"
+SHARED_COMMON_KEEP = {SHARED_COMMON_PREFIX + "CMakeLists.txt"}
+# 已经搬走、现在由芯片目录提供的老路径：工作区里若还有基线副本，不算"改了没交付"。
+MOVED_SHARED_PREFIX = "nuttx/arch/risc-v/src/common/espressif/"
 
 
 def is_linkfile_dest(proj, rel):
@@ -190,15 +177,9 @@ def is_linkfile_dest(proj, rel):
 
 
 def is_intentional_undelivered(proj, rel):
-    """公共层里"有意不交付"的文件（最小集之外的直属文件 + NEVER_DELIVER）。"""
+    """有意不交付的文件：只剩"已搬走的共享层老路径"（评审端用基线版本）。"""
     full = proj + "/" + rel
-    if full in SHARED_NEVER:
-        return True
-    if full.startswith(SHARED_PREFIX):
-        base = full[len(SHARED_PREFIX):]
-        if "/" not in base and base not in SHARED_KEEP:
-            return True
-    return False
+    return full.startswith(MOVED_SHARED_PREFIX)
 
 
 # 构建期符号链接（板级 include 重定向），由构建创建、不属于交付内容
@@ -296,11 +277,15 @@ def main():
 
     pairs = load_copyfiles()
     missing_repo, missing_ws, differ = check_delivery(pairs)
+    shared_entries = sorted(s for s, _d in pairs
+                            if s.startswith(SHARED_COMMON_PREFIX))
     undelivered = check_undelivered(pairs)
     protected = check_protected()
 
+    shared_ok = (len(shared_entries) <= 1
+                 and all(s in SHARED_COMMON_KEEP for s in shared_entries))
     ok = not (missing_repo or missing_ws or differ) and \
-        not any(v["uncovered"] for v in undelivered.values())
+        not any(v["uncovered"] for v in undelivered.values()) and shared_ok
 
     if args.json:
         print(json.dumps({
@@ -318,6 +303,10 @@ def main():
     print(f"  工作区: {WS}")
     print(f"  作品仓: {REPO}")
     print(f"  manifest 条目: {len(pairs)}")
+    print(f"  通用层(common/) 交付条目: {len(shared_entries)} "
+          f"(上限 1){'' if shared_ok else '  ❌ 超出边界'}")
+    for s_ in shared_entries:
+        print("     ·", s_)
     print()
     print(f"  1) 作品仓缺文件（manifest 指向但仓里没有）: {len(missing_repo)}")
     for p in missing_repo[:8]:

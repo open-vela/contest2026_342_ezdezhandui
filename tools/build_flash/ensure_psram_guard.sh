@@ -22,7 +22,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${1:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
-F="$ROOT/nuttx/arch/risc-v/src/common/espressif/bootloader/esp-hal-3rdparty-mcuboot/components/hal/mmu_hal.c"
+F="$ROOT/nuttx/bootloader-esp32p4/esp-hal-3rdparty-mcuboot/components/hal/mmu_hal.c"
 LINE='    *(volatile uint32_t *)0x500e6030u |= (1u << 15);   /* PSRAM_CORE_CLK_EN */'
 
 [ -f "$F" ] || { echo "skip: $F 不存在（非 repo 工作区？）"; exit 0; }

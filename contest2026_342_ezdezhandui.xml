@@ -40,53 +40,6 @@
     <copyfile src="nuttx/arch/risc-v/include/esp32p4/irq.h" dest="nuttx/arch/risc-v/include/esp32p4/irq.h"/>
     <copyfile src="nuttx/arch/risc-v/src/cmake/Toolchain.cmake" dest="nuttx/arch/risc-v/src/cmake/Toolchain.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/CMakeLists.txt"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/Make.defs" dest="nuttx/arch/risc-v/src/common/Make.defs"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/Bootloader.cmake" dest="nuttx/arch/risc-v/src/common/espressif/Bootloader.cmake"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/Bootloader.mk" dest="nuttx/arch/risc-v/src/common/espressif/Bootloader.mk"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/espressif/CMakeLists.txt"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/Kconfig" dest="nuttx/arch/risc-v/src/common/espressif/Kconfig"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/Make.defs" dest="nuttx/arch/risc-v/src/common/espressif/Make.defs"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.cmake"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/Wireless.mk" dest="nuttx/arch/risc-v/src/common/espressif/Wireless.mk"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/chip.h" dest="nuttx/arch/risc-v/src/common/espressif/chip.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_allocateheap.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_allocateheap.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_config.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_config.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ets_timer_legacy.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ets_timer_legacy.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gpio.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_gpio.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_gpio.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_gpio.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_head.S" dest="nuttx/arch/risc-v/src/common/espressif/esp_head.S"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_hr_timer.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_hr_timer.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_i2c.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_i2c.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_idle.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_idle.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_irq.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_irq.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_irq.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_irq.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ldo.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_ldo.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ldo.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_ldo.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_libc_stubs.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_lowputc.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_memorymap.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_memorymap.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_pm.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_pm.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_random.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_random.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_rtc_gpio.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_serial.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_serial.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_start.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_start.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_start.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_start.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_systemreset.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_timer_adapter.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_timerisr.c" dest="nuttx/arch/risc-v/src/common/espressif/esp_timerisr.c"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ulp.cmake" dest="nuttx/arch/risc-v/src/common/espressif/esp_ulp.cmake"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_ulp.mk" dest="nuttx/arch/risc-v/src/common/espressif/esp_ulp.mk"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_usbserial.h" dest="nuttx/arch/risc-v/src/common/espressif/esp_usbserial.h"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/esp_vectors.S" dest="nuttx/arch/risc-v/src/common/espressif/esp_vectors.S"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/ulp.cmake" dest="nuttx/arch/risc-v/src/common/espressif/ulp.cmake"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/espressif/ulp_makefile" dest="nuttx/arch/risc-v/src/common/espressif/ulp_makefile"/>
-    <copyfile src="nuttx/arch/risc-v/src/common/riscv_doirq.c" dest="nuttx/arch/risc-v/src/common/riscv_doirq.c"/>
     <copyfile src="nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
     <copyfile src="nuttx/drivers/audio/es8311.c" dest="nuttx/drivers/audio/es8311.c"/>
     <copyfile src="nuttx/drivers/input/gt9xx.c" dest="nuttx/drivers/input/gt9xx.c"/>

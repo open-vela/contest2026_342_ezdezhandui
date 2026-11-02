@@ -45,7 +45,10 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WS = os.environ.get("OPENVELA_WS", "/home/ez/share/openvela")
 NUTTX = os.path.join(WS, "nuttx")
-COMMON = os.path.join(NUTTX, "arch/risc-v/src/common/espressif")
+# 共享层的新家（2026-11-02 从 arch/risc-v/src/common/espressif 整体搬到芯片目录）
+COMMON = os.path.join(NUTTX, "arch/risc-v/src/esp32p4/espressif")
+# 老路径：只应留在评审端基线树里，工作区/作品仓都不该再有
+OLD_COMMON = os.path.join(NUTTX, "arch/risc-v/src/common/espressif")
 P4 = os.path.join(NUTTX, "arch/risc-v/src/esp32p4")
 DRIVERS = os.path.join(P4, "drivers")
 BUILD = os.path.join(WS, "cmake_out/esp32p4-function-ev-board_nsh")
@@ -54,7 +57,7 @@ BUILD = os.path.join(WS, "cmake_out/esp32p4-function-ev-board_nsh")
 MOVED = [
     # esp_hosted 集群
     "esp_sdmmc", "esp_hosted_sdio", "eh_frame",
-    "esp_hosted_official", "platform_include", "freertos_compat",
+    "official", "platform_include", "freertos_compat",
     # 9 个自有驱动
     "esp_i2s", "esp_emac", "esp_adc", "esp_touch", "esp_mipi_dsi",
     "esp_lirc", "esp_nxdiag", "esp_csi", "esp_dedic_gpio",
@@ -140,21 +143,42 @@ def check_includes(dirs):
 
 
 def check_shared_clean():
+    """老共享层路径必须彻底退出，且搬迁清单里的东西现在都在新家。"""
     problems = []
-    text_files = []
-    for f in os.listdir(COMMON):
-        if f.endswith((".c", ".h")):
-            text_files.append(os.path.join(COMMON, f))
-    for build in ("CMakeLists.txt", "Make.defs", "Kconfig"):
-        p = os.path.join(COMMON, build)
-        if os.path.exists(p):
-            text_files.append(p)
-    for p in text_files:
-        text = open(p, errors="replace").read()
-        for name in MOVED:
-            # 精确到"文件名/配置名"边界，避免误报（例如 esp_i2s 是 esp_i2s0 的前缀）
-            if re.search(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])" % re.escape(name), text):
-                problems.append(f"{os.path.relpath(p, NUTTX)}: 仍引用已搬走的 {name}")
+
+    # (a) 老目录不得再出现在工作区或作品仓
+    for base in (OLD_COMMON,
+                 os.path.join(REPO, "nuttx/arch/risc-v/src/common/espressif")):
+        if os.path.isdir(base):
+            problems.append("%s: 老共享层目录仍存在（应只留在评审端基线里）"
+                            % os.path.relpath(base, WS))
+
+    # (b) 构建文件里不得再有指向老路径的引用（构建目录路径 + 注释除外）
+    scan = [os.path.join(P4, f) for f in
+            ("CMakeLists.txt", "Make.defs", "Kconfig",
+             "hal_esp32p4.cmake", "hal_esp32p4.mk")]
+    scan += [os.path.join(COMMON, f) for f in
+             ("CMakeLists.txt", "Make.defs", "Kconfig", "Bootloader.cmake",
+              "Bootloader.mk", "Wireless.cmake", "Wireless.mk",
+              "esp_ulp.cmake", "esp_ulp.mk", "ulp.cmake", "ulp_makefile")]
+    for path in scan:
+        if not os.path.exists(path):
+            continue
+        for line in open(path, errors="replace"):
+            if "common/espressif" in line and "NUTTX_BINARY_DIR" not in line \
+                    and not line.lstrip().startswith("#"):
+                problems.append("%s: 仍引用老共享层路径: %s"
+                                % (os.path.relpath(path, NUTTX), line.strip()[:90]))
+
+    # (c) 搬迁清单里的东西必须能在芯片目录里找到（较早已搬走的 9 个驱动 +
+    #     esp_hosted 集群分布在不同子目录，所以整棵 P4 树递归找）
+    present = set()
+    for root, dirs, files in os.walk(P4):
+        present.update(dirs)             # 有些搬迁项是目录（freertos_compat 等）
+        present.update(files)
+    for name in MOVED:
+        if not any(f.startswith(name) for f in present):
+            problems.append("芯片目录里找不到搬迁清单项: %s" % name)
     return problems
 
 
@@ -175,15 +199,19 @@ def check_build_parity():
 def kconfig_symbols():
     """树里所有 config/menuconfig 声明的符号。"""
     syms = set()
-    for root, _, files in os.walk(NUTTX):
-        if "Kconfig" not in files:
-            continue
-        p = os.path.join(root, "Kconfig")
-        try:
-            text = open(p, errors="replace").read()
-        except OSError:
-            continue
-        syms.update(re.findall(r"^(?:config|menuconfig)\s+([A-Za-z0-9_]+)", text, re.M))
+    # 注意：esp32p4/ 是指向作品仓的符号链接，os.walk 默认不跟随，
+    # 所以芯片目录必须显式作为第二个根一起扫。
+    for base in (NUTTX, P4):
+        for root, _, files in os.walk(base):
+            if "Kconfig" not in files:
+                continue
+            p = os.path.join(root, "Kconfig")
+            try:
+                text = open(p, errors="replace").read()
+            except OSError:
+                continue
+            syms.update(re.findall(
+                r"^(?:config|menuconfig)\s+([A-Za-z0-9_]+)", text, re.M))
     return syms
 
 
@@ -212,15 +240,15 @@ def count_files():
         return len([f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f))])
 
     repo_common = os.path.join(
-        REPO, "nuttx/arch/risc-v/src/common/espressif")
+        REPO, "nuttx/arch/risc-v/src/esp32p4/espressif")
     repo_drivers = os.path.join(REPO, "nuttx/arch/risc-v/src/esp32p4/drivers")
     repo_nuttx = os.path.join(REPO, "nuttx")
     return {
         # 共享层用浅计数：目录里还有 bootloader/（嵌套依赖树 2.8 万文件），
         # 它由 export 的“跳过目录条目”规则排除，不属于源码计数
-        "workspace 共享层(浅)": n(COMMON, deep=False),
+        "workspace 芯片内共享层(浅)": n(COMMON, deep=False),
         "workspace drivers": n(DRIVERS, deep=False),
-        "作品仓 共享层(浅)": n(repo_common, deep=False),
+        "作品仓 芯片内共享层(浅)": n(repo_common, deep=False),
         "作品仓 drivers": n(repo_drivers, deep=False),
         "作品仓 nuttx": n(repo_nuttx),
         "nuttx 根": WS,
@@ -291,7 +319,8 @@ def run_compile():
         graph = open(ninja, errors="replace").read()
 
     def in_graph(name):
-        return re.search(r"common/espressif/%s(?![A-Za-z0-9_])" % re.escape(name), graph) is not None
+        return re.search(r"esp32p4/espressif/%s(?![A-Za-z0-9_])"
+                         % re.escape(name), graph) is not None
 
     must = [os.path.join(DRIVERS, f) for f in sorted(os.listdir(DRIVERS)) if f.endswith(".c")]
     skipped = []

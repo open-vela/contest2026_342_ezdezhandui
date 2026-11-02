@@ -37,70 +37,23 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 WS = os.environ.get("OPENVELA_WS", "/home/ez/share/openvela")
 XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 # 作品仓内目录 -> openvela 工作区目标前缀
-# ── 公共层（common/espressif）最小交付集 ──────────────────────────────────
-# 依据：应用构建图里真正编译的源文件 + 这些编译单元的 -MM 头闭包 + 构建文件
-# （Kconfig/Make.defs/CMakeLists.txt/Bootloader.*/Wireless.*/esp_ulp.*/ulp*）。
-# 其余文件既不被编译、也不被 include：评审端用基线版本即可。
-# 实测（2026-11-01）：把非必需集 67 个文件还原成基线/移走后，应用构建 3 秒通过
-# （证明确实不在构建图中），并烧写真机复验通过（MCUboot + NSH + connected +
-# DhcpDnsStatus link=1 dhcp=1 ip=192.168.1.9 + wlan0 192.168.1.9）。
-# 重新计算：python3 tools/engineering/shared_minimal.py（需先构建一次主板）
-# 注意：默认**全量交付**（见 --shared-minimal）。下面这份集合只在显式传
-# --shared-minimal 时使用。
-SHARED_MINIMAL = {
-    "Bootloader.c",
-    "Bootloader.cmake",
-    "Bootloader.mk",
-    "CMakeLists.txt",
-    "Kconfig",
-    "Make.defs",
-    "Wireless.cmake",
-    "Wireless.mk",
-    "chip.h",
-    "esp_allocateheap.c",
-    "esp_config.h",
-    "esp_ets_timer_legacy.c",
-    "esp_gpio.c",
-    "esp_gpio.h",
-    "esp_head.S",
-    "esp_hr_timer.h",
-    "esp_i2c.c",
-    "esp_i2c.h",
-    "esp_idle.c",
-    "esp_irq.c",
-    "esp_irq.h",
-    "esp_ldo.c",
-    "esp_ldo.h",
-    "esp_libc_stubs.c",
-    "esp_libc_stubs.h",
-    "esp_lowputc.c",
-    "esp_lowputc.h",
-    "esp_memorymap.h",
-    "esp_pm.h",
-    "esp_random.c",
-    "esp_rtc_gpio.c",
-    "esp_rtc_gpio.h",
-    "esp_serial.c",
-    "esp_start.c",
-    "esp_start.h",
-    "esp_systemreset.c",
-    "esp_systemreset.h",
-    "esp_timer_adapter.c",
-    "esp_timer_adapter.h",
-    "esp_timerisr.c",
-    "esp_ulp.cmake",
-    "esp_ulp.mk",
-    "esp_usbserial.h",
-    "esp_vectors.S",
-    "ulp.cmake",
-    "ulp_makefile",
-}
-
-# 永不交付（公共层里属于本项目的兼容副本；P4 侧 esp_hosted/compat/platform_include
-# 已有同名文件且在 include 路径上，共享层没有任何构建文件引用它）
-NEVER_DELIVER = {
-    "nuttx/arch/risc-v/src/common/espressif/platform_include/sys/lock.h",
-}
+# ── 通用层（arch/risc-v/src/common）交付边界 ─────────────────────────────
+# 2026-11-02 起：espressif 共享层整体搬进芯片目录
+# （arch/risc-v/src/esp32p4/espressif/），随 esp32p4 的 <linkfile> 整目录交付，
+# 所以 common/ 下只剩**一个**必须交付的文件：
+#
+#   nuttx/arch/risc-v/src/common/CMakeLists.txt   ← riscv_mtimer 条件编译
+#
+# 为什么删不掉：基线无条件编译 riscv_mtimer.c，而它在 P4 配置（CONFIG_ONESHOT_
+# COUNT=n）下编译必失败（struct oneshot_operations_s 没有 clkcnt 成员，实测报
+# "'const struct oneshot_operations_s' has no member named 'start_absolute'"）。
+# CMake 又无法从芯片目录摘掉 common 的源文件：risc-v/src/CMakeLists.txt 先
+# add_subdirectory(chip) 再 add_subdirectory(common)，且源文件属性按目录隔离
+# （HEADER_FILE_ONLY / DIRECTORY / TARGET_DIRECTORY / set_property(TARGET SOURCES)
+# 四组实测全部无效）。Make 通路已用芯片侧 filter-out 取代，故 common/Make.defs
+# 与 common/riscv_doirq.c（守卫已下沉到 esp32p4/espressif/esp_irq.c）都不再交付。
+SHARED_COMMON_PREFIX = "nuttx/arch/risc-v/src/common/"
+SHARED_COMMON_KEEP = {SHARED_COMMON_PREFIX + "CMakeLists.txt"}
 
 # 只读保护区（作品仓内路径）：另一条对话在开发的模拟器 UI 及其 sim/emulator 侧配置。
 # 它们**绝不进本仓交付**——copyfile 部署会把旧副本盖回别人的工作区。
@@ -110,6 +63,10 @@ PROTECTED_REPO_PATHS = (
     "nuttx/boards/sim/sim/sim/configs/deskmate",
     "board/vela",                 # vendor/openvela（goldfish/vela 板级）
 )
+
+# 交付树里永不枚举的构建产物目录/文件（前缀匹配目录名）
+ARTIFACT_DIR_NAMES = {"bootloader", "esp-nuttx-bootloader", "__pycache__"}
+ARTIFACT_DIR_GLOBS = ("esp-hal-3rdparty",)
 
 GROUPS = [
     ("nuttx",          "nuttx"),
@@ -143,12 +100,17 @@ def tree_entries():
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames.sort()
             for d in list(dirnames):
+                # 构建产物目录（MCUboot 工作树、HAL 克隆、__pycache__）：不属于交付，
+                # 也不该被逐文件枚举（否则 manifest 会被上万条构建文件淹没）。
+                if d in ARTIFACT_DIR_NAMES or d.startswith(ARTIFACT_DIR_GLOBS):
+                    dirnames.remove(d)
+                    continue
                 if os.path.islink(os.path.join(dirpath, d)):
                     rel = os.path.relpath(os.path.join(dirpath, d), root)
                     out.append((sub + "/" + rel, dest_prefix + "/" + rel))
                     dirnames.remove(d)          # 不递归进去
             for name in sorted(filenames):
-                if name == ".deleted-files":
+                if name == ".deleted-files" or name.endswith(".zip"):
                     continue
                 rel = os.path.relpath(os.path.join(dirpath, name), root)
                 src = sub + "/" + rel
@@ -254,9 +216,9 @@ def main():
     ap.add_argument("--check", action="store_true", help="只校验不写入")
     ap.add_argument("--check-revision", action="store_true",
                     help="只校验 revision 是否等于本仓当前 HEAD")
-    ap.add_argument("--shared-minimal", action="store_true",
-                    help="只交付公共层最小集（默认**交付全部**公共层文件；"
-                         "裁剪会让评审端用基线版本，需谨慎）")
+    ap.add_argument("--assert-shared-max", type=int, default=1,
+                    help="通用层 nuttx/arch/risc-v/src/common/ 允许的交付条目上限"
+                         "（默认 1：只允许 CMakeLists.txt）")
     ap.add_argument("--linkfile-threshold", type=int, default=20,
                     help="自包含子树文件数达到该值时改用一条 <linkfile>（默认 20）")
     ap.add_argument("--no-linkfile", action="store_true",
@@ -330,23 +292,23 @@ def main():
 
     wanted = tree_entries()
 
-    # ── 公共层最小交付集 + 永不交付清单 ─────────────────────────────────────
-    SHARED_PREFIX = "nuttx/arch/risc-v/src/common/espressif/"
-    if args.shared_minimal:
-        kept2, dropped_shared = [], 0
-        for src, dest in wanted:
-            if src in NEVER_DELIVER:
-                dropped_shared += 1
-                continue
-            if src.startswith(SHARED_PREFIX):
-                base = src[len(SHARED_PREFIX):]
-                if "/" not in base and base not in SHARED_MINIMAL:
-                    dropped_shared += 1
-                    continue
-            kept2.append((src, dest))
-        if dropped_shared:
-            print("公共层最小集(opt-in): 不交付 %d 个公共层文件（评审端用基线版本）" % dropped_shared)
-        wanted = kept2
+    # ── 通用层交付边界断言（2026-11-02 起）──────────────────────────────────
+    shared = [(src, dest) for src, dest in wanted
+              if src.startswith(SHARED_COMMON_PREFIX)]
+    if len(shared) > args.assert_shared_max:
+        print("❌ 通用层交付条目 %d > 上限 %d：" % (len(shared), args.assert_shared_max))
+        for src, _d in shared:
+            print("   " + src)
+        return 1
+    unexpected = sorted(src for src, _d in shared if src not in SHARED_COMMON_KEEP)
+    if unexpected:
+        print("❌ 通用层出现预期外的交付文件（只允许 %s）："
+              % sorted(SHARED_COMMON_KEEP))
+        for src in unexpected:
+            print("   " + src)
+        return 1
+    print("通用层交付 : %d 条 %s" % (len(shared), sorted(os.path.basename(s)
+                                                    for s, _d in shared)))
 
     # ── 混合策略：自包含子树用一条 <linkfile>，其余逐文件 <copyfile> ──────────
     links = [] if args.no_linkfile else linkfile_groups(wanted, args.linkfile_threshold)

@@ -67,12 +67,15 @@ SUBTREE_FILTER = {
 # 默认：**完整交付**——工作区相对基线的一切改动都进作品仓（含共享 espressif 层）。
 # 这是本项目的既有行为，部署目标是同版本 openvela 工作区，覆盖等于无操作。
 #
-# 只有显式加 `--p4-only` 时才启用下面的排除清单：nuttx 的 git 基线（2026-07-14）
-# 落后工作区所用的 openvela drop 近四个月，共享层里上百个文件其实只是"上游更新"；
-# 这个开关用来只带 P4 自有内容。**默认关闭**，避免出现"交付树缺文件"。
-NUTTX_DENY_PREFIXES = (
-    "arch/risc-v/src/common/espressif/",
-)
+# 演进：2026-11-02 起 espressif 层整体搬进 arch/risc-v/src/esp32p4/espressif/，
+# 共享层（arch/risc-v/src/common/）里已经没有本项目的改动，所以下面的排除清单为空；
+# 搬迁本身是把工作区文件移进 linkfile 子树，git 侧只体现为共享层的**删除**，
+# 导出器按 deletion 传播即可保持作品仓与工作区一致。
+# 2026-11-02 起为空：espressif 共享层已整体搬进
+# arch/risc-v/src/esp32p4/espressif/（随 esp32p4 的 linkfile 交付），
+# 所以"共享层里只是上游更新、别导出"这条规则不再适用。保留这个空元组是为了
+# 让 --p4-only 继续可用。
+NUTTX_DENY_PREFIXES = ()
 
 # 这些文件名属于"仓级/构建级"，不进作品仓
 SKIP_NAMES = {".gitignore", ".gitmodules", ".built", ".depend", "Make.dep"}

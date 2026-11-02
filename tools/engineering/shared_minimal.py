@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""重新计算"公共层最小交付集"（需先构建一次主板）。
+"""统计"espressif 层在本配置下真正参与构建的文件"（需先构建一次主板）。
+
+2026-11-02 起这层已从 arch/risc-v/src/common/espressif/ 整体搬到芯片目录
+arch/risc-v/src/esp32p4/espressif/，并且**整目录交付**（linkfile），所以这里不再
+产出"最小交付集"，只保留为诊断信息：哪些源文件 / 头文件真的进了构建图。
 
 依据三件事：
-  1. 应用构建图（<build>/build.ninja）里真正编译的 common/espressif/*.c|S；
-  2. 这些编译单元 + 全部 P4 编译单元的 `-MM` 头闭包里的直属公共层头文件；
-  3. 公共层的构建文件（Kconfig/Make.defs/CMakeLists.txt/Bootloader.*/Wireless.*/esp_ulp.*/ulp*）。
-
-输出可直接替换 gen_manifest_copyfiles.py 里的 SHARED_MINIMAL 集合。
+  1. 应用构建图（<build>/build.ninja）里真正编译的 esp32p4/espressif/*.c|S；
+  2. 这些编译单元的 `-MM` 头闭包里的直属头文件；
+  3. 该层的构建文件（Kconfig/Make.defs/CMakeLists.txt/Bootloader.*/Wireless.*/esp_ulp.*/ulp*）。
 """
 from __future__ import annotations
 
@@ -20,12 +22,12 @@ import sys
 
 WS = os.environ.get("OPENVELA_WS", "/home/ez/share/openvela")
 BUILD = os.path.join(WS, "cmake_out/esp32p4-function-ev-board_nsh")
-SH = os.path.join(WS, "nuttx/arch/risc-v/src/common/espressif")
+SH = os.path.join(WS, "nuttx/arch/risc-v/src/esp32p4/espressif")
 
 
 def main():
     ninja = open(os.path.join(BUILD, "build.ninja"), errors="replace").read()
-    compiled = set(re.findall(r"common/espressif/([A-Za-z0-9_.]+\.(?:c|S|cc))", ninja))
+    compiled = set(re.findall(r"esp32p4/espressif/([A-Za-z0-9_.]+\.(?:c|S|cc))", ninja))
 
     cc = json.load(open(os.path.join(BUILD, "compile_commands.json")))
     sample = next(e for e in cc if e["file"].endswith("esp_hosted/transport/esp_hosted_sdio.c"))
@@ -47,7 +49,7 @@ def main():
         for line in r.stdout.splitlines():
             if line.startswith((" ", "\t")):
                 for tok in line.split():
-                    m = re.match(r".*/common/espressif/([A-Za-z0-9_.]+\.h)$", tok)
+                    m = re.match(r".*/esp32p4/espressif/([A-Za-z0-9_.]+\.h)$", tok)
                     if m:
                         hdrs.add(m.group(1))
 
@@ -57,7 +59,7 @@ def main():
 
     required = sorted(compiled | hdrs | build_files
                       | {"chip.h", "esp_config.h", "esp_memorymap.h"})
-    print("SHARED_MINIMAL = {")
+    print("# 本配置下参与构建的 espressif 层文件（诊断用；交付是整目录 linkfile）")
     for r in required:
         print('    "%s",' % r)
     print("}")

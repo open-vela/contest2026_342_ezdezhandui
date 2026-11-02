@@ -382,3 +382,28 @@ ESP-Hosted 的 INFO 日志在 SDIO 数据路径上每秒数百行，会把 11520
 因此：
 - 平台侧把 `esp_log.h` 默认级别压到 **WARN/ERROR**（要细节时 `-DLOG_LOCAL_LEVEL=3`）。
 - 真机证据一律走 **`--report <path>` 写文件**，或直接**看屏幕**（本轮两个根因都是靠屏幕定的）。
+
+### 10.4 WiFi 扫描为什么一直是 0 个 AP（本轮排查到的所有环节）
+
+按"从最外层往里剥"的顺序，每一条都是真机上验证过的：
+
+| # | 发现的真问题 | 修法 | 结果 |
+|---|---|---|---|
+| 1 | 扫描**取结果**的 RPC 用默认 5s 同步超时，CP 回包被丢（`no response (5000 ms)` → `late response dropping`） | scan_get_ap_num / get_ap_records / sta_get_ap_info 按请求提到 15s | 扫描不再超时，`rc=0` |
+| 2 | 网络页每 50ms 一次 `getifaddrs`+`SIOCGIWESSID`，netdev 还每个 ioctl 打一行 INFO | 列表刷新节流 1s；ioctl 追踪改编译开关 | 串口不再被淹，RPC 不再被 UI 刷爆 |
+| 3 | 应用拿不到"断开"：空 ESSID 在 netdev 里直接 `-EINVAL`，无法把从机从关联中拉出来 | 空 ESSID → `Req_WifiDisconnect` | 应用现在能主动断开 |
+| 4 | **开机自动连硬编码测试 SSID**（`ESP_WIFI_TEST_SSID="Hello_World_5G"` / ALT `"..._2.4G"`，构建时注入）把 CP 的 STA 长期卡在"连接中"，IDF 直接拒绝扫描（`STA is connecting, scan are not allowed!`） | 该块改为需显式 `CONFIG_ESPESSIF_HOSTED_TEST_AUTOCONNECT` 才编译 | 开机不再自动连 |
+| 5 | 扫描前没有把从机拉回 STA 模式；开机日志实测 `RPC wifi_set_mode(STA) -> -1`，而从机非 STA 时 IDF 不给扫描结果（BY.18 也记过"scan 前再发 set_mode 并回读"） | 扫描前 best-effort 发一次 `set_mode(STA)` | 待复测 |
+
+加上重试（6 次 × 6s，对齐 BY.19 里"等从机空闲再扫"的做法）之后，**扫描仍然是 0 个 AP、
+且驱动不报错**（JTAG 读 RAM：`g_scan_state=2(DONE) g_scan_count=0 g_scan_err=0`）。
+
+对照结论：`docs/30_实现/连接_WiFi_SDIO.md` 的 BY.19（2026-11-01）在**同一块板**上
+用**端口开机线程里的直接调用**（`eh_host_wifi_scan_start(NULL,true)`）扫到过 25 个 AP
+（`KGDZ_SHARE -39dBm ch11` 等），而 BY.18 明确写了"`wlan0` 的控制面**不能靠 `SIOCSIWSCAN`**"。
+所以剩下这条差异是**调用路径**：应用走 netdev ioctl → 官方栈 API，和端口线程里直接调
+官方栈 API 不等价（任务上下文/模式状态不同）。
+
+下一步（未做）：把扫描做成**板级能力**（内核态小 helper，或 boardctl/私有 ioctl），让应用
+通过"和开机线程同样的调用路径"拿 AP 列表；这也是让 `wifi:scan` 断言能升级成"必须 ≥1 个 AP"
+的前提。

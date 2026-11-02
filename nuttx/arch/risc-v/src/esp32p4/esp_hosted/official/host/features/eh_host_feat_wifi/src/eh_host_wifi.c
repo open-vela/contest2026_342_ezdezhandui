@@ -35,6 +35,17 @@
 
 #if EH_HOST_FEAT_WIFI_READY
 
+/* 扫描是唯一"从机要干几秒活才回"的 RPC 家族。
+ *
+ * 触发扫描（WifiScanStart）在 block=true 时已经走 30s；但**取结果**这两条用的还是
+ * 5s 默认，实测真机日志：
+ *     eh_host_feat_rpc: request: no response uid=23 msg_id=289 (5000 ms)   ← WifiScanGetApNum
+ *     rx: no waiter for uid=23 (late response?) dropping
+ * 也就是 CP 回了，只是超过 5s 被主机丢掉了。这里给取结果也放宽到 15s。
+ */
+
+#define EH_SCAN_RPC_TIMEOUT_MS 15000
+
 #define EH_HOST_WIFI_TAG "eh_wifi"
 
 esp_err_t eh_host_wifi_init(const wifi_init_config_t *cfg)
@@ -488,6 +499,7 @@ esp_err_t eh_host_wifi_sta_get_ap_info(wifi_ap_record_t *out)
     if (!req) return ESP_FAIL;
 
     eh_rpc_ctrl_cmd_t *r = NULL;
+    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_RPC_TIMEOUT_MS;
     if (eh_host_feat_rpc_request_sync(RPC_ID__Req_WifiStaGetApInfo, req, (void **)&r) != 0) return ESP_FAIL;
     int rc = r->resp_event_status;
     if (rc == 0) {
@@ -555,6 +567,7 @@ esp_err_t eh_host_wifi_scan_get_ap_num(uint16_t *out_count)
     if (!req) return ESP_FAIL;
 
     eh_rpc_ctrl_cmd_t *r = NULL;
+    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_RPC_TIMEOUT_MS;
     if (eh_host_feat_rpc_request_sync(RPC_ID__Req_WifiScanGetApNum, req, (void **)&r) != 0) return ESP_FAIL;
     int rc = r->resp_event_status;
     if (rc == 0) *out_count = (uint16_t)r->u.e_scan_done.number;
@@ -1353,6 +1366,7 @@ esp_err_t eh_host_wifi_scan_get_ap_records(uint16_t *number,
     req->u.ap_records.number = cap;
 
     eh_rpc_ctrl_cmd_t *r = NULL;
+    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_RPC_TIMEOUT_MS;
     if (eh_host_feat_rpc_request_sync(RPC_ID__Req_WifiScanGetApRecords, req,
                                          (void **)&r) != 0) return ESP_FAIL;
     int rc = r->resp_event_status;

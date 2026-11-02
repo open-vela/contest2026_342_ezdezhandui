@@ -428,7 +428,7 @@ int dm_net_wifi_link(char *ssid, size_t ssid_len, int *rssi)
 #endif
 }
 
-static int dm_net_wifi_scan_impl(struct dm_wifi_ap_s *aps, int max_aps)
+static int dm_net_wifi_scan_once(struct dm_wifi_ap_s *aps, int max_aps)
 {
 #ifdef DM_HAVE_WAPI
   const char *ifname = dm_net_wifi_ifname();
@@ -722,6 +722,54 @@ int dm_net_wifi_connect(const char *ssid, const char *psk)
 #endif
 }
 
+/* 扫描重试。
+ *
+ * 从机（ESP-Hosted CP）上跑着它自己的示例应用，会在开机后**反复尝试连一个不存在的
+ * SSID**；IDF 在关联过程中直接拒绝扫描：
+ *
+ *     W wifi:sta_scan: STA is connecting, scan are not allowed!
+ *     E ehcp_wifi_rpc: req_wifi_scan_start failed [esp_wifi_scan_start(...)] = [12294]
+ *
+ * 这个重试循环是有限次数（约 18s），所以主机侧**间隔重试**就能等到它空闲。
+ * 同一现象在 docs/30_实现/连接_WiFi_SDIO.md 的 BY.19 里有完整记录（重试后扫到 25 个 AP）。
+ */
+
+#define DM_SCAN_RETRY_MAX   6
+#define DM_SCAN_RETRY_WAIT  (6 * 1000 * 1000)   /* 6s，单位 us */
+
+static int dm_net_wifi_scan_impl(struct dm_wifi_ap_s *aps, int max_aps)
+{
+  int attempt;
+  int found = 0;
+
+  for (attempt = 0; attempt < DM_SCAN_RETRY_MAX; attempt++)
+    {
+      found = dm_net_wifi_scan_once(aps, max_aps);
+
+      if (found > 0)
+        {
+          if (attempt > 0)
+            {
+              DM_LOG("wifi: scan ok on retry #%d (%d AP)", attempt, found);
+            }
+
+          return found;
+        }
+
+      if (found < 0)
+        {
+          return found;
+        }
+
+      /* 0 个 AP：多半是从机还在关联流程里，等一会儿再来。 */
+
+      DM_LOG("wifi: scan attempt #%d found 0 AP, retrying", attempt + 1);
+      usleep(DM_SCAN_RETRY_WAIT);
+    }
+
+  return 0;
+}
+
 static void *dm_wifi_scan_worker(void *arg)
 {
   struct dm_wifi_ap_s aps[DM_NET_MAX_APS];
@@ -873,11 +921,21 @@ int dm_net_wifi_probe(void)
       printf("[dm-wifi-probe] link: unavailable\n");
     }
 
+  /* 先断开：CP 自己的 NVS 里存了 SSID（实测在反复尝试连 Hello_World_5G），
+   * 卡在关联流程里时扫描可能一直返回 0 个 AP。断开后再扫。
+   */
+
+  {
+    int drc = dm_net_wifi_disconnect();
+    printf("[dm-wifi-probe] disconnect rc=%d\n", drc);
+    usleep(500000);
+  }
+
   /* 扫描：起线程 → 最多等 20s（CP 扫描通常 3~10s） */
 
   (void)dm_net_wifi_scan_start();
 
-  for (i = 0; i < 400; i++)
+  for (i = 0; i < 900; i++)          /* 最多 45s */
     {
       if (dm_net_wifi_scan_status(NULL, NULL) != 1)
         {
@@ -897,6 +955,27 @@ int dm_net_wifi_probe(void)
   }
 
   found = dm_net_wifi_scan_results(aps, DM_NET_MAX_APS);
+
+  if (found <= 0)
+    {
+      /* 第二次扫描：第一次常常在"刚断开/刚切信道"的瞬间拿到空表 */
+
+      printf("[dm-wifi-probe] retry scan\n");
+      (void)dm_net_wifi_scan_start();
+
+      for (i = 0; i < 900; i++)
+        {
+          if (dm_net_wifi_scan_status(NULL, NULL) != 1)
+            {
+              break;
+            }
+
+          usleep(50000);
+        }
+
+      found = dm_net_wifi_scan_results(aps, DM_NET_MAX_APS);
+      printf("[dm-wifi-probe] retry found=%d\n", found);
+    }
 
   for (i = 0; i < found; i++)
     {
@@ -923,7 +1002,7 @@ int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps)
       return -EIO;
     }
 
-  for (i = 0; i < 400; i++)          /* 最多 20s */
+  for (i = 0; i < 900; i++)          /* 最多 45s：重试 6×6s + 单次扫描时间 */
     {
       if (dm_net_wifi_scan_status(NULL, NULL) != 1)
         {

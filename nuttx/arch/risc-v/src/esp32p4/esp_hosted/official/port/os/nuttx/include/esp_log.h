@@ -21,15 +21,42 @@
 #define ESP_LOG_DEBUG                   4
 #define ESP_LOG_VERBOSE                 5
 
+/* 默认只输出 WARN/ERROR。
+ *
+ * 实测（2026-11-02）：ESP-Hosted 的 INFO 级日志在 SDIO 数据路径上每秒数百行，
+ * 会把 115200 的 console 彻底占满 —— 应用自己的 printf 都被冲掉，板上根本读不到
+ * 自检结果。需要复现驱动细节时用 `-DLOG_LOCAL_LEVEL=3`（INFO）或 5（VERBOSE）重编。
+ */
+
 #ifndef LOG_LOCAL_LEVEL
-#  define LOG_LOCAL_LEVEL               ESP_LOG_INFO
+#  define LOG_LOCAL_LEVEL               ESP_LOG_WARN
 #endif
 
 #define ESP_LOGE(tag, fmt, ...)  syslog(LOG_ERR,  "%s: " fmt, tag, ##__VA_ARGS__)
-#define ESP_LOGW(tag, fmt, ...)  syslog(LOG_WARNING, "%s: " fmt, tag, ##__VA_ARGS__)
-#define ESP_LOGI(tag, fmt, ...)  syslog(LOG_INFO, "%s: " fmt, tag, ##__VA_ARGS__)
-#define ESP_LOGD(tag, fmt, ...)  syslog(LOG_DEBUG, "%s: " fmt, tag, ##__VA_ARGS__)
-#define ESP_LOGV(tag, fmt, ...)  syslog(LOG_DEBUG, "%s: " fmt, tag, ##__VA_ARGS__)
+
+#if LOG_LOCAL_LEVEL >= ESP_LOG_WARN
+#  define ESP_LOGW(tag, fmt, ...)  syslog(LOG_WARNING, "%s: " fmt, tag, ##__VA_ARGS__)
+#else
+#  define ESP_LOGW(tag, fmt, ...)  do { } while (0)
+#endif
+
+#if LOG_LOCAL_LEVEL >= ESP_LOG_INFO
+#  define ESP_LOGI(tag, fmt, ...)  syslog(LOG_INFO, "%s: " fmt, tag, ##__VA_ARGS__)
+#else
+#  define ESP_LOGI(tag, fmt, ...)  do { } while (0)
+#endif
+
+#if LOG_LOCAL_LEVEL >= ESP_LOG_DEBUG
+#  define ESP_LOGD(tag, fmt, ...)  syslog(LOG_DEBUG, "%s: " fmt, tag, ##__VA_ARGS__)
+#else
+#  define ESP_LOGD(tag, fmt, ...)  do { } while (0)
+#endif
+
+#if LOG_LOCAL_LEVEL >= ESP_LOG_VERBOSE
+#  define ESP_LOGV(tag, fmt, ...)  syslog(LOG_DEBUG, "%s: " fmt, tag, ##__VA_ARGS__)
+#else
+#  define ESP_LOGV(tag, fmt, ...)  do { } while (0)
+#endif
 
 #define ESP_EARLY_LOGE(tag, fmt, ...)  ESP_LOGE(tag, fmt, ##__VA_ARGS__)
 #define ESP_EARLY_LOGW(tag, fmt, ...)  ESP_LOGW(tag, fmt, ##__VA_ARGS__)

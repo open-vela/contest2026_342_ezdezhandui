@@ -39,6 +39,7 @@ static lv_obj_t *s_ap_list;
 static char s_ap_ssid[DM_NET_MAX_APS][DM_NET_SSID_LEN];
 static int  s_ap_count;
 static bool s_scanning;
+static uint32_t s_last_refresh_ms;
 
 /****************************************************************************
  * Private Functions
@@ -228,6 +229,22 @@ static void dm_page_net_update(void)
             }
         }
     }
+
+  /* 节流：接口列表/关联状态 1s 刷一次就够。
+   * 原来每个 tick（~50ms）都 getifaddrs + SIOCGIWESSID，实测把驱动的 RPC 层
+   * 刷爆（串口每秒几百行），还可能和后台扫描抢 RPC。
+   */
+
+  {
+    uint32_t now = lv_tick_get();
+
+    if (s_last_refresh_ms != 0 && now - s_last_refresh_ms < 1000)
+      {
+        return;
+      }
+
+    s_last_refresh_ms = now;
+  }
 
   (void)dm_net_refresh();
   net = dm_net_status();

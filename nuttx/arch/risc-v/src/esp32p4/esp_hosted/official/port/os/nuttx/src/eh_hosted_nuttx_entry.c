@@ -577,7 +577,16 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
    */
 
 
-#ifdef ESP_WIFI_TEST_SSID
+  /* 开机自动连"测试 SSID"是 bring-up 时期的东西，必须显式开 Kconfig 才会编译进来。
+   *
+   * 原因（真机实测 2026-11-02）：只要它编译进来，主机就会在开机后反复去连
+   * Hello_World_5G / Hello_World_2.4G（每轮 12s、多轮），把 CP 的 STA 长期卡在
+   * "连接中"，IDF 于是拒绝任何扫描：
+   *     W wifi:sta_scan: STA is connecting, scan are not allowed!
+   * 现象就是应用侧 scan 永远 0 个 AP（而驱动不报错）。产品镜像不该自动连硬编码的测试 SSID。
+   */
+
+#if defined(ESP_WIFI_TEST_SSID) && defined(CONFIG_ESPRESSIF_HOSTED_TEST_AUTOCONNECT)
   if (strlen(ESP_WIFI_TEST_SSID) > 0)
     {
       FAR const char *names[2] =

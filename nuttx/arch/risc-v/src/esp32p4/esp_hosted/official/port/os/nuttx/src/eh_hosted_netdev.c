@@ -428,8 +428,10 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
    * BY.18).
    */
 
+#ifdef CONFIG_ESPRESSIF_HOSTED_NETDEV_IOCTL_TRACE
   syslog(LOG_INFO, "%s: ioctl cmd=0x%04x (SIOCSIWSCAN=0x%04x)\n",
          NETDEV_TAG, (unsigned)cmd, (unsigned)SIOCSIWSCAN);
+#endif
 
   switch (cmd)
     {
@@ -440,12 +442,48 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
            */
 
           uint16_t count = 0;
+          wifi_scan_config_t scan_cfg;
+          esp_err_t mret;
 
-          ret = eh_host_wifi_scan_start(NULL, true);
+          /* 扫描前 best-effort 把从机拉回 STA 模式。
+           *
+           * 实测（真机 2026-11-02 开机日志）：`RPC wifi_set_mode(STA) -> -1`，
+           * 而从机不在 STA 模式时 esp_wifi_scan_start() 不给结果（BY.18 记录过同一现象：
+           * "scan 前再发一次 set_mode(STA) 并回读"）。这一步失败也不致命，继续扫。
+           */
+
+          mret = eh_host_wifi_set_mode(WIFI_MODE_STA);
+          syslog(mret == ESP_OK ? LOG_INFO : LOG_WARNING,
+                 "%s: pre-scan set_mode(STA) -> %d\n", NETDEV_TAG, mret);
+
+          /* 显式给扫描参数，不用 NULL（"IDF 默认"）。
+           *
+           * 真机实测（2026-11-02）：cfg=NULL 时扫描 RPC 能正常返回（rc=0、~11s），
+           * 但 CP 回报 0 个 AP，而同一位置网线能拿到 192.168.1.x —— 怀疑从机侧把
+           * "无配置"当成了空信道表。这里按 wifi_scan_channel_bitmap_t 的语义给
+           * 2.4G 全信道：bit0=0（按位图扫）、bit1..bit14 = 信道 1..14。
+           */
+
+          memset(&scan_cfg, 0, sizeof(scan_cfg));
+          scan_cfg.channel                  = 0;      /* 0 = 按位图扫 */
+          scan_cfg.show_hidden              = true;
+          scan_cfg.scan_type                = WIFI_SCAN_TYPE_ACTIVE;
+          scan_cfg.scan_time.active.min     = 120;
+          scan_cfg.scan_time.active.max     = 300;
+          scan_cfg.channel_bitmap.ghz_2_channels = 0x7ffe;  /* 信道 1..14 */
+          scan_cfg.channel_bitmap.ghz_5_channels = 0;
+
+          ret = eh_host_wifi_scan_start(&scan_cfg, true);
           if (ret != ESP_OK)
             {
-              syslog(LOG_ERR, "%s: scan failed: %d\n", NETDEV_TAG, ret);
-              return -EIO;
+              syslog(LOG_ERR, "%s: scan failed: %d (retrying with defaults)\n",
+                     NETDEV_TAG, ret);
+              ret = eh_host_wifi_scan_start(NULL, true);
+              if (ret != ESP_OK)
+                {
+                  syslog(LOG_ERR, "%s: scan failed: %d\n", NETDEV_TAG, ret);
+                  return -EIO;
+                }
             }
 
           ret = eh_host_wifi_scan_get_ap_num(&count);
@@ -562,7 +600,18 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
           if (ssid == NULL || iwr->u.essid.length == 0 ||
               iwr->u.essid.length > 32)
             {
-              return -EINVAL;
+              /* 空 ESSID = "断开"。
+               *
+               * 真机需要它：从机固件自带的应用会反复连一个不存在的 SSID，IDF 于是拒绝
+               * 一切扫描（`STA is connecting, scan are not allowed!`），主机侧唯一的
+               * 取消手段就是这条 WifiDisconnect RPC。原来这里直接 -EINVAL，等于让
+               * 应用无法把从机从"连接中"拉出来，scan 永远 0 个 AP。
+               */
+
+              ret = eh_host_wifi_disconnect();
+              syslog(ret == ESP_OK ? LOG_INFO : LOG_ERR,
+                     "%s: disconnect -> %d\n", NETDEV_TAG, ret);
+              return ret == ESP_OK ? OK : -EIO;
             }
 
           memset(&cfg, 0, sizeof(cfg));

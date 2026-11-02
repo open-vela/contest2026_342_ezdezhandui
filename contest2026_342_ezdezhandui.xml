@@ -14,30 +14,20 @@
   <project path="contest2026_342_ezdezhandui" name="contest2026_342_ezdezhandui"
          revision="dev-ai-contest-2026">
     <linkfile src="nuttx/arch/risc-v/src/esp32p4" dest="nuttx/arch/risc-v/src/esp32p4"/>
-    <linkfile src="board/esp32p4/esp32p4-function-ev-board" dest="vendor/espressif/boards/esp32p4/esp32p4-function-ev-board"/>
-    <linkfile src="board/esp32p4/esp32p4-tab5" dest="vendor/espressif/boards/esp32p4/esp32p4-tab5"/>
+    <linkfile src="board/esp32p4" dest="vendor/espressif/boards/esp32p4"/>
+    <linkfile src="app/apps/examples/audiotest" dest="apps/examples/audiotest"/>
+    <linkfile src="app/apps/system/v4l2ctl" dest="apps/system/v4l2ctl"/>
+    <linkfile src="nuttx/arch/risc-v/include/esp32p4" dest="nuttx/arch/risc-v/include/esp32p4"/>
     <copyfile src="app/apps/crypto/mbedtls/CMakeLists.txt" dest="apps/crypto/mbedtls/CMakeLists.txt"/>
     <copyfile src="app/apps/crypto/mbedtls/Kconfig" dest="apps/crypto/mbedtls/Kconfig"/>
     <copyfile src="app/apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h" dest="apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h"/>
-    <copyfile src="app/apps/examples/audiotest/CMakeLists.txt" dest="apps/examples/audiotest/CMakeLists.txt"/>
-    <copyfile src="app/apps/examples/audiotest/Kconfig" dest="apps/examples/audiotest/Kconfig"/>
-    <copyfile src="app/apps/examples/audiotest/Make.defs" dest="apps/examples/audiotest/Make.defs"/>
-    <copyfile src="app/apps/examples/audiotest/Makefile" dest="apps/examples/audiotest/Makefile"/>
-    <copyfile src="app/apps/examples/audiotest/audiotest_main.c" dest="apps/examples/audiotest/audiotest_main.c"/>
     <copyfile src="app/apps/examples/camera/camera_main.c" dest="apps/examples/camera/camera_main.c"/>
     <copyfile src="app/apps/netutils/netinit/Kconfig" dest="apps/netutils/netinit/Kconfig"/>
     <copyfile src="app/apps/netutils/netinit/netinit.c" dest="apps/netutils/netinit/netinit.c"/>
     <copyfile src="app/apps/system/nxplayer/nxplayer_main.c" dest="apps/system/nxplayer/nxplayer_main.c"/>
     <copyfile src="app/apps/system/nxrecorder/nxrecorder_main.c" dest="apps/system/nxrecorder/nxrecorder_main.c"/>
-    <copyfile src="app/apps/system/v4l2ctl/CMakeLists.txt" dest="apps/system/v4l2ctl/CMakeLists.txt"/>
-    <copyfile src="app/apps/system/v4l2ctl/Kconfig" dest="apps/system/v4l2ctl/Kconfig"/>
-    <copyfile src="app/apps/system/v4l2ctl/Makefile" dest="apps/system/v4l2ctl/Makefile"/>
-    <copyfile src="app/apps/system/v4l2ctl/v4l2ctl.c" dest="apps/system/v4l2ctl/v4l2ctl.c"/>
     <copyfile src="nuttx/CMakeLists.txt" dest="nuttx/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/Kconfig" dest="nuttx/arch/risc-v/Kconfig"/>
-    <copyfile src="nuttx/arch/risc-v/include/esp32p4/chip.h" dest="nuttx/arch/risc-v/include/esp32p4/chip.h"/>
-    <copyfile src="nuttx/arch/risc-v/include/esp32p4/gpio_sig_map.h" dest="nuttx/arch/risc-v/include/esp32p4/gpio_sig_map.h"/>
-    <copyfile src="nuttx/arch/risc-v/include/esp32p4/irq.h" dest="nuttx/arch/risc-v/include/esp32p4/irq.h"/>
     <copyfile src="nuttx/arch/risc-v/src/cmake/Toolchain.cmake" dest="nuttx/arch/risc-v/src/cmake/Toolchain.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/CMakeLists.txt"/>
     <copyfile src="nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
@@ -81,56 +71,5 @@
     <copyfile src="app/ai_agent/src/infra/vela_tls.c" dest="packages/ai_agent/src/infra/vela_tls.c"/>
     <copyfile src="app/ai_agent/src/stubs.c" dest="packages/ai_agent/src/stubs.c"/>
     <copyfile src="app/ai_agent/src/tools/skill_loader.c" dest="packages/ai_agent/src/tools/skill_loader.c"/>
-    <copyfile src="board/esp32p4/common/CMakeLists.txt" dest="vendor/espressif/boards/esp32p4/common/CMakeLists.txt"/>
-    <copyfile src="board/esp32p4/common/Kconfig" dest="vendor/espressif/boards/esp32p4/common/Kconfig"/>
-    <copyfile src="board/esp32p4/common/Makefile" dest="vendor/espressif/boards/esp32p4/common/Makefile"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_adc.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_adc.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_bmp180.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_bmp180.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_i2c.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_i2c.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_i2s.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_i2s.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_ledc.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_ledc.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_mcpwm.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_mcpwm.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_pcnt.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_pcnt.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_rmt.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_rmt.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_spidev.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_spidev.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_spiflash.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_spiflash.h"/>
-    <copyfile src="board/esp32p4/common/include/esp_board_spislavedev.h" dest="vendor/espressif/boards/esp32p4/common/include/esp_board_spislavedev.h"/>
-    <copyfile src="board/esp32p4/common/scripts/common.ld" dest="vendor/espressif/boards/esp32p4/common/scripts/common.ld"/>
-    <copyfile src="board/esp32p4/common/scripts/esp32p4_aliases.ld" dest="vendor/espressif/boards/esp32p4/common/scripts/esp32p4_aliases.ld"/>
-    <copyfile src="board/esp32p4/common/scripts/esp32p4_flat_memory.ld" dest="vendor/espressif/boards/esp32p4/common/scripts/esp32p4_flat_memory.ld"/>
-    <copyfile src="board/esp32p4/common/scripts/esp32p4_lpcore_sections.ld" dest="vendor/espressif/boards/esp32p4/common/scripts/esp32p4_lpcore_sections.ld"/>
-    <copyfile src="board/esp32p4/common/scripts/esp32p4_sections.ld" dest="vendor/espressif/boards/esp32p4/common/scripts/esp32p4_sections.ld"/>
-    <copyfile src="board/esp32p4/common/scripts/esp32p4_sections.rev3.ld" dest="vendor/espressif/boards/esp32p4/common/scripts/esp32p4_sections.rev3.ld"/>
-    <copyfile src="board/esp32p4/common/src/CMakeLists.txt" dest="vendor/espressif/boards/esp32p4/common/src/CMakeLists.txt"/>
-    <copyfile src="board/esp32p4/common/src/Make.defs" dest="vendor/espressif/boards/esp32p4/common/src/Make.defs"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_adc.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_adc.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_bmp180.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_bmp180.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_i2c.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_i2c.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_i2s.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_i2s.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_ledc.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_ledc.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_mcpwm.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_mcpwm.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_pcnt.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_pcnt.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_rmt.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_rmt.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_spi.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_spi.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_spidev.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_spidev.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_spiflash.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_spiflash.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_spislavedev.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_spislavedev.c"/>
-    <copyfile src="board/esp32p4/common/src/esp_board_twai.c" dest="vendor/espressif/boards/esp32p4/common/src/esp_board_twai.c"/>
-    <copyfile src="board/esp32p4/common/src/etc/init.d/rc.sysinit" dest="vendor/espressif/boards/esp32p4/common/src/etc/init.d/rc.sysinit"/>
-    <copyfile src="board/esp32p4/common/src/etc/init.d/rcS" dest="vendor/espressif/boards/esp32p4/common/src/etc/init.d/rcS"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/CMakeLists.txt" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/CMakeLists.txt"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/Kconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/Kconfig"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/configs/nsh/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/configs/nsh/defconfig"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/configs/spiflash/defconfig" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/configs/spiflash/defconfig"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/include/board.h" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/include/board.h"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/scripts/Make.defs" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/scripts/Make.defs"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/CMakeLists.txt" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/CMakeLists.txt"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/Make.defs" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/Make.defs"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4-pico-wifi.h" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4-pico-wifi.h"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_boot.c" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_boot.c"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_bringup.c" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_bringup.c"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_buttons.c" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_buttons.c"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_gpio.c" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_gpio.c"/>
-    <copyfile src="board/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_reset.c" dest="vendor/espressif/boards/esp32p4/esp32p4-pico-wifi-wareshare/src/esp32p4_reset.c"/>
   </project>
 </manifest>

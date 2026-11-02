@@ -65,6 +65,17 @@ PROTECTED_REPO_PATHS = (
 )
 
 # 交付树里永不枚举的构建产物目录/文件（前缀匹配目录名）
+# linkfile 判定时忽略的工作区噪声（构建残留；被符号链接遮住无副作用）
+LINKFILE_NOISE = {".depend", "Make.dep", ".built", "CMakeCache.txt",
+                  ".ninja_deps", ".ninja_log", ".DS_Store", "Thumbs.db"}
+# 候选目录内的"构建期产物目录/文件"（相对候选根的路径）：不参与 linkfile 判定。
+# 例：vendor/espressif/boards/esp32p4/common/board 是指向本板 src 的构建期链接
+#     （check_consistency.py 的 BUILD_ARTIFACTS 同样把它当作构建产物）。
+LINKFILE_NOISE_REL = {"common/board", "common/Make.dep"}
+# 单个候选目录最多允许的工作区文件数（相对交付条目数的富余量）——
+# 超过即判定"目标目录里还有别的东西"，直接放弃该候选，同时避免 followlinks 走进巨树
+LINKFILE_WS_SLACK = 64
+
 ARTIFACT_DIR_NAMES = {"bootloader", "esp-nuttx-bootloader", "__pycache__"}
 ARTIFACT_DIR_GLOBS = ("esp-hal-3rdparty",)
 
@@ -163,14 +174,30 @@ def linkfile_groups(entries, threshold=20):
             cache[proj] = r.stdout.splitlines()
         return [f for f in cache[proj] if f == rel or f.startswith(rel + "/")]
 
-    def ws_files(ws_dir):
+    def ws_files(ws_dir, limit=None):
+        """目标目录里**会被 linkfile 遮住**的文件集合（相对路径）。
+
+        - followlinks=True：已经 linkfile 化的子目录本身是符号链接，内容同样会被遮住；
+        - 跳过 LINKFILE_NOISE（构建残留）；
+        - 超过 limit 个文件就提前收工（集合已不可能相等，同时避免走进巨树）。
+        """
         full = os.path.join(WS, ws_dir)
         if not os.path.isdir(full):
-            return []
-        out = []
-        for root, _, fs in os.walk(full):
+            return set()
+        out = set()
+        for root, dirs, fs in os.walk(full, followlinks=True):
+            rel_root = os.path.relpath(root, full)
+            if rel_root != ".":
+                # 剪掉构建期链接/产物目录（否则它会顺着符号链接把别人的文件也算进来）
+                dirs[:] = [x for x in dirs
+                           if os.path.normpath(os.path.join(rel_root, x))
+                           not in LINKFILE_NOISE_REL]
             for f in fs:
-                out.append(os.path.relpath(os.path.join(root, f), full))
+                if f in LINKFILE_NOISE:
+                    continue
+                out.add(os.path.relpath(os.path.join(root, f), full))
+                if limit is not None and len(out) > limit:
+                    return out
         return out
 
     ok = []
@@ -181,8 +208,10 @@ def linkfile_groups(entries, threshold=20):
             continue
         if tracked_under(d):
             continue
-        wf = ws_files(d)
-        if len(wf) != len(items):
+        # 安全判据：目标目录里会被遮住的文件集合，必须与交付的文件集合**完全相同**。
+        # （原来只比个数，遇到 .gitignore/.depend 这类残留就误判，导致整树收敛被漏掉）
+        wanted_rel = {dd[len(d) + 1:] for _s, dd in items}
+        if ws_files(d, limit=len(wanted_rel) + LINKFILE_WS_SLACK) != wanted_rel:
             continue
         # 结构一致：src/dest 去前缀后逐文件相同
         repo_dir = None
@@ -219,8 +248,8 @@ def main():
     ap.add_argument("--assert-shared-max", type=int, default=1,
                     help="通用层 nuttx/arch/risc-v/src/common/ 允许的交付条目上限"
                          "（默认 1：只允许 CMakeLists.txt）")
-    ap.add_argument("--linkfile-threshold", type=int, default=20,
-                    help="自包含子树文件数达到该值时改用一条 <linkfile>（默认 20）")
+    ap.add_argument("--linkfile-threshold", type=int, default=3,
+                    help="自包含子树文件数达到该值时改用一条 <linkfile>（默认 3）")
     ap.add_argument("--no-linkfile", action="store_true",
                     help="关闭 linkfile 混合策略，全部用 <copyfile>")
     ap.add_argument("--prune", action="store_true",

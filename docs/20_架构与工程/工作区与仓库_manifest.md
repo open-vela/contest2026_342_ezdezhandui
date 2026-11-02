@@ -25,16 +25,30 @@ openvela 是 `repo` 多仓工作区：`nuttx`、`apps`、`vendor/espressif`、`p
   `src`/`dest` 去前缀后逐文件一致 → 用**一条 `<linkfile>`**（symlink）代替逐文件条目；
 - 其余仍用 `<copyfile>` 逐文件声明。
 
-当前结果：**3 条 linkfile 替代 610 条 copyfile**，清单为 **116 条 copyfile + 3 条 linkfile**：
+当前结果（2026-11-02 第二次收拢后）：**5 条 linkfile 替代 675 条 copyfile**，
+清单为 **53 条 copyfile + 5 条 linkfile**：
 
-| linkfile | 文件数 |
-|---|---|
-| `nuttx/arch/risc-v/src/esp32p4` → 同名（含 `espressif/` 整层） | 528 |
-| `board/esp32p4/esp32p4-function-ev-board` → `vendor/espressif/boards/…` | 59 |
-| `board/esp32p4/esp32p4-tab5` → `vendor/espressif/boards/…` | 23 |
+| linkfile | 文件数 | 说明 |
+|---|---|---|
+| `nuttx/arch/risc-v/src/esp32p4` → 同名 | 528 | 芯片目录（含 `espressif/` 整层） |
+| `board/esp32p4` → `vendor/espressif/boards/esp32p4` | 135 | **整棵 P4 板树**（function-ev-board + tab5 + pico + common）；该目录在上游 `vendor/espressif` 里 tracked=0，本来就全归本项目 |
+| `app/apps/examples/audiotest` → `apps/examples/audiotest` | 5 | 音频自检应用 |
+| `app/apps/system/v4l2ctl` → `apps/system/v4l2ctl` | 4 | 摄像头枚举/抓帧工具 |
+| `nuttx/arch/risc-v/include/esp32p4` → 同名 | 3 | 芯片 include（chip.h / gpio_sig_map.h / irq.h） |
+
+**linkfile 的判定标准（2026-11-02 收紧后）**：目标目录在工作区里 **0 个 tracked 文件**
+（整棵都归本项目），且"会被符号链接遮住、但不在交付里"的文件集合**为空**——
+判定用 `os.walk(followlinks=True)` 取集合相等（噪声 `.depend`/`Make.dep`/`CMakeCache.txt`
+等忽略），并剪掉构建期链接（`vendor/espressif/boards/esp32p4/common/board`）。
+默认阈值 `--linkfile-threshold 3`。
+
+> 为什么 apps 侧只有两条：其余 48 个 app 文件是**改在已有上游目录里的文件**
+> （`crypto/mbedtls`、`netutils/netinit`、`system/nxplayer`、`examples/camera`…），
+> 把目录链成符号链接会遮住上游的同目录文件，只能逐文件交付。
+> `app/ai_agent` 同理（`packages/ai_agent` 共 139 文件，我们只改 16 个）。
 
 关闭方式：`gen_manifest_copyfiles.py --no-linkfile`（回落为全 copyfile）；阈值可调
-`--linkfile-threshold N`。模拟部署校验：copyfile 内容全一致、linkfile 3 条解析正确。
+`--linkfile-threshold N`。模拟部署校验：copyfile 内容全一致、linkfile 5 条解析正确。
 
 ## 两个必须知道的限制
 
@@ -106,7 +120,7 @@ vendor/openvela
 linkfile 子树整棵移走），再**只按 manifest 部署**（`<copyfile>` 复制 + `<linkfile>` 建符号链接），
 得到与评审端 `repo sync` 后一致的树。结果与经验：
 
-- 部署 116 条 copyfile + 3 条 linkfile 后，工作区 `nuttx/arch/risc-v/src/esp32p4` 等三处变为
+- 部署 53 条 copyfile + 5 条 linkfile 后，工作区 `nuttx/arch/risc-v/src/esp32p4` 等五处变为
   指向作品仓的符号链接（与评审端一致），`check_consistency.py` ✅ 一致；
 - 坑 1：**不要复用旧构建目录**再重跑 CMake —— 重跑时 `NUTTX_DEFCONFIG` 环境变量丢失，会在
   `cmake/nuttx_kconfig.cmake:48` 报 `string sub-command REGEX ... needs at least 5 arguments`。

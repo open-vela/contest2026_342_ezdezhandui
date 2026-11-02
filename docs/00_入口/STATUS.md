@@ -182,7 +182,7 @@
 ## 二、当前交付
 
 - **通用层零写入（2026-11-02）**：espressif 共享层整层搬进 `nuttx/arch/risc-v/src/esp32p4/espressif/`，`arch/risc-v/src/common/` 只剩 1 个交付文件（`CMakeLists.txt`，riscv_mtimer 条件编译）；早启动 IRQ 守卫下沉到 `esp32p4/espressif/esp_irq.c`；MCUboot 工作树移到 `nuttx/bootloader-esp32p4/`（构建产物）。见 `docs/60_交付与提交/上游改动审计.md`
-- **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **116 条 copyfile + 3 条 linkfile** 自动映射（2026-11-02 起 Espressif 层整层随 `esp32p4` 的 linkfile 交付，通用层只剩 1 个文件）（清单由 `tools/engineering/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
+- **交付形态**：仓根 4 棵文件树（`nuttx/` + `board/esp32p4/` + `app/apps/` + `app/ai_agent/`）+ `contest2026_342_ezdezhandui.xml` **53 条 copyfile + 5 条 linkfile** 自动映射（2026-11-02 起 Espressif 层整层随 `esp32p4` 的 linkfile 交付，通用层只剩 1 个文件）（清单由 `tools/engineering/gen_manifest_copyfiles.py` 与文件树一一对应校验/再生）
 - **复现路径**：根 `00_入口/README.md` §四（init → sync → build → **两镜像烧录** → console，**无部署步骤**；copyfile 在 `repo sync` 时自动落位，且移植不删除任何上游文件）
 - **闭环工具**：`tools/test/board.py`（串口 harness/断言）、`tools/build_flash/usb_stable.sh`（两镜像烧录）、`tools/test/verify_aiagent.sh`（ai_agent 启动里程碑断言）、`tools/test/camera_verify.sh`（**摄像头出帧验收断言 13/13**）、`tools/test/camera_diag.sh`（摄像头链路一次性判定）、`tools/test/fb2png.py`（JTAG 帧缓冲→PNG 截图）、`tools/test/wedge_diag.sh`（agent 失聪现场 JTAG 取证）
 - **板端工具**：`v4l2ctl`（`app/apps/system/v4l2ctl/` → manifest 落位 `apps/system/v4l2ctl/`）—— NuttX 无 `v4l2-ctl`，用它做枚举/开流/抓帧（`v4l2ctl -d /dev/video0 --capture 3 --timeout 20`）

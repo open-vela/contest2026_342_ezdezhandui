@@ -46,7 +46,7 @@ logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提�
 ## 四、运行方式
 
 交付形态是**文件树 + repo manifest 自动映射**，评审侧**零手工步骤**：
-仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **116 条 `<copyfile>` + 3 条 `<linkfile>`**
+仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **53 条 `<copyfile>` + 5 条 `<linkfile>`**
 在 `repo sync` 时把它们自动覆盖到工作区对应位置 ——
 
 | 作品仓 | 工作区 |
@@ -56,10 +56,12 @@ logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提�
 | `app/apps/**` | `apps/**` |
 | `app/ai_agent/**` | `packages/ai_agent/**` |
 
-`nuttx/arch/risc-v/src/esp32p4/`（528 文件，含 2026-11-02 搬入的 `espressif/` 整层）与两棵板级
-子树属于"整棵子树都归本项目"，用 3 条 `<linkfile>` 一条顶掉 610 条逐文件条目；其余走
-`<copyfile>`。**通用层 `arch/risc-v/src/common/` 只剩 1 个交付文件**（`CMakeLists.txt`，
-riscv_mtimer 条件编译），详见 `docs/60_交付与提交/上游改动审计.md`。
+`nuttx/arch/risc-v/src/esp32p4/`（528 文件，含搬入的 `espressif/` 整层）、**整棵
+`board/esp32p4/`（135 文件 → `vendor/espressif/boards/esp32p4`）**、`apps/examples/audiotest`
+与 `apps/system/v4l2ctl`、`nuttx/arch/risc-v/include/esp32p4` 属于"整棵子树都归本项目"，
+用 **5 条 `<linkfile>`** 一条顶掉 675 条逐文件条目；其余走 `<copyfile>`。
+**通用层 `arch/risc-v/src/common/` 只剩 1 个交付文件**（`CMakeLists.txt`，riscv_mtimer
+条件编译），详见 `docs/60_交付与提交/上游改动审计.md`。
 
 清单与文件树的**严格一一对应**由 `tools/engineering/gen_manifest_copyfiles.py` 保证
 （`--check` 校验，直接运行则再生）。校验会**直接拒绝**两类"manifest 表达不了、

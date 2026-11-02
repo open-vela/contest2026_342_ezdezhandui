@@ -1,0 +1,7 @@
+RESULT: PASS
+reason: all assertions passed
+ready:  DM-READY display=mem 1024x600 bpp=16 lvgl= agent=mock camera=synthetic page=home
+checks: 18 pass / 0 fail
+mode:   selftest
+result: DM-SELFTEST RESULT: PASS (18/18)
+artifact_dir: /tmp/dm-zh/20261102-154032

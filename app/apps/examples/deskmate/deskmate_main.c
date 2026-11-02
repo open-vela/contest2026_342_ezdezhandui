@@ -73,6 +73,7 @@ static const char *g_usage =
   "  --snap <path>       snapshot destination (default " DM_SNAP_HOST_DIR "/dm_selftest.bin)\n"
   "  --hostfs <dir>      mount this host directory at /host (simulator)\n"
   "  --agent <mode>      mock | ws | off\n"
+  "  --report <path>     also write the self-test report to a file\n"
   "  --page <id|index>   start on a page\n"
   "  --exit-after <sec>  leave the UI loop after <sec> seconds\n"
   "  --help              this text\n";
@@ -205,6 +206,7 @@ int main(int argc, FAR char *argv[])
   const char *hostfs_path = DM_HOSTFS_PATH;
   const char *agent_mode = DM_AGENT_MODE;
   const char *start_page = NULL;
+  const char *report_path = NULL;
   bool selftest = false;
   bool tour = false;
   unsigned int exit_after_ms = (unsigned int)DM_EXIT_AFTER * 1000u;
@@ -233,6 +235,10 @@ int main(int argc, FAR char *argv[])
       else if (strcmp(argv[i], "--agent") == 0 && i + 1 < argc)
         {
           agent_mode = argv[++i];
+        }
+      else if (strcmp(argv[i], "--report") == 0 && i + 1 < argc)
+        {
+          report_path = argv[++i];
         }
       else if (strcmp(argv[i], "--page") == 0 && i + 1 < argc)
         {
@@ -340,6 +346,11 @@ int main(int argc, FAR char *argv[])
 
       if (selftest)
         {
+          if (report_path != NULL)
+            {
+              dm_selftest_set_report(report_path);
+            }
+
           dm_selftest_begin(snap_path);
         }
       else

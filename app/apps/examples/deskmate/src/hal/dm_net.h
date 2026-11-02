@@ -95,6 +95,13 @@ int dm_net_wifi_link(char *ssid, size_t ssid_len, int *rssi);
 
 int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps);
 
+/* 上一次扫描里"驱动侧"的真实错误（0 = 驱动链路正常）：
+ * 非 0 表示触发/取结果被驱动拒绝或 RPC 超时（例如 esp_hosted 的扫描 RPC 无响应），
+ * 此时返回 0 个 AP 不代表"附近没有 AP"，界面与断言要按"驱动不可用"处理。
+ */
+
+int dm_net_wifi_last_error(void);
+
 /* Associate with an AP.  psk may be NULL/empty for an open network.
  * Returns 0 on success.
  */

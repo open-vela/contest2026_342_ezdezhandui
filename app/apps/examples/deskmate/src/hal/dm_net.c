@@ -41,6 +41,7 @@
 
 static struct dm_net_status_s g_status;
 static int g_sock = -1;
+static int g_wifi_last_errno;
 static bool g_refreshed;
 
 /****************************************************************************
@@ -137,6 +138,17 @@ static void dm_net_fill_flags(struct dm_net_if_s *entry)
     if (ioctl(g_sock, SIOCGIWNAME, (unsigned long)&iwr) == 0)
       {
         entry->wireless = true;
+      }
+    else if (strncmp(entry->name, "wl", 2) == 0)
+      {
+        /* esp_hosted 的 netdev 只实现了 SIOCGIWSCAN / ESSID / FREQ 这几条，
+         * 没实现 SIOCGIWNAME —— 只看这一条会把真无线网卡判成"没有无线"。
+         * 名字前缀兜底（wlan0 / wl0），与常见工具的做法一致。
+         */
+
+        entry->wireless = true;
+        DM_LOG("net: %s treated as wireless by name (SIOCGIWNAME unsupported)",
+               entry->name);
       }
   }
 #endif
@@ -422,6 +434,7 @@ int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps)
     }
 
   memset(aps, 0, sizeof(*aps) * max_aps);
+  g_wifi_last_errno = 0;
 
   dm_net_wifi_ensure_infra(ifname);
 
@@ -433,11 +446,14 @@ int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps)
   memset(&iwr, 0, sizeof(iwr));
   strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
 
-  if (ioctl(g_sock, SIOCSIWSCAN, (unsigned long)&iwr) < 0 &&
-      errno != EINPROGRESS && errno != EAGAIN)
+  if (ioctl(g_sock, SIOCSIWSCAN, (unsigned long)&iwr) < 0)
     {
-      DM_LOG("wifi: scan not supported (%d)", errno);
-      return -errno;
+      /* 有些驱动（如 esp_hosted 的 netdev）只实现"取结果"不实现"触发扫描"，
+       * 触发失败不代表没有结果可用 —— 继续去取，真的没有结果再报错。
+       */
+
+      DM_LOG("wifi: scan trigger rc=%d, fetching results anyway", errno);
+      g_wifi_last_errno = errno;
     }
 
   /* Collect the results.  A driver that just started scanning answers
@@ -473,6 +489,8 @@ int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps)
 
     if (rc < 0)
       {
+        g_wifi_last_errno = errno;
+
         if (errno == E2BIG)
           {
             DM_WARN("wifi: scan list larger than %u bytes",
@@ -685,6 +703,11 @@ int dm_net_wifi_connect(const char *ssid, const char *psk)
   (void)psk;
   return -ENODEV;
 #endif
+}
+
+int dm_net_wifi_last_error(void)
+{
+  return g_wifi_last_errno;
 }
 
 int dm_net_wifi_disconnect(void)

@@ -37,6 +37,10 @@
 
 void dm_selftest_begin(const char *snap_path);
 
+/* 把自检输出再写一份到文件（板上串口常被驱动日志淹没，报告文件才是可靠证据）。 */
+
+void dm_selftest_set_report(const char *path);
+
 /* Advance the scenario by one UI loop iteration. */
 
 void dm_selftest_step(void);

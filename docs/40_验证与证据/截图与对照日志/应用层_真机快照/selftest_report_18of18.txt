@@ -1,0 +1,22 @@
+# 真机自检报告（deskmate --agent mock --selftest --report /tmp/dm_report.txt）
+# 读取：python3 tools/test/board.py run "cat /tmp/dm_report.txt"
+
+[dm-check] display:ready                PASS 1024x600 16bpp fbdev
+[dm-check] lvgl:version                 PASS 
+[dm-check] ui:built                     PASS 4 objects, 5 pages
+[dm-check] ui:home                      PASS page=home
+[dm-check] font:cjk-body                PASS 0 字缺（首个：-）
+[dm-check] font:cjk-title               PASS 0 字缺（首个：-）
+[dm-check] touch:target                 PASS (120,467) ->
+[dm-check] touch:delivered              PASS 0 -> 1
+[dm-check] snapshot:written             PASS dm_home -> 1228800 bytes
+[dm-check] ui:tab-target                PASS (308,571)
+[dm-check] ui:camera-page               PASS page=camera
+[dm-check] ui:page-rendered             PASS home=0xd941215b camera=0xd0cd54d2
+[dm-check] snapshot:written             PASS dm_camera -> 1228800 bytes
+[dm-check] ui:net-page                  PASS eth0 up 0.0.0.0; wlan0 UP 0.0.0.0
+[dm-check] net:interfaces               PASS eth0 up 0.0.0.0; wlan0 UP 0.0.0.0
+[dm-check] snapshot:written             PASS dm_net -> 1228800 bytes
+[dm-check] wifi:scan                    PASS 0 AP, driver rc=5 (radio scan unavailable, UI degraded)
+[dm-check] snapshot:picture             PASS distinct=75 dominant=50% grad=0 n=12642
+DM-SELFTEST RESULT: PASS (18/18)

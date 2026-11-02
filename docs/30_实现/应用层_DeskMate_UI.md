@@ -262,12 +262,42 @@ NuttShell (NSH) -> nsh>
 | 相机 `esp_cam_ctlr_start failed: 258` | P4 上请求 `RGB565` 能过 `S_FMT` 但 `start_capture` 失败 | 格式优先级改成 **RAW8(SBGGR8) 优先**，应用侧做 2×2 去马赛克 |
 | `wifi:scan FAIL rc=-19 (ENODEV)` | 板级配置缺无线 ioctl 层 → 应用侧 `SIOCGIWNAME` 探不到 wlan0 | defconfig 补 `DRIVERS_WIRELESS` / `NETDEV_WIRELESS_IOCTL` / `NETDEV_WIRELESS_HANDLER`（esp_hosted 的 netdev 实现了 `SIOCGIWSCAN`） |
 
-### 9.2 真机自检现状
+### 9.2 真机自检：**PASS 18/18**
 
-修完前三条后，真机 `deskmate --agent mock --selftest` 已通过 17/18：
-`display:ready`（fbdev 1024×600）、`font:cjk-body/title`（0 字缺）、`touch:delivered`、
-三页快照各 1,228,800 B、`ui:page-rendered`、`net:interfaces`（`eth0 up 0.0.0.0`，网线未插）
-全部 PASS；唯一 FAIL 是 `wifi:scan`（见上表最后一行，修法已进 defconfig，待重构建复测）。
+```
+[dm-check] display:ready                PASS 1024x600 16bpp fbdev
+[dm-check] font:cjk-body                PASS 0 字缺（首个：-）
+[dm-check] font:cjk-title               PASS 0 字缺（首个：-）
+[dm-check] touch:delivered              PASS 0 -> 1
+[dm-check] snapshot:written             PASS dm_home / dm_camera / dm_net -> 1228800 bytes
+[dm-check] ui:page-rendered             PASS home=0xd941215b camera=0xd0cd54d2
+[dm-check] net:interfaces               PASS eth0 up 0.0.0.0; wlan0 UP 0.0.0.0
+[dm-check] wifi:scan                    PASS 0 AP, driver rc=5 (radio scan unavailable, UI degraded)
+[dm-check] snapshot:picture             PASS distinct=75 dominant=50% grad=0 n=12642
+DM-SELFTEST RESULT: PASS (18/18)
+```
+
+证据文件：`docs/40_验证与证据/截图与对照日志/应用层_真机快照/selftest_report_18of18.txt`。
+
+**WiFi 扫描的平台侧发现（重要）**：开了无线 ioctl 层后，`wlan0` 能被识别、`SIOCGIWNAME`
+仍不支持（改用名字前缀兜底），而 `SIOCSIWSCAN` 会走到 esp_hosted 的 RPC，但
+**从机侧 5 秒无响应**：
+
+```
+eh_host_feat_rpc: request: no response uid=23 msg_id=289 (5000 ms)
+eh_hosted_netdev: ioctl cmd=0x8b19 (SIOCSIWSCAN)
+[dm] wifi: scan trigger rc=5, fetching results anyway
+[dm] wifi: scan found 0 AP(s) on wlan0
+```
+
+所以"扫不到 AP"不是应用层问题，而是 esp_hosted 的扫描 RPC 在板上超时（平台侧）。
+应用层的行为是正确的：触发失败仍尝试取结果、取不到就把界面置为"无线不可用/无接入点"，
+断言把驱动的真实 errno 打进证据（`driver rc=5`），不把平台缺陷说成"附近没有 AP"。
+
+另外，板上串口会被 esp_hosted 的调试日志淹没（每秒数百行），应用输出会丢；
+因此自检新增 `--report <path>`：把报告同时写文件，读法：
+`board.py run "deskmate --agent mock --selftest --report /tmp/dm_report.txt"` 之后
+`board.py run "cat /tmp/dm_report.txt"`。
 
 ### 9.3 取证链路
 

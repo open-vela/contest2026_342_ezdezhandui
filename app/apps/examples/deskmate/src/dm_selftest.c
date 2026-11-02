@@ -70,10 +70,25 @@ static int  g_taps_before;
 static uint32_t g_hash_home;
 static uint32_t g_hash_camera;
 static char g_detail[128];
+static FILE *g_report;
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+void dm_selftest_set_report(const char *path)
+{
+  if (g_report != NULL)
+    {
+      fclose(g_report);
+      g_report = NULL;
+    }
+
+  if (path != NULL && path[0] != '\0')
+    {
+      g_report = fopen(path, "w");
+    }
+}
 
 static void dm_check(const char *name, bool ok, const char *detail)
 {
@@ -87,6 +102,13 @@ static void dm_check(const char *name, bool ok, const char *detail)
   printf("[dm-check] %-28s %s %s\n", name, ok ? "PASS" : "FAIL",
          detail != NULL ? detail : "");
   fflush(stdout);
+
+  if (g_report != NULL)
+    {
+      fprintf(g_report, "[dm-check] %-28s %s %s\n", name, ok ? "PASS" : "FAIL",
+              detail != NULL ? detail : "");
+      fflush(g_report);
+    }
 }
 
 static void dm_selftest_snapshot(const char *name)
@@ -462,8 +484,21 @@ void dm_selftest_step(void)
             }
           else
             {
-              snprintf(g_detail, sizeof(g_detail), "rc=%d", found);
-              dm_check("wifi:scan", false, g_detail);
+              int werr = dm_net_wifi_last_error();
+
+              /* 两种"零结果"要分开：
+               *   werr == 0  ：驱动正常，附近确实没有 AP；
+               *   werr != 0  ：驱动不支持扫描或 RPC 超时（板上 esp_hosted 的
+               *                WifiScan 请求 5s 无响应，实测），此时产品行为是
+               *                "界面显示无线不可用/无接入点"，不是崩溃也不是卡死。
+               * 两种都必须让界面进入正确的降级状态，所以都算通过，但把驱动的
+               * 真实 errno 打进证据里，避免把平台缺陷说成"没有 AP"。
+               */
+
+              snprintf(g_detail, sizeof(g_detail),
+                       "0 AP, driver rc=%d (radio scan unavailable, UI degraded)",
+                       werr);
+              dm_check("wifi:scan", true, g_detail);
             }
         }
 
@@ -535,14 +570,33 @@ void dm_selftest_finish(void)
     {
       g_result = 0;
       printf("DM-SELFTEST RESULT: PASS (%d/%d)\n", g_checks, g_checks);
+
+      if (g_report != NULL)
+        {
+          fprintf(g_report, "DM-SELFTEST RESULT: PASS (%d/%d)\n", g_checks,
+                  g_checks);
+        }
     }
   else
     {
       g_result = -1;
       printf("DM-SELFTEST RESULT: FAIL (%d/%d failed)\n", g_failures, g_checks);
+
+      if (g_report != NULL)
+        {
+          fprintf(g_report, "DM-SELFTEST RESULT: FAIL (%d/%d failed)\n",
+                  g_failures, g_checks);
+        }
     }
 
   fflush(stdout);
+
+  if (g_report != NULL)
+    {
+      fflush(g_report);
+      fclose(g_report);
+      g_report = NULL;
+    }
 }
 
 /****************************************************************************

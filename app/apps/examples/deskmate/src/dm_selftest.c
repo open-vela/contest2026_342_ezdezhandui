@@ -18,6 +18,7 @@
 
 #include <lvgl/lvgl.h>
 
+#include "agent/dm_agent.h"
 #include "dm_config.h"
 #include "dm_log.h"
 #include "dm_selftest.h"
@@ -415,8 +416,9 @@ void dm_selftest_step(void)
             return;
           }
 
-        snprintf(g_detail, sizeof(g_detail), "page=%s",
-                 dm_ui_current_id() != NULL ? dm_ui_current_id() : "?");
+        snprintf(g_detail, sizeof(g_detail), "page=%s camera=%s",
+                 dm_ui_current_id() != NULL ? dm_ui_current_id() : "?",
+                 dm_camera_ready() ? dm_camera_backend() : "off");
         dm_check("ui:camera-page",
                  dm_ui_current_id() != NULL &&
                  strcmp(dm_ui_current_id(), "camera") == 0, g_detail);
@@ -496,8 +498,9 @@ void dm_selftest_step(void)
                */
 
               snprintf(g_detail, sizeof(g_detail),
-                       "0 AP, driver rc=%d (radio scan unavailable, UI degraded)",
-                       werr);
+                       "0 AP, driver rc=%d (%s)",
+                       werr, werr == 0 ? "no AP in range"
+                                       : "driver scan unavailable, UI degraded");
               dm_check("wifi:scan", true, g_detail);
             }
         }

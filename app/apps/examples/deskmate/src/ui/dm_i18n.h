@@ -67,6 +67,7 @@
 #define DM_I18N_CAPTURE         "抓拍"
 #define DM_I18N_ASK_VISION      "让智能体看一眼"
 #define DM_I18N_CAMERA_ABSENT   "摄像头不可用"
+#define DM_I18N_CAMERA_OFF_HINT "摄像头默认关闭：CSI 与 DSI 共享 MIPI PHY，本板开摄像头会使显示失步（--camera 可强制打开）"
 #define DM_I18N_CAMERA_ASK      "看一下摄像头现在的画面（第 %d 帧，%s 后端，%d×%d），描述你看到了什么。"
 #define DM_I18N_MOTION_EVENT    "摄像头检测到画面在动。"
 
@@ -101,6 +102,9 @@
 #define DM_I18N_NET_MASK        "掩码"
 #define DM_I18N_NET_WIRELESS    "无线"
 #define DM_I18N_NET_SIGNAL      "信号"
+#define DM_I18N_NET_SCANNING    "扫描中…"
+#define DM_I18N_NET_SCAN_FAIL   "扫描失败"
+#define DM_I18N_NET_AP_FOUND    "个接入点"
 
 /* 设置页 */
 

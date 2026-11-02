@@ -116,7 +116,7 @@ static int dm_home_create(lv_obj_t *parent, int w, int h)
 
   card = dm_card(s_root, DM_MARGIN, 2 * DM_MARGIN + top_h,
                  w - 2 * DM_MARGIN, h - 3 * DM_MARGIN - top_h,
-                 lv_color_hex(DM_COL_CARD2));
+                 lv_color_hex(DM_COL_CARD));
 
   dm_label_at(card, DM_I18N_TOUCH_CARD, DM_FONT_BODY,
               lv_color_hex(DM_COL_ACCENT), 0, 0);

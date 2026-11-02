@@ -34,8 +34,10 @@ lv_obj_t *dm_card(lv_obj_t *parent, int x, int y, int w, int h,
   lv_obj_set_size(card, w, h);
   lv_obj_set_style_bg_color(card, bg, 0);
   lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-  lv_obj_set_style_radius(card, 12, 0);
-  lv_obj_set_style_pad_all(card, 14, 0);
+  lv_obj_set_style_radius(card, 14, 0);
+  lv_obj_set_style_border_width(card, 1, 0);
+  lv_obj_set_style_border_color(card, lv_color_hex(DM_COL_BORDER), 0);
+  lv_obj_set_style_pad_all(card, 18, 0);
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   return card;
@@ -49,7 +51,7 @@ lv_obj_t *dm_card_stack(lv_obj_t *parent, int x, int y, int w, int h,
   lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
                         LV_FLEX_ALIGN_START);
-  lv_obj_set_style_pad_row(card, 6, 0);
+  lv_obj_set_style_pad_row(card, 10, 0);
 
   return card;
 }

@@ -74,6 +74,7 @@ static bool g_streaming;
 
 static struct dm_camera_frame_s g_frame;
 static uint16_t *g_pixels;
+static bool g_disabled;
 
 /****************************************************************************
  * Private Functions
@@ -212,8 +213,19 @@ static void dm_camera_synth(uint16_t *dst, int dw, int dh, int seq)
  * Public Functions
  ****************************************************************************/
 
+void dm_camera_set_disabled(bool disabled)
+{
+  g_disabled = disabled;
+}
+
 int dm_camera_create(int preview_w, int preview_h)
 {
+  if (g_disabled)
+    {
+      DM_LOG("camera: disabled by request (--no-camera)");
+      return -ENODEV;
+    }
+
   if (g_ready)
     {
       return 0;

@@ -102,6 +102,20 @@ int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps);
 
 int dm_net_wifi_last_error(void);
 
+/* 异步扫描：扫描要走 CP（几秒），不能占着 UI 线程。
+ *   start()  → 起一个 detached 线程干活，立刻返回；
+ *   status() → 0=空闲/未开始，1=进行中，2=完成，-1=失败；
+ *   results()→ 把最近一次结果拷出来（调用方持有 aps 数组）。
+ */
+
+int dm_net_wifi_scan_start(void);
+int dm_net_wifi_scan_status(int *count, int *err);
+int dm_net_wifi_scan_results(struct dm_wifi_ap_s *aps, int max_aps);
+
+/* 一条命令回答"WiFi 有没有问题"：把接口/驱动能力/扫描/AP 列表打到 stdout。 */
+
+int dm_net_wifi_probe(void);
+
 /* Associate with an AP.  psk may be NULL/empty for an open network.
  * Returns 0 on success.
  */

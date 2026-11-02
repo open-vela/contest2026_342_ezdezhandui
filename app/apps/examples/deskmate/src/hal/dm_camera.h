@@ -56,6 +56,12 @@ struct dm_camera_frame_s
 
 int dm_camera_create(int preview_w, int preview_h);
 
+/* 诊断/降级开关：调用后 dm_camera_create() 直接返回 -ENODEV，不碰 /dev/video0。
+ * 真机上 CSI 与 DSI 共享 MIPI PHY，开摄像头有可能把显示链路带崩，留这个开关。
+ */
+
+void dm_camera_set_disabled(bool disabled);
+
 /* Backend actually in use: "v4l2" or "synthetic". */
 
 const char *dm_camera_backend(void);

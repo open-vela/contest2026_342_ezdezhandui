@@ -123,9 +123,14 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
 
   if (dm_camera_create(DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H) != 0)
     {
-      dm_label(s_root, DM_I18N_CAMERA_ABSENT, DM_FONT_BODY,
-               lv_color_hex(DM_COL_ERR));
-      return -1;
+      /* 摄像头关掉/不可用时页面仍然要建起来（只显示说明），否则路由会失败。 */
+
+      dm_label_at(s_root, DM_I18N_CAMERA_ABSENT, DM_FONT_BODY,
+                  lv_color_hex(DM_COL_ERR), 0, 0);
+      dm_label_at(s_root, DM_I18N_CAMERA_OFF_HINT, DM_FONT_SMALL,
+                  lv_color_hex(DM_COL_MUTED), 0, 48);
+      DM_LOG("ui: camera page built without a camera");
+      return 0;
     }
 
   s_prev = malloc((size_t)DM_CAMERA_PREVIEW_W * DM_CAMERA_PREVIEW_H * 2);
@@ -193,7 +198,7 @@ static void dm_page_camera_update(void)
 
   memset(&frame, 0, sizeof(frame));
 
-  if (s_root == NULL)
+  if (s_root == NULL || s_canvas == NULL)
     {
       return;
     }

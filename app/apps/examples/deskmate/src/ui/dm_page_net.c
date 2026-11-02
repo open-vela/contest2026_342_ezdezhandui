@@ -3,12 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Network page: the wired/wireless interface list on the left, the WiFi
- * association state and scan results on the right.
+ * 网络页：左边是有线/无线接口列表，右边是 WiFi 关联状态与扫描结果。
  *
- * The same code drives the board (eth0 + the ESP-Hosted wlan0) and the
- * simulator (SIM_NETDEV eth0 + the wifi_sim pseudo device), which is the whole
- * point of keeping the WAPI calls behind dm_net.
+ * 扫描走板载协处理器（ESP-Hosted），一次要几秒，所以**不在 UI 线程里做**：
+ * 点"扫描"起一个 detached 线程，页面的 tick 轮询状态，期间显示“扫描中…”。
  ****************************************************************************/
 
 /****************************************************************************
@@ -40,6 +38,7 @@ static lv_obj_t *s_wifi_state;
 static lv_obj_t *s_ap_list;
 static char s_ap_ssid[DM_NET_MAX_APS][DM_NET_SSID_LEN];
 static int  s_ap_count;
+static bool s_scanning;
 
 /****************************************************************************
  * Private Functions
@@ -47,27 +46,47 @@ static int  s_ap_count;
 
 static void dm_page_net_update(void);
 static void dm_page_net_connect_cb(lv_event_t *event);
+static void dm_page_net_fill_aps(void);
 
 static void dm_page_net_scan_cb(lv_event_t *event)
 {
-  struct dm_wifi_ap_s aps[DM_NET_MAX_APS];
-  int found;
-  int i;
-
   if (lv_event_get_code(event) != LV_EVENT_CLICKED)
     {
       return;
     }
 
-  (void)dm_net_refresh();
-
-  found = dm_net_wifi_scan(aps, DM_NET_MAX_APS);
-  if (found < 0)
+  if (dm_net_wifi_scan_start() != 0)
     {
-      DM_LOG("net: scan unavailable (%d)", found);
-      found = 0;
+      if (s_wifi_state != NULL)
+        {
+          dm_label_set(s_wifi_state, "%s", DM_I18N_NET_NO_WIFI);
+        }
+
+      return;
     }
 
+  s_scanning = true;
+
+  if (s_wifi_state != NULL)
+    {
+      dm_label_set(s_wifi_state, "%s", DM_I18N_NET_SCANNING);
+    }
+
+  if (s_ap_list != NULL)
+    {
+      lv_obj_clean(s_ap_list);
+      dm_label(s_ap_list, DM_I18N_NET_SCANNING, DM_FONT_SMALL,
+               lv_color_hex(DM_COL_MUTED));
+    }
+}
+
+static void dm_page_net_fill_aps(void)
+{
+  struct dm_wifi_ap_s aps[DM_NET_MAX_APS];
+  int found;
+  int i;
+
+  found = dm_net_wifi_scan_results(aps, DM_NET_MAX_APS);
   s_ap_count = found;
 
   if (s_ap_list == NULL)
@@ -77,7 +96,7 @@ static void dm_page_net_scan_cb(lv_event_t *event)
 
   lv_obj_clean(s_ap_list);
 
-  if (found == 0)
+  if (found <= 0)
     {
       dm_label(s_ap_list, DM_I18N_NET_NO_AP, DM_FONT_SMALL,
                lv_color_hex(DM_COL_MUTED));
@@ -108,8 +127,6 @@ static void dm_page_net_scan_cb(lv_event_t *event)
       lv_obj_add_event_cb(btn, dm_page_net_connect_cb, LV_EVENT_CLICKED,
                           &s_ap_ssid[i]);
     }
-
-  dm_page_net_update();
 }
 
 static void dm_page_net_connect_cb(lv_event_t *event)
@@ -185,6 +202,33 @@ static void dm_page_net_update(void)
       return;
     }
 
+  /* 扫描进行中：每 tick 问一次状态，完成后填列表。 */
+
+  if (s_scanning)
+    {
+      int count = 0;
+      int err = 0;
+      int st = dm_net_wifi_scan_status(&count, &err);
+
+      if (st == 1)
+        {
+          if (s_wifi_state != NULL)
+            {
+              dm_label_set(s_wifi_state, "%s", DM_I18N_NET_SCANNING);
+            }
+        }
+      else
+        {
+          s_scanning = false;
+          dm_page_net_fill_aps();
+
+          if (s_wifi_state != NULL && st == -1)
+            {
+              dm_label_set(s_wifi_state, "%s (%d)", DM_I18N_NET_SCAN_FAIL, err);
+            }
+        }
+    }
+
   (void)dm_net_refresh();
   net = dm_net_status();
 
@@ -227,7 +271,7 @@ static void dm_page_net_update(void)
         }
     }
 
-  if (s_wifi_state != NULL)
+  if (s_wifi_state != NULL && !s_scanning)
     {
       if (!net->wireless_present)
         {
@@ -248,7 +292,21 @@ static void dm_page_net_update(void)
 
 static void dm_page_net_enter(void)
 {
+  /* 进页面就自动扫一次：板子串口经常被驱动日志占满，读不到 printf，
+   * 扫描结果直接画在屏幕上（这比读串口可靠）。
+   */
+
   dm_page_net_update();
+
+  if (!s_scanning && dm_net_wifi_scan_start() == 0)
+    {
+      s_scanning = true;
+
+      if (s_wifi_state != NULL)
+        {
+          dm_label_set(s_wifi_state, "%s", DM_I18N_NET_SCANNING);
+        }
+    }
 }
 
 dm_page_t dm_page_net =

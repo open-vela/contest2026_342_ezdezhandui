@@ -74,6 +74,10 @@ static const char *g_usage =
   "  --hostfs <dir>      mount this host directory at /host (simulator)\n"
   "  --agent <mode>      mock | ws | off\n"
   "  --report <path>     also write the self-test report to a file\n"
+  "  --wifi-probe        print a WiFi diagnostic report and exit\n"
+  "  --camera            open /dev/video0 (CSI shares the MIPI PHY with DSI;\n"
+  "                      on this board opening it kills the display, so it is\n"
+  "                      OFF by default until the platform conflict is fixed)\n"
   "  --page <id|index>   start on a page\n"
   "  --exit-after <sec>  leave the UI loop after <sec> seconds\n"
   "  --help              this text\n";
@@ -207,6 +211,8 @@ int main(int argc, FAR char *argv[])
   const char *agent_mode = DM_AGENT_MODE;
   const char *start_page = NULL;
   const char *report_path = NULL;
+  bool wifi_probe = false;
+  bool camera_on = false;
   bool selftest = false;
   bool tour = false;
   unsigned int exit_after_ms = (unsigned int)DM_EXIT_AFTER * 1000u;
@@ -235,6 +241,14 @@ int main(int argc, FAR char *argv[])
       else if (strcmp(argv[i], "--agent") == 0 && i + 1 < argc)
         {
           agent_mode = argv[++i];
+        }
+      else if (strcmp(argv[i], "--camera") == 0)
+        {
+          camera_on = true;
+        }
+      else if (strcmp(argv[i], "--wifi-probe") == 0)
+        {
+          wifi_probe = true;
         }
       else if (strcmp(argv[i], "--report") == 0 && i + 1 < argc)
         {
@@ -294,7 +308,40 @@ int main(int argc, FAR char *argv[])
 
   (void)dm_agent_init(agent_mode);
   (void)dm_net_refresh();
-  (void)dm_camera_create(DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H);
+
+  if (wifi_probe)
+    {
+      /* 诊断模式：只回答"WiFi 有没有问题"，不起 UI。
+       * 板上串口仍会有驱动/中断日志插进来，所以支持 --report 把报告写文件。
+       */
+
+      if (report_path != NULL && report_path[0] != '\0')
+        {
+          if (freopen(report_path, "w", stdout) == NULL)
+            {
+              DM_WARN("wifi-probe: cannot open report '%s', using stdout",
+                      report_path);
+            }
+        }
+
+      (void)dm_net_wifi_probe();
+      printf("DM-WIFI-PROBE DONE\n");
+      fflush(stdout);
+      dm_agent_destroy();
+      dm_display_destroy();
+      lv_deinit();
+      return 0;
+    }
+  /* 摄像头默认关闭：CSI 与 DSI 共享 MIPI PHY，本板实测一开摄像头 DSI 就失去
+   * 同步（面板变纯色）。平台侧解决之前，默认不碰它；--camera 可显式打开。
+   */
+
+  dm_camera_set_disabled(!camera_on);
+
+  if (camera_on)
+    {
+      (void)dm_camera_create(DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H);
+    }
 
   if (dm_ui_create() != 0)
     {

@@ -315,3 +315,55 @@ tools/test/hw_deskmate_evidence.sh
 > console 端口被 Tabby 串口页占用时，读串口会报
 > `device reports readiness to read but returned no data`。本仓自带
 > `tools/engineering/tabby_mcp.py`（Tabby MCP），`close_tab` 关掉那个串口页即可释放。
+
+## 十、真机两个阻塞项的根因（2026-11-02 晚）
+
+### 10.1 “面板整屏纯蓝、看不到界面” —— 根因是摄像头，不是显示链路
+
+判据链（每步都有明确观测）：
+
+| 观测 | 结论 |
+|---|---|
+| 复位后、应用未启动：屏幕**纯红**（板级 `BOARD_FB_TEST_COLOR=0xf800`） | 面板能显示帧缓冲，DSI/背光/缓存回写都通 |
+| 运行公版 `lvgldemo widgets`：**能看到彩色控件** | LVGL + fbdev + GDMA 通路完全正常 |
+| 运行 `deskmate`：**纯蓝/纯色**，但 JTAG dump 的帧缓冲里是正常中文界面（121 色、3% 亮像素） | 应用渲染没问题，是**应用启动后**把显示搞丢了 |
+| `deskmate --no-camera`：**浅色界面 + 中文正常显示** | **开摄像头（MIPI-CSI）会让 DSI 失去同步** |
+
+解释：P4 上 CSI 与 DSI **共享 MIPI PHY**；`/dev/video0` 一被打开（本板还伴随
+`esp_cam_ctlr_start failed: 258`），面板就丢失同步，屏上只剩面板自身的底色。
+
+处置（本轮）：
+- **摄像头默认关闭**：新增 `--camera` 显式打开；不传就完全不碰 `/dev/video0`。
+- 相机页在"没有摄像头"时**照样建页**（显示原因），不再让路由失败。
+- 主题改为**浅色高对比**（白卡片 on 浅灰底、蓝强调条），字号 16px→**20px 正文 / 32px 标题**
+  —— 之前的深色卡片 + 16px 字在 7″ 1024×600 上远看就是"一片深蓝"。
+- 平台侧 CSI/DSI 共存问题**尚未修**（需要动 PHY/ISP 时序），已记录为后续项。
+
+### 10.2 WiFi：扫描超时是主机侧 bug；扫描已能跑通，但 CP 报 0 个 AP
+
+根因（有日志证据）：
+
+```
+eh_host_feat_rpc: request: no response uid=23 msg_id=289 (5000 ms)   ← WifiScanGetApNum
+eh_host_feat_rpc: rx: no waiter for uid=23 (late response?) dropping
+```
+
+CP 其实回了，只是**超过主机 5s 同步超时被丢弃**（触发扫描那条已经是 30s，
+取结果这两条还是默认 5s）。修法：
+- `eh_host_wifi_scan_get_ap_num/get_ap_records/sta_get_ap_info` 按请求把超时提到 **15s**。
+- netdev 的 `SIOCSIWSCAN` 不再传 `cfg=NULL`，改成**显式 2.4G 全信道**扫描配置
+  （`ghz_2_channels=0x7ffe`：bit0=0 表示按位图扫，bit1..14 = 信道 1..14；
+  注意 bit0=1 是"跳过整个 2.4G"，写 `0xffff` 会扫不到任何东西）。
+- 应用侧：扫描移出 UI 线程（detached pthread + 队列），网络页显示"扫描中…"，
+  进页面自动扫一次；新增 `deskmate --wifi-probe`（可配 `--report` 写文件）。
+
+现状：扫描**不再报错**（`driver_errno=0`，约 11s 返回），但 **CP 回报 0 个 AP**。
+待确认的环境因素：C6 只支持 2.4G（若周围只有 5G AP 就必然为空）+ 模块天线是否接好。
+
+### 10.3 取证方式的变化（重要）
+
+ESP-Hosted 的 INFO 日志在 SDIO 数据路径上每秒数百行，会把 115200 的 console 占满
+（实测 `nsh_consolewrite: ERROR: Failed to send buffer: 12`，`cat` 都发不出去）。
+因此：
+- 平台侧把 `esp_log.h` 默认级别压到 **WARN/ERROR**（要细节时 `-DLOG_LOCAL_LEVEL=3`）。
+- 真机证据一律走 **`--report <path>` 写文件**，或直接**看屏幕**（本轮两个根因都是靠屏幕定的）。

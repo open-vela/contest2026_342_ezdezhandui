@@ -72,7 +72,7 @@ static int g_toast_ticks;
 static void dm_ui_style_tab(lv_obj_t *btn, bool active)
 {
   lv_obj_set_style_bg_color(btn, lv_color_hex(active ? DM_COL_ACCENT :
-                                              DM_COL_CARD), 0);
+                                              DM_COL_CARD2), 0);
   lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
 
   {
@@ -178,26 +178,26 @@ int dm_ui_create(void)
     lv_obj_remove_style_all(bar);
     lv_obj_set_pos(bar, 0, 0);
     lv_obj_set_size(bar, width, DM_STATUS_H);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(DM_COL_CARD), 0);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(DM_COL_ACCENT), 0);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
 
     {
-      lv_obj_t *title = dm_label_at(bar, DM_I18N_APP_TITLE, DM_FONT_BODY,
-                                    lv_color_hex(DM_COL_TEXT), DM_MARGIN, 16);
+      lv_obj_t *title = dm_label_at(bar, DM_I18N_APP_TITLE, DM_FONT_TITLE,
+                                    lv_color_hex(DM_COL_ON_ACCENT), DM_MARGIN, 12);
 
       (void)title;
     }
 
     g_page_title = dm_label_at(bar, "", DM_FONT_BODY,
-                               lv_color_hex(DM_COL_ACCENT), 0, 16);
+                               lv_color_hex(DM_COL_ON_ACCENT), 0, 20);
     lv_obj_align(g_page_title, LV_ALIGN_CENTER, 0, 0);
 
     g_agent_badge = dm_badge(bar, DM_I18N_AGENT_STATE "：-",
-                             lv_color_hex(DM_COL_MUTED));
+                             lv_color_hex(DM_COL_ON_ACCENT));
     lv_obj_align(g_agent_badge, LV_ALIGN_RIGHT_MID, -170, 0);
 
-    g_clock = dm_label_at(bar, "--:--:--", DM_FONT_BODY,
-                          lv_color_hex(DM_COL_ACCENT), 0, 16);
+    g_clock = dm_label_at(bar, "--:--:--", DM_FONT_TITLE,
+                          lv_color_hex(DM_COL_ON_ACCENT), 0, 12);
     lv_obj_align(g_clock, LV_ALIGN_RIGHT_MID, -DM_MARGIN, 0);
   }
 
@@ -218,7 +218,7 @@ int dm_ui_create(void)
   lv_obj_set_size(g_tabbar, width, DM_TABBAR_H);
   lv_obj_set_style_bg_color(g_tabbar, lv_color_hex(DM_COL_CARD), 0);
   lv_obj_set_style_bg_opa(g_tabbar, LV_OPA_COVER, 0);
-  lv_obj_set_style_pad_all(g_tabbar, 6, 0);
+  lv_obj_set_style_pad_all(g_tabbar, 8, 0);
   lv_obj_set_style_pad_column(g_tabbar, 6, 0);
   lv_obj_set_flex_flow(g_tabbar, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(g_tabbar, LV_FLEX_ALIGN_SPACE_EVENLY,

@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -42,6 +43,22 @@
 static struct dm_net_status_s g_status;
 static int g_sock = -1;
 static int g_wifi_last_errno;
+
+/* 异步扫描状态（工作线程写、UI 线程读，全部走这把锁） */
+
+enum
+{
+  DM_SCAN_IDLE = 0,
+  DM_SCAN_RUNNING,
+  DM_SCAN_DONE,
+  DM_SCAN_FAIL
+};
+
+static pthread_mutex_t g_scan_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile int g_scan_state = DM_SCAN_IDLE;
+static int g_scan_count;
+static int g_scan_err;
+static struct dm_wifi_ap_s g_scan_aps[DM_NET_MAX_APS];
 static bool g_refreshed;
 
 /****************************************************************************
@@ -411,7 +428,7 @@ int dm_net_wifi_link(char *ssid, size_t ssid_len, int *rssi)
 #endif
 }
 
-int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps)
+static int dm_net_wifi_scan_impl(struct dm_wifi_ap_s *aps, int max_aps)
 {
 #ifdef DM_HAVE_WAPI
   const char *ifname = dm_net_wifi_ifname();
@@ -705,9 +722,223 @@ int dm_net_wifi_connect(const char *ssid, const char *psk)
 #endif
 }
 
+static void *dm_wifi_scan_worker(void *arg)
+{
+  struct dm_wifi_ap_s aps[DM_NET_MAX_APS];
+  int found;
+
+  (void)arg;
+
+  memset(aps, 0, sizeof(aps));
+  found = dm_net_wifi_scan_impl(aps, DM_NET_MAX_APS);
+
+  pthread_mutex_lock(&g_scan_lock);
+  memcpy(g_scan_aps, aps, sizeof(g_scan_aps));
+  g_scan_count = found > 0 ? found : 0;
+  g_scan_err   = dm_net_wifi_last_error();
+  g_scan_state = found >= 0 ? DM_SCAN_DONE : DM_SCAN_FAIL;
+  if (found < 0)
+    {
+      g_scan_err = -found;
+    }
+
+  pthread_mutex_unlock(&g_scan_lock);
+  DM_LOG("wifi: scan worker done: found=%d err=%d", found, g_scan_err);
+  return NULL;
+}
+
+int dm_net_wifi_scan_start(void)
+{
+  pthread_t tid;
+  pthread_attr_t attr;
+  int ret;
+
+  pthread_mutex_lock(&g_scan_lock);
+  if (g_scan_state == DM_SCAN_RUNNING)
+    {
+      pthread_mutex_unlock(&g_scan_lock);
+      return 0;
+    }
+
+  g_scan_state = DM_SCAN_RUNNING;
+  g_scan_count = 0;
+  g_scan_err   = 0;
+  pthread_mutex_unlock(&g_scan_lock);
+
+  pthread_attr_init(&attr);
+  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  pthread_attr_setstacksize(&attr, 8192);
+
+  ret = pthread_create(&tid, &attr, dm_wifi_scan_worker, NULL);
+  pthread_attr_destroy(&attr);
+
+  if (ret != 0)
+    {
+      pthread_mutex_lock(&g_scan_lock);
+      g_scan_state = DM_SCAN_FAIL;
+      g_scan_err   = ret;
+      pthread_mutex_unlock(&g_scan_lock);
+      DM_ERR("wifi: cannot start scan worker: %d", ret);
+      return -ret;
+    }
+
+  return 0;
+}
+
+int dm_net_wifi_scan_status(int *count, int *err)
+{
+  int state;
+
+  pthread_mutex_lock(&g_scan_lock);
+  state = g_scan_state;
+
+  if (count != NULL)
+    {
+      *count = g_scan_count;
+    }
+
+  if (err != NULL)
+    {
+      *err = g_scan_err;
+    }
+
+  pthread_mutex_unlock(&g_scan_lock);
+
+  switch (state)
+    {
+      case DM_SCAN_RUNNING:
+        return 1;
+      case DM_SCAN_DONE:
+        return 2;
+      case DM_SCAN_FAIL:
+        return -1;
+      default:
+        return 0;
+    }
+}
+
+int dm_net_wifi_scan_results(struct dm_wifi_ap_s *aps, int max_aps)
+{
+  int count;
+
+  if (aps == NULL || max_aps <= 0)
+    {
+      return -EINVAL;
+    }
+
+  pthread_mutex_lock(&g_scan_lock);
+  count = g_scan_count < max_aps ? g_scan_count : max_aps;
+  memcpy(aps, g_scan_aps, (size_t)count * sizeof(aps[0]));
+  pthread_mutex_unlock(&g_scan_lock);
+
+  return count;
+}
+
+int dm_net_wifi_probe(void)
+{
+  const struct dm_net_status_s *net;
+  struct dm_wifi_ap_s aps[DM_NET_MAX_APS];
+  char ssid[DM_NET_SSID_LEN];
+  int rssi = 0;
+  int found;
+  int i;
+
+  printf("[dm-wifi-probe] begin\n");
+
+  (void)dm_net_refresh();
+  net = dm_net_status();
+
+  if (net == NULL)
+    {
+      printf("[dm-wifi-probe] no network status\n");
+      return -1;
+    }
+
+  for (i = 0; i < net->count; i++)
+    {
+      const struct dm_net_if_s *e = &net->ifs[i];
+
+      printf("[dm-wifi-probe] iface=%s up=%d running=%d wireless=%d ip=%s\n",
+             e->name, (int)e->up, (int)e->running, (int)e->wireless, e->ip);
+    }
+
+  printf("[dm-wifi-probe] wireless_present=%d\n", (int)net->wireless_present);
+
+  if (dm_net_wifi_link(ssid, sizeof(ssid), &rssi) == 0)
+    {
+      printf("[dm-wifi-probe] link ssid='%s' rssi=%d\n", ssid, rssi);
+    }
+  else
+    {
+      printf("[dm-wifi-probe] link: unavailable\n");
+    }
+
+  /* 扫描：起线程 → 最多等 20s（CP 扫描通常 3~10s） */
+
+  (void)dm_net_wifi_scan_start();
+
+  for (i = 0; i < 400; i++)
+    {
+      if (dm_net_wifi_scan_status(NULL, NULL) != 1)
+        {
+          break;
+        }
+
+      usleep(50000);
+    }
+
+  {
+    int count = 0;
+    int err = 0;
+    int st = dm_net_wifi_scan_status(&count, &err);
+
+    printf("[dm-wifi-probe] scan state=%d count=%d driver_errno=%d waited=%dms\n",
+           st, count, err, i * 50);
+  }
+
+  found = dm_net_wifi_scan_results(aps, DM_NET_MAX_APS);
+
+  for (i = 0; i < found; i++)
+    {
+      printf("[dm-wifi-probe] ap[%d] ssid='%s' rssi=%d freq=%d secure=%d bssid=%s\n",
+             i, aps[i].ssid, aps[i].rssi, aps[i].freq, (int)aps[i].secure,
+             aps[i].bssid);
+    }
+
+  printf("[dm-wifi-probe] end aps=%d\n", found);
+  return found;
+}
+
 int dm_net_wifi_last_error(void)
 {
   return g_wifi_last_errno;
+}
+
+int dm_net_wifi_scan(struct dm_wifi_ap_s *aps, int max_aps)
+{
+  int i;
+
+  if (dm_net_wifi_scan_start() != 0)
+    {
+      return -EIO;
+    }
+
+  for (i = 0; i < 400; i++)          /* 最多 20s */
+    {
+      if (dm_net_wifi_scan_status(NULL, NULL) != 1)
+        {
+          break;
+        }
+
+      usleep(50000);
+    }
+
+  if (dm_net_wifi_scan_status(NULL, NULL) == -1)
+    {
+      return -dm_net_wifi_last_error();
+    }
+
+  return dm_net_wifi_scan_results(aps, max_aps);
 }
 
 int dm_net_wifi_disconnect(void)

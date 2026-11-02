@@ -77,7 +77,7 @@ if(CONFIG_ARCH_BOARD_COMMON)
   endif()
 
   if(CONFIG_ESPRESSIF_ULP_USE_TEST_BIN)
-    include(${NUTTX_DIR}/arch/risc-v/src/common/espressif/ulp.cmake)
+    include(${NUTTX_DIR}/arch/risc-v/src/esp32p4/espressif/ulp.cmake)
   endif()
 
 endif()

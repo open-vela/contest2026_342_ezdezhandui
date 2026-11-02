@@ -177,7 +177,7 @@ INCLUDES += $(INCDIR_PREFIX)$(ARCH_SRCDIR)$(DELIM)chip$(DELIM)$(ESP_HAL_3RDPARTY
 # (esp-hal-3rdparty/nuttx/include/platform/os.h).
 
 ifeq ($(CONFIG_ESPRESSIF_MIPI_CSI),y)
-  INCLUDES += $(INCDIR_PREFIX)$(ARCH_SRCDIR)$(DELIM)common$(DELIM)espressif$(DELIM)freertos_compat
+  INCLUDES += $(INCDIR_PREFIX)$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)espressif$(DELIM)freertos_compat
   INCLUDES += $(INCDIR_PREFIX)$(ARCH_SRCDIR)$(DELIM)chip$(DELIM)$(ESP_HAL_3RDPARTY_REPO)$(DELIM)components$(DELIM)upper_hal_cam$(DELIM)include
   INCLUDES += $(INCDIR_PREFIX)$(ARCH_SRCDIR)$(DELIM)chip$(DELIM)$(ESP_HAL_3RDPARTY_REPO)$(DELIM)components$(DELIM)upper_hal_cam$(DELIM)csi$(DELIM)include
   INCLUDES += $(INCDIR_PREFIX)$(ARCH_SRCDIR)$(DELIM)chip$(DELIM)$(ESP_HAL_3RDPARTY_REPO)$(DELIM)components$(DELIM)upper_hal_cam$(DELIM)interface

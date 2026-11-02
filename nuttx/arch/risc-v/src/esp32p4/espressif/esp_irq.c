@@ -35,6 +35,7 @@
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/sched.h>
 
 #include "irq/irq.h"
 
@@ -743,6 +744,34 @@ IRAM_ATTR void *riscv_dispatch_irq(uintreg_t mcause, uintreg_t *regs)
 
       irq = mcause &
             (VECTORS_MCAUSE_INTBIT_MASK | VECTORS_MCAUSE_REASON_MASK);
+    }
+
+  /* Early boot (openvela SIMPLE_BOOT): an interrupt source armed by the ROM can
+   * fire before the scheduler is up, when g_running_task is still NULL and the
+   * generic top half would fault on the null dereference.  Ignore such
+   * interrupts; the scheduler re-enables what it needs.
+   *
+   * ⚠️ The guard must apply to **hardware interrupts only** (irq >
+   * RISCV_MAX_EXCEPTION).  Exceptions/syscalls (irq 0..15) have to reach
+   * riscv_doirq() even when g_running_task is NULL, because up_exit() clears
+   * g_running_task *on purpose* and then raises SYS_restore_context (an ECALL,
+   * i.e. exception 11) so that the top half can switch to the next ready task.
+   * Swallowing that ECALL made every task exit a terminal hang: the ECALL was
+   * re-executed forever (~5e5/s) with interrupts effectively dead, taking the
+   * tick, the network and the console down with it (observed on ai_agent
+   * startup and on a plain NSH `exit`; details in
+   * docs/90_归档/开发过程复盘与改进清单.md §26).
+   *
+   * This guard used to live in the generic arch/risc-v/src/common/riscv_doirq.c;
+   * it moved here on 2026-11-02 so that the delivery leaves the generic layer
+   * untouched.  For this chip the path below is the only caller of
+   * riscv_doirq() (esp_vectors.S -> exception_common -> riscv_dispatch_irq),
+   * so guarding here is equivalent.
+   */
+
+  if (g_running_task == NULL && irq > RISCV_MAX_EXCEPTION)
+    {
+      return regs;
     }
 
   regs = riscv_doirq(irq, regs);

@@ -5,7 +5,7 @@
 
 if ARCH_CHIP_ESP32P4
 
-source "arch/risc-v/src/common/espressif/Kconfig"
+source "arch/risc-v/src/esp32p4/espressif/Kconfig"
 
 config ESP32P4_SELECTS_REV_LESS_V3
 	bool "Select ESP32-P4 revisions <3.0 (No >=3.x Support)"

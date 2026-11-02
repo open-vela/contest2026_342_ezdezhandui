@@ -221,6 +221,10 @@ option(
   "Enable and use a persistent ESP third-party HAL cache directory under nuttx/../nxtmpdir"
   OFF)
 
+# NOTE: this is a *build directory* path, not a source path.  It deliberately
+# keeps the historical "common/espressif" spelling so that existing build
+# directories / caches of the esp-hal-3rdparty clone keep working after the
+# layer moved to arch/risc-v/src/esp32p4/espressif (2026-11-02).
 get_filename_component(
   ESP_HAL_3RDPARTY_CHIP_DIR
   "${NUTTX_BINARY_DIR}/arch/risc-v/src/common/espressif/${ESP_HAL_3RDPARTY_REPO_NAME}"
@@ -346,9 +350,9 @@ if(NOT IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}")
   # (~line 941).  Applying 0001 first made 0002 fail.  Apply 0002 (mbedTLS
   # Kconfig visibility) first, then 0001 (os.c/os.h + MEMPROT note).
   vela_apply_hal_patch(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch)
   vela_apply_hal_patch(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../esp32p4/patches/0001-openvela-compat-os.c.patch)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0001-openvela-compat-os.c.patch)
 
   # Copy gpio_sig_map.h and irq.h from the esp-hal-3rdparty repository to the NuttX directory
   file(MAKE_DIRECTORY ${NUTTX_BINARY_DIR}/include/arch/chip)

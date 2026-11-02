@@ -29,7 +29,7 @@
 # <builddir> -t flash
 #
 # The ``flash`` target is defined in
-# arch/risc-v/src/common/espressif/CMakeLists.txt. It runs this file via cmake
+# arch/risc-v/src/esp32p4/espressif/CMakeLists.txt. It runs this file via cmake
 # -P with BINARY_DIR, SOURCE_DIR, and NUTTX_DIR set; the serial port must be set
 # in the ESPTOOL_PORT environment variable (unset or empty is a fatal error
 # unless you pass a non-empty -DESPTOOL_PORT to cmake -P).

@@ -77,7 +77,7 @@ ifeq ($(CONFIG_ESP_PCNT),y)
 endif
 
 ifeq ($(CONFIG_ESPRESSIF_ULP_USE_TEST_BIN),y)
-  include $(TOPDIR)$(DELIM)arch$(DELIM)risc-v$(DELIM)src$(DELIM)common$(DELIM)espressif$(DELIM)ulp_makefile
+  include $(TOPDIR)$(DELIM)arch$(DELIM)risc-v$(DELIM)src$(DELIM)esp32p4$(DELIM)espressif$(DELIM)ulp_makefile
 endif
 
 ifeq ($(CONFIG_ETC_ROMFS),y)

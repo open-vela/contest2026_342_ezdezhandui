@@ -21,7 +21,17 @@
 ############################################################################
 
 include common/Make.defs
-include common/espressif/Make.defs
+include chip/espressif/Make.defs
+
+# riscv_mtimer.c is added to CMN_CSRCS unconditionally by the baseline
+# arch/risc-v/src/common/Make.defs, but it cannot compile while
+# CONFIG_ONESHOT_COUNT is off (struct oneshot_operations_s has no clkcnt
+# members).  P4 does not use the RISC-V mtimer oneshot lower half, so drop it
+# here instead of editing the generic layer.  Same idiom as the riscv_vectors.S
+# filter-out in arch/risc-v/src/esp32p4/espressif/Make.defs.
+ifneq ($(CONFIG_ONESHOT_COUNT),y)
+CMN_CSRCS := $(filter-out riscv_mtimer.c,$(CMN_CSRCS))
+endif
 
 CHIP_CSRCS += esp_chip_rev.c esp32p4_atomic.c
 

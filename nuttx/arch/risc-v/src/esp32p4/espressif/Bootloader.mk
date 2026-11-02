@@ -26,7 +26,11 @@ CHIP_SERIES = $(patsubst "%",%,$(CONFIG_ESPRESSIF_CHIP_SERIES))
 
 TOOLSDIR             = $(TOPDIR)/tools/espressif
 CHIPDIR              = $(TOPDIR)/arch/risc-v/src/chip
-BOOTLOADER_SRCDIR    = $(CHIPDIR)/bootloader
+
+# MCUboot work tree (clones + generated bootloader.conf + out/): a build
+# artifact, kept in $(TOPDIR) next to build-$(CHIP_SERIES)-bootloader and
+# mcuboot-$(CHIP_SERIES).bin rather than inside the delivered chip directory.
+BOOTLOADER_SRCDIR    = $(TOPDIR)/bootloader-$(CHIP_SERIES)
 BOOTLOADER_OUTDIR    = $(BOOTLOADER_SRCDIR)/out
 BOOTLOADER_CONFIG    = $(BOOTLOADER_SRCDIR)/bootloader.conf
 

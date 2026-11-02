@@ -20,8 +20,10 @@
 #
 # ##############################################################################
 
-# Include common espressif CMake configuration
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../common/espressif espressif)
+# Include the espressif layer CMake configuration.  It lives inside this chip
+# directory (moved from arch/risc-v/src/common/espressif on 2026-11-02) so that
+# the delivery writes nothing into the generic RISC-V layer.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/espressif espressif)
 
 set(SRCS esp_chip_rev.c esp32p4_atomic.c)
 

@@ -28,4 +28,4 @@ set(ULP_APP_BIN
     ${NUTTX_DIR}/Documentation/platforms/risc-v/${CONFIG_ARCH_CHIP}/boards/${CONFIG_ARCH_BOARD}/ulp_blink.bin
 )
 
-include(${NUTTX_DIR}/arch/risc-v/src/common/espressif/esp_ulp.cmake)
+include(${NUTTX_DIR}/arch/risc-v/src/esp32p4/espressif/esp_ulp.cmake)

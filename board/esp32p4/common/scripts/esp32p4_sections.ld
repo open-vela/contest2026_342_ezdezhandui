@@ -775,7 +775,7 @@ SECTIONS
 #if defined(CONFIG_ESPRESSIF_BOOTLOADER_MCUBOOT) && !defined(CONFIG_ESPRESSIF_SIMPLE_BOOT)
   /* openvela/MCUboot: NuttX maps the flash region itself, using
    *   paddr = CONFIG_ESPRESSIF_OTA_PRIMARY_SLOT_OFFSET + <section LMA>
-   * (see arch/risc-v/src/common/espressif/esp_start.c, map_rom_segments()).
+   * (see arch/risc-v/src/esp32p4/espressif/esp_start.c, map_rom_segments()).
    * The LMA therefore has to be a slot-relative *flash byte offset*, not the
    * virtual address: this linker script has no `AT>` rule here, so
    * LOADADDR() would return the VMA and the computed paddr would be

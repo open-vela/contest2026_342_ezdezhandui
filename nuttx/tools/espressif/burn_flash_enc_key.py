@@ -9,7 +9,7 @@
 # Invocation
 # ----------
 # Normally you do not run this script by hand. The CMake target ``burn_enc_key``
-# (arch/risc-v/src/common/espressif/CMakeLists.txt) runs:
+# (arch/risc-v/src/esp32p4/espressif/CMakeLists.txt) runs:
 #
 #   cmake -E env NUTTX_ESPEFUSE=<path> NUTTX_KEY=<path> -- python3 "$0"
 #

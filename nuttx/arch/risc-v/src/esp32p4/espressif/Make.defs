@@ -274,7 +274,7 @@ endif
 	$(Q) cd chip/$(ESP_HAL_3RDPARTY_REPO)/components/mbedtls/mbedtls && git apply ../../../nuttx/patches/components/mbedtls/mbedtls/*.patch
 endif
 
-include common$(DELIM)espressif$(DELIM)Bootloader.mk
+include chip$(DELIM)espressif$(DELIM)Bootloader.mk
 
 # Silent preprocessor warnings
 
@@ -288,7 +288,7 @@ CHIP_SERIES = $(patsubst "%",%,$(CONFIG_ESPRESSIF_CHIP_SERIES))
 include chip/hal_${CHIP_SERIES}.mk
 
 ifeq ($(CONFIG_ESPRESSIF_WIRELESS),y)
-	include common$(DELIM)espressif$(DELIM)Wireless.mk
+	include chip$(DELIM)espressif$(DELIM)Wireless.mk
 endif
 
 context:: chip/$(ESP_HAL_3RDPARTY_REPO)
@@ -304,5 +304,5 @@ ifeq ($(CONFIG_ESPRESSIF_USE_LP_CORE),y)
 	$(call DELDIR,chip/ulp)
 endif
 
-INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)common$(DELIM)espressif
-VPATH += common$(DELIM)espressif
+INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)esp32p4$(DELIM)espressif
+VPATH += esp32p4$(DELIM)espressif

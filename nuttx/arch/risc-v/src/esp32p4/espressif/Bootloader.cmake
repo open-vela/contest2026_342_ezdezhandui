@@ -25,7 +25,13 @@
 # ##############################################################################
 
 set(TOOLSDIR ${NUTTX_DIR}/tools/espressif)
-set(BOOTLOADER_SRCDIR ${CMAKE_CURRENT_SOURCE_DIR}/bootloader)
+
+# MCUboot work tree (clones + generated bootloader.conf + out/).  It is a build
+# artifact, so it lives next to the other MCUboot artifacts in ${NUTTX_DIR}
+# (like build-${CHIP_SERIES}-bootloader and mcuboot-${CHIP_SERIES}.bin) and not
+# inside the source tree -- the chip directory is delivered wholesale, and a
+# 1.6 GB untracked tree there would end up in the submission.
+set(BOOTLOADER_SRCDIR ${NUTTX_DIR}/bootloader-${CHIP_SERIES})
 set(BOOTLOADER_OUTDIR ${BOOTLOADER_SRCDIR}/out)
 set(BOOTLOADER_CONFIG ${BOOTLOADER_SRCDIR}/bootloader.conf)
 

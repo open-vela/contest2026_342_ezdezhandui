@@ -357,8 +357,23 @@ CP 其实回了，只是**超过主机 5s 同步超时被丢弃**（触发扫描
 - 应用侧：扫描移出 UI 线程（detached pthread + 队列），网络页显示"扫描中…"，
   进页面自动扫一次；新增 `deskmate --wifi-probe`（可配 `--report` 写文件）。
 
-现状：扫描**不再报错**（`driver_errno=0`，约 11s 返回），但 **CP 回报 0 个 AP**。
-待确认的环境因素：C6 只支持 2.4G（若周围只有 5G AP 就必然为空）+ 模块天线是否接好。
+现状（**已用 JTAG 读 RAM 定论**，不依赖串口/人眼）：
+
+```bash
+# 符号地址从 ELF 取，值从板上 RAM 读（串口被驱动日志占满时的取证手段）
+tools/test/hw_var_read.sh g_scan_state g_scan_count g_scan_err g_wifi_last_errno
+# 0x4ff6437c: err=0  count=0  state=2(DONE)  last_errno=0
+```
+
+即：**扫描正常完成、没有任何驱动错误，但确实一个 AP 都没扫到**（`g_scan_aps` 全 0）。
+所以不是应用/传输层 bug —— 是**射频层没收到任何 AP**。C6 只支持 2.4 GHz，而现场
+保存的 SSID 叫 `Hello_World_5G`（5G），模块用的是**板载天线**。结论：要么附近没有
+2.4G AP，要么信号弱到扫不到。要证明射频通路，需要一个 **2.4G 的 SSID+密码**做一次
+关联（关联成功 + RSSI 非 0 就是铁证）；否则只能记录为"环境无 2.4G AP"。
+
+另外修掉了一个会干扰扫描的问题：网络页原来**每 50ms** 就 `getifaddrs` + `SIOCGIWESSID`
+（netdev 每个 ioctl 还打一行 INFO），把驱动 RPC 层和串口都刷爆了。现在列表刷新节流到
+**1s**，netdev 的 ioctl 追踪改成编译开关。
 
 ### 10.3 取证方式的变化（重要）
 

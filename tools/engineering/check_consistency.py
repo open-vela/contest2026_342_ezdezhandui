@@ -92,6 +92,10 @@ def sha256(path):
     return h.hexdigest()
 
 
+# linkfile 覆盖的工作区目录（这些目录本身会被算成"改动"，属于已交付）
+LINKFILE_DESTS: set[str] = set()
+
+
 def load_copyfiles():
     """读 manifest 的 <copyfile src dest>，返回 [(src_in_repo, dest_in_ws)]。"""
     if not os.path.exists(XML):
@@ -103,6 +107,11 @@ def load_copyfiles():
         dest = el.get("dest")
         if src and dest:
             pairs.append((src, dest))
+    # linkfile 的 dest 也属于"已交付"（它是符号链接，git status 会把它算成改动）
+    for el in root.iter("linkfile"):
+        src, dest = el.get("src"), el.get("dest")
+        if src and dest and os.path.isdir(os.path.join(REPO, src)):
+            LINKFILE_DESTS.add(dest.rstrip("/"))
     # <linkfile> 也可用于整棵子树（symlink）：展开成逐文件比较，
     # 只处理 src 落在本仓内的那些（AI skills 项目的 linkfile 不属于本仓）
     for el in root.iter("linkfile"):
@@ -174,6 +183,12 @@ def under_protected(path):
 SHARED_PREFIX = "nuttx/arch/risc-v/src/common/espressif/"
 
 
+def is_linkfile_dest(proj, rel):
+    full = proj + "/" + rel if not proj.endswith("/") else proj + rel
+    return any(full == d or d.startswith(full + "/") or full.startswith(d + "/")
+               for d in LINKFILE_DESTS)
+
+
 def is_intentional_undelivered(proj, rel):
     """公共层里"有意不交付"的文件（最小集之外的直属文件 + NEVER_DELIVER）。"""
     full = proj + "/" + rel
@@ -231,7 +246,7 @@ def check_undelivered(pairs):
             if is_noise(p):
                 noise += 1
                 continue
-            if is_intentional_undelivered(proj, p):
+            if is_intentional_undelivered(proj, p) or is_linkfile_dest(proj, p):
                 noise += 1
                 continue
             if touches_protected(proj, p):

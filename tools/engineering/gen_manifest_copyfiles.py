@@ -45,6 +45,8 @@ XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 # （证明确实不在构建图中），并烧写真机复验通过（MCUboot + NSH + connected +
 # DhcpDnsStatus link=1 dhcp=1 ip=192.168.1.9 + wlan0 192.168.1.9）。
 # 重新计算：python3 tools/engineering/shared_minimal.py（需先构建一次主板）
+# 注意：默认**全量交付**（见 --shared-minimal）。下面这份集合只在显式传
+# --shared-minimal 时使用。
 SHARED_MINIMAL = {
     "Bootloader.c",
     "Bootloader.cmake",
@@ -252,8 +254,9 @@ def main():
     ap.add_argument("--check", action="store_true", help="只校验不写入")
     ap.add_argument("--check-revision", action="store_true",
                     help="只校验 revision 是否等于本仓当前 HEAD")
-    ap.add_argument("--no-shared-minimal", action="store_true",
-                    help="关闭公共层最小交付集（回退为交付全部公共层文件）")
+    ap.add_argument("--shared-minimal", action="store_true",
+                    help="只交付公共层最小集（默认**交付全部**公共层文件；"
+                         "裁剪会让评审端用基线版本，需谨慎）")
     ap.add_argument("--linkfile-threshold", type=int, default=20,
                     help="自包含子树文件数达到该值时改用一条 <linkfile>（默认 20）")
     ap.add_argument("--no-linkfile", action="store_true",
@@ -275,17 +278,22 @@ def main():
     with open(XML, encoding="utf-8") as f:
         lines = f.read().split("\n")
 
-    # ── revision 自动维护 + 清理孤立元素 ───────────────────────────────────
-    head = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"],
-                          capture_output=True, text=True).stdout.strip()
-    proj_re = re.compile(r'(<project\s+path="contest2026_342_ezdezhandui"[^>]*?revision=")([0-9a-f]+)(")')
+    # ── revision 维护 + 清理孤立元素 ───────────────────────────────────────
+    # 用**分支名**而不是 SHA：SHA 钉版永远落后一个提交（含清单的那个提交本身也会改 HEAD），
+    # 评审端 repo sync 取分支最新即可，天然拿到包含清单的版本。
+    BRANCH = "dev-ai-contest-2026"
+    head = subprocess.run(["git", "-C", REPO, "rev-parse", "--abbrev-ref", "HEAD"],
+                          capture_output=True, text=True).stdout.strip() or BRANCH
+    if head in ("HEAD", "", "detached"):
+        head = BRANCH
+    proj_re = re.compile(r'(<project\s+path="contest2026_342_ezdezhandui"[^>]*?revision=")([0-9A-Za-z._/-]+)(")')
     cur = proj_re.search("\n".join(lines))
     cur_rev = cur.group(2) if cur else None
     if args.check_revision:
-        if cur_rev != head:
-            print("❌ revision 陈旧: %s != HEAD %s" % (cur_rev, head))
+        if cur_rev not in (head, BRANCH):
+            print("❌ revision 不是当前分支/最新提交: %s (期望 %s)" % (cur_rev, head))
             return 1
-        print("✅ revision == HEAD (%s)" % head[:12])
+        print("✅ revision == %s" % cur_rev)
         return 0
 
     # 孤立 <remote name="ezxu">（没有任何 project 引用）与失效注释
@@ -324,7 +332,7 @@ def main():
 
     # ── 公共层最小交付集 + 永不交付清单 ─────────────────────────────────────
     SHARED_PREFIX = "nuttx/arch/risc-v/src/common/espressif/"
-    if not args.no_shared_minimal:
+    if args.shared_minimal:
         kept2, dropped_shared = [], 0
         for src, dest in wanted:
             if src in NEVER_DELIVER:
@@ -337,7 +345,7 @@ def main():
                     continue
             kept2.append((src, dest))
         if dropped_shared:
-            print("公共层最小集: 不交付 %d 个公共层文件（评审端用基线版本）" % dropped_shared)
+            print("公共层最小集(opt-in): 不交付 %d 个公共层文件（评审端用基线版本）" % dropped_shared)
         wanted = kept2
 
     # ── 混合策略：自包含子树用一条 <linkfile>，其余逐文件 <copyfile> ──────────

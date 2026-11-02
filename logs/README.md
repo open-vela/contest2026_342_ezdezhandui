@@ -4,6 +4,8 @@
 |---|---|
 | `2026-10-30_wifi-sdio-session.md` | WiFi（C6 + SDIO + ESP-Hosted）驱动实现全程会话记录（用户指令 / 助手正文 / 工具调用摘要）|
 | `2026-10-30_session-raw.jsonl.zstd` | 同一会话的**原始未加工**记录（DSH session v4 JSONL，zstd 压缩，33,723 行）|
+| `2026-11-02_p4-sync-session.md` | P4 交付/强制同步/clean-room 验证的会话记录（用户指令 / 助手正文 / 工具调用摘要）|
+| `2026-11-02_session-raw.jsonl.zstd` | 同一会话的**原始未加工**记录（DSH session v4 JSONL，zstd 压缩）|
 
 ## 查看原始记录
 

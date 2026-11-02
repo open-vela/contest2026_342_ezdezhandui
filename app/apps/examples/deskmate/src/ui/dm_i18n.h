@@ -3,85 +3,122 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * Every user-visible string of the DeskMate UI lives here.  Two reasons:
+ * DeskMate UI 的全部面向用户文案（中文）。两条纪律：
  *
- *   1. translation is a single-file change, and
- *   2. tools/engineering/gen_dm_font.sh extracts the glyph set from this file
- *      to generate the CJK subset font, so no label may be written inline in
- *      a page implementation.
+ *   1. 页面与控件里**不写**字面量，一律引用这里；中英文切换/改字只动本文件。
+ *   2. tools/engineering/gen_dm_font.sh 从本文件（以及页面里的字面量）抽字形，
+ *      生成 dm_font_16 / dm_font_24 子集字体——所以新增中文必须落在字面量里。
+ *
+ * 不翻译的部分（工程标识，脚本/文档按它们断言）：
+ *   [dm-check] 键名、DM-READY/DM-EXIT/DM-TOUR DONE/DM-SELFTEST RESULT:、
+ *   DM_LOG 诊断行、NSH 命令与参数（deskmate --selftest/--tour/...）。
  ****************************************************************************/
 
 #ifndef __APPS_EXAMPLES_DESKMATE_UI_DM_I18N_H
 #define __APPS_EXAMPLES_DESKMATE_UI_DM_I18N_H
 
-/* Titles and chrome */
+/* 品牌与状态栏 */
 
-#define DM_I18N_APP_TITLE       "DeskMate"
-#define DM_I18N_APP_SUBTITLE    "openvela control panel"
+#define DM_I18N_APP_TITLE       "桌伴"
+#define DM_I18N_APP_SUBTITLE    "openvela 智能中控屏"
 
-/* Tabs */
+/* 底部标签栏（2~4 字，1024×600 下 5 等分不挤） */
 
-#define DM_I18N_TAB_HOME        "Home"
-#define DM_I18N_TAB_CAMERA      "Camera"
-#define DM_I18N_TAB_CHAT        "Chat"
-#define DM_I18N_TAB_NET         "Network"
-#define DM_I18N_TAB_SETTINGS    "Settings"
+#define DM_I18N_TAB_HOME        "首页"
+#define DM_I18N_TAB_CAMERA      "相机"
+#define DM_I18N_TAB_CHAT        "对话"
+#define DM_I18N_TAB_NET         "网络"
+#define DM_I18N_TAB_SETTINGS    "设置"
 
-/* Home page */
+/* 首页 */
 
-#define DM_I18N_HOME            "HOME"
-#define DM_I18N_SYSTEM_CARD     "System"
-#define DM_I18N_BUILD           "Build"
-#define DM_I18N_LVGL            "LVGL"
-#define DM_I18N_DISPLAY         "Display"
-#define DM_I18N_BACKEND         "Backend"
-#define DM_I18N_UPTIME          "Uptime"
-#define DM_I18N_TOUCH_CARD      "Touch"
-#define DM_I18N_TAP_BUTTON      "TAP"
-#define DM_I18N_TAP_HINT        "tap to prove input reaches the widgets"
-#define DM_I18N_TAP_COUNT       "taps"
-#define DM_I18N_STATE_CARD      "Capabilities"
-#define DM_I18N_CAMERA_STATE    "Camera"
-#define DM_I18N_NET_STATE       "Network"
-#define DM_I18N_AGENT_STATE     "Agent"
+#define DM_I18N_HOME            "首页"
+#define DM_I18N_SYSTEM_CARD     "系统"
+#define DM_I18N_BUILD           "版本"
+#define DM_I18N_LVGL            "图形库"
+#define DM_I18N_DISPLAY         "显示"
+#define DM_I18N_BACKEND         "后端"
+#define DM_I18N_UPTIME          "运行时长"
+#define DM_I18N_SECONDS         "秒"
+#define DM_I18N_STATE_CARD      "能力"
+#define DM_I18N_CAMERA_STATE    "摄像头"
+#define DM_I18N_NET_STATE       "网络"
+#define DM_I18N_AGENT_STATE     "智能体"
+#define DM_I18N_TOUCH_CARD      "触摸"
+#define DM_I18N_TAP_BUTTON      "点我"
+#define DM_I18N_TAP_HINT        "点击这里，证明触摸已到达控件"
+#define DM_I18N_TAP_COUNT       "次"
+#define DM_I18N_NOT_OPENED      "未打开"
 
-/* Camera page */
+/* 智能体状态（dm_agent_state() 返回 off/mock/online/offline，这里给中文名） */
 
-#define DM_I18N_CAMERA_TITLE    "Camera preview"
-#define DM_I18N_CAMERA_SYNTH    "synthetic source (no sensor on this target)"
-#define DM_I18N_CAMERA_V4L2     "V4L2 /dev/video0"
-#define DM_I18N_CAMERA_FRAMES   "frames"
-#define DM_I18N_CAMERA_MOTION   "motion"
-#define DM_I18N_CAPTURE         "Capture"
-#define DM_I18N_ASK_VISION      "Ask the agent"
+#define DM_I18N_AGENT_OFF       "未启用"
+#define DM_I18N_AGENT_MOCK      "离线应答"
+#define DM_I18N_AGENT_ONLINE    "已连服务"
+#define DM_I18N_AGENT_OFFLINE   "未连服务"
 
-/* Chat page */
+/* 相机页 */
 
-#define DM_I18N_CHAT_TITLE      "Conversation"
-#define DM_I18N_CHAT_HINT       "pick a prompt or type below"
-#define DM_I18N_CHAT_SEND       "Send"
-#define DM_I18N_CHAT_CLEAR      "Clear"
-#define DM_I18N_CHAT_YOU        "You"
-#define DM_I18N_CHAT_AGENT      "DeskMate"
+#define DM_I18N_CAMERA_TITLE    "摄像头预览"
+#define DM_I18N_CAMERA_SYNTH    "合成画面（本机无摄像头）"
+#define DM_I18N_CAMERA_V4L2     "V4L2 摄像头 /dev/video0"
+#define DM_I18N_CAMERA_FRAMES   "帧数"
+#define DM_I18N_CAMERA_MOTION   "运动量"
+#define DM_I18N_CAPTURE         "抓拍"
+#define DM_I18N_ASK_VISION      "让智能体看一眼"
+#define DM_I18N_CAMERA_ABSENT   "摄像头不可用"
+#define DM_I18N_CAMERA_ASK      "看一下摄像头现在的画面（第 %d 帧，%s 后端，%d×%d），描述你看到了什么。"
+#define DM_I18N_MOTION_EVENT    "摄像头检测到画面在动。"
 
-/* Network page */
+/* 对话页 */
 
-#define DM_I18N_NET_TITLE       "Network"
-#define DM_I18N_NET_IFACES      "Interfaces"
-#define DM_I18N_NET_WIFI        "WiFi"
-#define DM_I18N_NET_SCAN        "Scan"
-#define DM_I18N_NET_CONNECT     "Connect"
-#define DM_I18N_NET_NO_WIFI     "no wireless interface"
-#define DM_I18N_NET_NO_AP       "no access point found"
-#define DM_I18N_NET_NONE        "no interface"
-#define DM_I18N_NET_LINKED      "associated with"
+#define DM_I18N_CHAT_TITLE      "对话"
+#define DM_I18N_CHAT_HINT       "从下面挑一句，或直接输入"
+#define DM_I18N_CHAT_SEND       "发送"
+#define DM_I18N_CHAT_CLEAR      "清空"
+#define DM_I18N_CHAT_YOU        "我"
+#define DM_I18N_CHAT_AGENT      "桌伴"
+#define DM_I18N_CHAT_READY      "桌伴已就绪。当前是离线应答后端；连上 ai_agent 服务后会自动转给大模型。"
+#define DM_I18N_PRESET_TIME     "现在几点了？"
+#define DM_I18N_PRESET_NET      "网络现在怎么样？"
+#define DM_I18N_PRESET_CAMERA   "你看到什么了？"
+#define DM_I18N_PRESET_NOTE     "帮我记一下这件事"
 
-/* Settings page */
+/* 网络页 */
 
-#define DM_I18N_SETTINGS_TITLE  "Settings"
-#define DM_I18N_AGENT_ENDPOINT  "Agent endpoint"
-#define DM_I18N_SELFTEST        "Run self-test"
-#define DM_I18N_SNAPSHOT        "Save snapshot"
-#define DM_I18N_ABOUT           "About"
+#define DM_I18N_NET_TITLE       "网络"
+#define DM_I18N_NET_IFACES      "网络接口"
+#define DM_I18N_NET_WIFI        "无线"
+#define DM_I18N_NET_SCAN        "扫描"
+#define DM_I18N_NET_CONNECT     "连接"
+#define DM_I18N_NET_NO_WIFI     "本机没有无线网卡"
+#define DM_I18N_NET_NO_AP       "没有扫描到接入点"
+#define DM_I18N_NET_NONE        "没有可用接口"
+#define DM_I18N_NET_LINKED      "已连接到"
+#define DM_I18N_NET_RUNNING     "运行中"
+#define DM_I18N_NET_UP          "已启用"
+#define DM_I18N_NET_DOWN        "已关闭"
+#define DM_I18N_NET_MASK        "掩码"
+#define DM_I18N_NET_WIRELESS    "无线"
+#define DM_I18N_NET_SIGNAL      "信号"
+
+/* 设置页 */
+
+#define DM_I18N_SETTINGS_TITLE  "设置"
+#define DM_I18N_AGENT_ENDPOINT  "智能体地址"
+#define DM_I18N_SELFTEST        "运行自检"
+#define DM_I18N_SNAPSHOT        "保存快照"
+#define DM_I18N_ANNOUNCE        "主动播报演练"
+#define DM_I18N_ABOUT           "关于"
+#define DM_I18N_ABOUT_TEXT      "四路能力在一块屏上：摄像头（V4L2）、无线（WAPI/wlan0）、有线（eth0）、触摸（/dev/input0）。"
+#define DM_I18N_SETTINGS_ANNOUNCE_TEXT "你让我主动说句话。"
+#define DM_I18N_SNAP_FAILED     "快照失败：%d"
+#define DM_I18N_SNAP_WRITTEN    "快照已保存：%d 字节 → %s"
+#define DM_I18N_QUEUED          "主动消息已入队"
+
+/* 通用 */
+
+#define DM_I18N_YES             "是"
+#define DM_I18N_NO              "否"
 
 #endif /* __APPS_EXAMPLES_DESKMATE_UI_DM_I18N_H */

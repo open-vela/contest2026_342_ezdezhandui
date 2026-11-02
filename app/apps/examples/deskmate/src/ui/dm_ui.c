@@ -99,6 +99,28 @@ static void dm_ui_tab_cb(lv_event_t *event)
   (void)dm_ui_goto(index);
 }
 
+static const char *dm_ui_agent_label(void)
+{
+  const char *state = dm_agent_state();
+
+  if (strcmp(state, "off") == 0)
+    {
+      return DM_I18N_AGENT_OFF;
+    }
+
+  if (strcmp(state, "mock") == 0)
+    {
+      return DM_I18N_AGENT_MOCK;
+    }
+
+  if (strcmp(state, "online") == 0)
+    {
+      return DM_I18N_AGENT_ONLINE;
+    }
+
+  return DM_I18N_AGENT_OFFLINE;
+}
+
 static void dm_ui_set_clock(void)
 {
   time_t now = time(NULL);
@@ -170,7 +192,8 @@ int dm_ui_create(void)
                                lv_color_hex(DM_COL_ACCENT), 0, 16);
     lv_obj_align(g_page_title, LV_ALIGN_CENTER, 0, 0);
 
-    g_agent_badge = dm_badge(bar, "agent: -", lv_color_hex(DM_COL_MUTED));
+    g_agent_badge = dm_badge(bar, DM_I18N_AGENT_STATE "：-",
+                             lv_color_hex(DM_COL_MUTED));
     lv_obj_align(g_agent_badge, LV_ALIGN_RIGHT_MID, -170, 0);
 
     g_clock = dm_label_at(bar, "--:--:--", DM_FONT_BODY,
@@ -440,7 +463,8 @@ void dm_ui_tick(void)
 
   if (g_agent_badge != NULL)
     {
-      lv_label_set_text_fmt(g_agent_badge, "agent: %s", dm_agent_state());
+      lv_label_set_text_fmt(g_agent_badge, DM_I18N_AGENT_STATE "：%s",
+                            dm_ui_agent_label());
     }
 
   /* Drain whatever the agent produced - LLM replies, offline answers, and

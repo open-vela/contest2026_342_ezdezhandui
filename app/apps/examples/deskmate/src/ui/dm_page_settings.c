@@ -54,12 +54,12 @@ static void dm_settings_snapshot_cb(lv_event_t *event)
   written = dm_display_snapshot(path);
   if (written > 0)
     {
-      dm_label_set(s_status, "snapshot: %d bytes -> %s", written, path);
+      dm_label_set(s_status, DM_I18N_SNAP_WRITTEN, written, path);
       DM_LOG("settings: snapshot written (%d bytes)", written);
     }
   else
     {
-      dm_label_set(s_status, "snapshot failed: %d", written);
+      dm_label_set(s_status, DM_I18N_SNAP_FAILED, written);
       DM_WARN("settings: snapshot failed (%d)", written);
     }
 }
@@ -71,8 +71,8 @@ static void dm_settings_proactive_cb(lv_event_t *event)
       return;
     }
 
-  dm_agent_push_proactive("You asked me to announce myself.");
-  dm_label_set(s_status, "proactive event queued");
+  dm_agent_push_proactive(DM_I18N_SETTINGS_ANNOUNCE_TEXT);
+  dm_label_set(s_status, "%s", DM_I18N_QUEUED);
 }
 
 static int dm_page_settings_create(lv_obj_t *parent, int w, int h)
@@ -99,7 +99,7 @@ static int dm_page_settings_create(lv_obj_t *parent, int w, int h)
 
   (void)dm_button(card, DM_I18N_SNAPSHOT, 200, 44,
                   dm_settings_snapshot_cb, NULL);
-  (void)dm_button(card, "Announce", 200, 44,
+  (void)dm_button(card, DM_I18N_ANNOUNCE, 200, 44,
                   dm_settings_proactive_cb, NULL);
 
   s_status = dm_label(card, "-", DM_FONT_SMALL, lv_color_hex(DM_COL_MUTED));
@@ -122,10 +122,7 @@ static int dm_page_settings_create(lv_obj_t *parent, int w, int h)
                  DM_I18N_LVGL, lv_version_info());
   }
 
-  dm_label(card,
-           "Four capabilities on one panel: camera (V4L2), WiFi (WAPI/wlan0), "
-           "ethernet (eth0), touch (/dev/input0).",
-           DM_FONT_SMALL, lv_color_hex(DM_COL_MUTED));
+  dm_label(card, DM_I18N_ABOUT_TEXT, DM_FONT_SMALL, lv_color_hex(DM_COL_MUTED));
 
   dm_page_settings_update();
 

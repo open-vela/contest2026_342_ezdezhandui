@@ -209,15 +209,17 @@ static void dm_page_net_update(void)
 
               snprintf(text, sizeof(text), "%s %s%s%s",
                        e->name,
-                       e->running ? "RUNNING" : (e->up ? "UP" : "down"),
+                       e->running ? DM_I18N_NET_RUNNING
+                                  : (e->up ? DM_I18N_NET_UP : DM_I18N_NET_DOWN),
                        e->ip[0] != '\0' ? "  " : "", e->ip);
 
               dm_label(s_if_list, text, DM_FONT_SMALL, colour);
 
               if (e->mask[0] != '\0')
                 {
-                  snprintf(text, sizeof(text), "  mask %s%s", e->mask,
-                           e->wireless ? "  (wireless)" : "");
+                  snprintf(text, sizeof(text), "  %s %s%s",
+                           DM_I18N_NET_MASK, e->mask,
+                           e->wireless ? "  " DM_I18N_NET_WIRELESS : "");
                   dm_label(s_if_list, text, DM_FONT_SMALL,
                            lv_color_hex(DM_COL_MUTED));
                 }

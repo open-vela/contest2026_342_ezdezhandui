@@ -24,7 +24,9 @@
 #include "hal/dm_display.h"
 #include "hal/dm_net.h"
 #include "hal/dm_touch.h"
+#include "ui/dm_i18n.h"
 #include "ui/dm_page.h"
+#include "ui/dm_theme.h"
 #include "ui/dm_ui.h"
 
 /****************************************************************************
@@ -97,6 +99,105 @@ static void dm_selftest_snapshot(const char *name)
   written = dm_display_snapshot(path);
   snprintf(g_detail, sizeof(g_detail), "%s -> %d bytes", name, written);
   dm_check("snapshot:written", written > 0, g_detail);
+}
+
+/* 中文字形覆盖：直接问 LVGL 这个字在字体里有没有轮廓。
+ * 字体缺字时 lv_font_get_glyph_dsc() 返回 false，与"画出来是方框"相比这是确定性的断言。
+ */
+
+/* 最小 UTF-8 解码：LVGL 的 lv_text_encoded_next 是 lv_text.c 里的文件内常量指针，
+ * 不是导出符号，直接调用会跳到数据段（实测把 UI 线程挂死），所以这里自带一个。
+ */
+
+static uint32_t dm_utf8_next(const char *s, uint32_t *index)
+{
+  const uint8_t *p = (const uint8_t *)s + *index;
+  uint32_t cp;
+  int extra;
+  int k;
+
+  if (*p < 0x80)
+    {
+      cp = *p;
+      extra = 0;
+    }
+  else if ((*p & 0xe0) == 0xc0)
+    {
+      cp = *p & 0x1f;
+      extra = 1;
+    }
+  else if ((*p & 0xf0) == 0xe0)
+    {
+      cp = *p & 0x0f;
+      extra = 2;
+    }
+  else if ((*p & 0xf8) == 0xf0)
+    {
+      cp = *p & 0x07;
+      extra = 3;
+    }
+  else
+    {
+      (*index)++;
+      return 0xfffd;                 /* 非法起始字节，按宽度 1 跳过 */
+    }
+
+  for (k = 1; k <= extra; k++)
+    {
+      if ((p[k] & 0xc0) != 0x80)
+        {
+          (*index)++;
+          return 0xfffd;
+        }
+
+      cp = (cp << 6) | (p[k] & 0x3f);
+    }
+
+  *index += (uint32_t)(extra + 1);
+  return cp;
+}
+
+static int dm_font_missing(const lv_font_t *font, const char *text,
+                           char *first_missing, size_t missing_len)
+{
+  int missing = 0;
+  uint32_t index = 0;
+
+  while (text[index] != '\0')
+    {
+      uint32_t start = index;
+      uint32_t cp = dm_utf8_next(text, &index);
+      lv_font_glyph_dsc_t g;
+
+      /* 防御：任何不推进索引的情况都必须跳出，否则断言会把 UI 线程卡死。 */
+
+      if (index <= start || cp == 0)
+        {
+          break;
+        }
+
+      memset(&g, 0, sizeof(g));
+
+      if (!lv_font_get_glyph_dsc(font, &g, cp, 0))
+        {
+          if (missing == 0 && first_missing != NULL && missing_len > 0)
+            {
+              uint32_t n = index - start;
+
+              if (n > missing_len - 1)
+                {
+                  n = (uint32_t)missing_len - 1;
+                }
+
+              memcpy(first_missing, text + start, n);
+              first_missing[n] = '\0';
+            }
+
+          missing++;
+        }
+    }
+
+  return missing;
 }
 
 void dm_selftest_begin(const char *snap_path)
@@ -178,6 +279,43 @@ void dm_selftest_begin(const char *snap_path)
     snprintf(detail, sizeof(detail), "page=%s",
              dm_ui_current_id() != NULL ? dm_ui_current_id() : "?");
     dm_check("ui:home", dm_ui_current() == 0, detail);
+  }
+
+  /* 中文字形覆盖（正文 16px / 标题 24px）：字体缺字时这里必然 FAIL，
+   * 不必靠人看截图猜。
+   */
+
+  {
+    static const char body_text[] =
+        DM_I18N_APP_SUBTITLE DM_I18N_TAB_HOME DM_I18N_TAB_CAMERA
+        DM_I18N_TAB_CHAT DM_I18N_TAB_NET DM_I18N_TAB_SETTINGS
+        DM_I18N_SYSTEM_CARD DM_I18N_STATE_CARD DM_I18N_TOUCH_CARD
+        DM_I18N_TAP_HINT DM_I18N_CAPTURE DM_I18N_ASK_VISION
+        DM_I18N_NET_IFACES DM_I18N_NET_WIFI DM_I18N_NET_SCAN
+        DM_I18N_NET_LINKED DM_I18N_SETTINGS_TITLE DM_I18N_ABOUT
+        DM_I18N_AGENT_STATE DM_I18N_CHAT_SEND DM_I18N_CHAT_CLEAR;
+    char first[8] = "";
+    int miss;
+    miss = dm_font_missing(DM_FONT_BODY, body_text, first, sizeof(first));
+
+    snprintf(g_detail, sizeof(g_detail), "%d 字缺（首个：%s）", miss,
+             miss > 0 ? first : "-");
+    dm_check("font:cjk-body", miss == 0, g_detail);
+  }
+
+  {
+    static const char title_text[] = DM_I18N_APP_TITLE
+                                     DM_I18N_TAB_HOME DM_I18N_TAB_CAMERA
+                                     DM_I18N_TAB_CHAT DM_I18N_TAB_NET
+                                     DM_I18N_TAB_SETTINGS "0123456789:";
+    char first[8] = "";
+    int miss;
+
+    miss = dm_font_missing(DM_FONT_TITLE, title_text, first, sizeof(first));
+
+    snprintf(g_detail, sizeof(g_detail), "%d 字缺（首个：%s）", miss,
+             miss > 0 ? first : "-");
+    dm_check("font:cjk-title", miss == 0, g_detail);
   }
 
   /* Touch: aim at the home button and let LVGL consume the sample. */

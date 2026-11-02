@@ -130,13 +130,12 @@ static void dm_agent_mock_answer(const char *text)
       if (localtime_r(&now, &tm_buf) != NULL)
         {
           snprintf(reply, sizeof(reply),
-                   "It is %02d:%02d:%02d local time. I am running offline, "
-                   "so this answer comes from the on-device responder.",
+                   "现在是 %02d:%02d:%02d。我在离线应答模式，这个答案由设备本机给出。",
                    tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
         }
       else
         {
-          snprintf(reply, sizeof(reply), "I could not read the clock.");
+          snprintf(reply, sizeof(reply), "读不到时钟。");
         }
     }
   else if (dm_agent_contains(text, "network") ||
@@ -151,41 +150,36 @@ static void dm_agent_mock_answer(const char *text)
       (void)dm_net_describe(desc, sizeof(desc));
 
       snprintf(reply, sizeof(reply),
-               "Interfaces: %s. %s", desc,
-               (net != NULL && net->online) ? "The link is up."
-                                            : "Nothing has an address yet.");
+               "接口：%s。%s", desc,
+               (net != NULL && net->online) ? "链路是通的。" : "还没有地址。");
     }
   else if (dm_agent_contains(text, "camera") ||
            dm_agent_contains(text, "see") ||
            dm_agent_contains(text, "相机"))
     {
       snprintf(reply, sizeof(reply),
-               "The camera page is capturing through the %s backend. "
-               "Tap Capture on that page to keep a frame.",
+               "摄像头页正在用 %s 后端采集。在那页点「抓拍」可以留一帧。",
                "camera");
     }
   else if (dm_agent_contains(text, "note") ||
            dm_agent_contains(text, "记"))
     {
       snprintf(reply, sizeof(reply),
-               "Noted. In the full product this is the quick-note skill: the "
-               "utterance is turned into a structured reminder and handed to "
-               "the cron service.");
+               "记下了。完整产品里这是「速记」技能：把这句话整理成结构化提醒，"
+               "交给定时任务。" );
     }
   else if (dm_agent_contains(text, "hello") ||
            dm_agent_contains(text, "hi") ||
            dm_agent_contains(text, "你好"))
     {
       snprintf(reply, sizeof(reply),
-               "Hello. I am DeskMate, the openvela control panel. Ask for the "
-               "time, the network state or the camera.");
+               "你好，我是桌伴，openvela 中控屏。可以问我时间、网络状态或摄像头画面。");
     }
   else
     {
       snprintf(reply, sizeof(reply),
-               "I heard \"%.120s\". I am running in the offline responder "
-               "here; with the ai_agent WebSocket backend this turn goes to "
-               "the LLM instead.", text);
+               "我听到的是「%.120s」。这里是离线应答；接上 ai_agent 的 WebSocket "
+               "后端后，这句话会转给大模型。", text);
     }
 
   g_recv++;

@@ -30,19 +30,25 @@
 #define DM_COL_MUTED     0x8d9bb0
 #define DM_COL_ON_ACCENT 0x08131f
 
-#if defined(LV_FONT_MONTSERRAT_28) && LV_FONT_MONTSERRAT_28
-#  define DM_FONT_TITLE (&lv_font_montserrat_28)
-#else
-#  define DM_FONT_TITLE LV_FONT_DEFAULT
-#endif
+/* 中文子集字体（tools/engineering/gen_dm_font.sh 生成，见 fonts/）。
+ * 两档：24px 用于标题/时钟，16px 用于正文与标签。
+ * 需要退回内置大字库时：开 CONFIG_EXAMPLES_DESKMATE_FONT_SIMSUN，
+ * 并把下面三行换成 &lv_font_simsun_16_cjk。
+ */
 
-#if defined(LV_FONT_MONTSERRAT_20) && LV_FONT_MONTSERRAT_20
-#  define DM_FONT_BODY (&lv_font_montserrat_20)
+#if defined(CONFIG_EXAMPLES_DESKMATE_FONT_SIMSUN)
+LV_FONT_DECLARE(lv_font_simsun_16_cjk)
+#  define DM_FONT_TITLE (&lv_font_simsun_16_cjk)
+#  define DM_FONT_BODY  (&lv_font_simsun_16_cjk)
+#  define DM_FONT_SMALL (&lv_font_simsun_16_cjk)
 #else
-#  define DM_FONT_BODY LV_FONT_DEFAULT
-#endif
+LV_FONT_DECLARE(dm_font_24)
+LV_FONT_DECLARE(dm_font_16)
 
-#define DM_FONT_SMALL LV_FONT_DEFAULT
+#  define DM_FONT_TITLE (&dm_font_24)
+#  define DM_FONT_BODY  (&dm_font_16)
+#  define DM_FONT_SMALL (&dm_font_16)
+#endif
 
 #define DM_MARGIN 16
 #define DM_STATUS_H 56

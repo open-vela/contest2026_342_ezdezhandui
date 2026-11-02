@@ -98,6 +98,10 @@ static unsigned int dm_now_ms(void)
  * still produces console evidence.
  */
 
+/* 本次运行是否成功挂上 hostfs（挂上才用 /host 目录放快照）。 */
+
+static bool g_hostfs_mounted;
+
 static void dm_mount_hostfs(const char *path)
 {
 #if defined(CONFIG_FS_HOSTFS)
@@ -119,6 +123,7 @@ static void dm_mount_hostfs(const char *path)
     }
 
   (void)mkdir(DM_SNAP_HOST_DIR, 0777);
+  g_hostfs_mounted = true;
   DM_LOG("hostfs: %s mounted at /host", path);
 #else
   DM_LOG("hostfs: not enabled in this configuration (%s)",
@@ -316,6 +321,23 @@ int main(int argc, FAR char *argv[])
 
   if (selftest || tour)
     {
+      /* 快照目录：模拟器经 hostfs 落宿主；真机没有 hostfs，落 /tmp（tmpfs）。
+       * --snap 显式给了就以它为准。
+       */
+
+      char default_snap[96];
+
+      if (snap_path == NULL)
+        {
+          snprintf(default_snap, sizeof(default_snap), "%s/%s",
+                   g_hostfs_mounted ? "/host/deskmate" : "/tmp/deskmate",
+                   selftest ? "dm_selftest.bin" : "dm_tour.bin");
+
+          (void)mkdir(g_hostfs_mounted ? "/host/deskmate" : "/tmp/deskmate",
+                      0777);
+          snap_path = default_snap;
+        }
+
       if (selftest)
         {
           dm_selftest_begin(snap_path);

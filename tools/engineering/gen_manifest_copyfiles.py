@@ -55,14 +55,15 @@ XML = os.path.join(REPO, "contest2026_342_ezdezhandui.xml")
 SHARED_COMMON_PREFIX = "nuttx/arch/risc-v/src/common/"
 SHARED_COMMON_KEEP = {SHARED_COMMON_PREFIX + "CMakeLists.txt"}
 
-# 只读保护区（作品仓内路径）：另一条对话在开发的模拟器 UI 及其 sim/emulator 侧配置。
-# 它们**绝不进本仓交付**——copyfile 部署会把旧副本盖回别人的工作区。
-PROTECTED_REPO_PATHS = (
-    "app/apps/examples/deskmate",
-    "nuttx/drivers/net/wifi_sim.c",
-    "nuttx/boards/sim/sim/sim/configs/deskmate",
-    "board/vela",                 # vendor/openvela（goldfish/vela 板级）
-)
+# 只读保护区（作品仓内路径）：**默认空**。
+#
+# 历史上这里曾把应用层（deskmate / sim 配置 / goldfish 板级 / wifi_sim 修复）列为
+# "另一条对话的工作"，理由是 copyfile 部署可能把旧副本盖回工作区。2026-11-02 起
+# 应用层（中文 UI + 双模拟器轨）已成为本作品正式交付的一部分，因此解除保护——
+# 仓内副本与工作区保持同步（交付前跑一次 rsync），部署不会产生回退。
+#
+# 保留这个开关是为了将来真需要"只读、不交付"的路径时能一处声明。
+PROTECTED_REPO_PATHS = ()
 
 # 交付树里永不枚举的构建产物目录/文件（前缀匹配目录名）
 # linkfile 判定时忽略的工作区噪声（构建残留；被符号链接遮住无副作用）

@@ -236,6 +236,15 @@ int dm_camera_create(int preview_w, int preview_h)
 
   memset(g_pixels, 0, (size_t)preview_w * preview_h * sizeof(uint16_t));
 
+  /* 先把 frame 描述好：真机首帧没就绪时 poll() 会返回 -EAGAIN，页面仍然要知道
+   * 预览缓冲在哪（否则 lv_canvas_set_buffer(NULL) 会直接断言死机）。
+   */
+
+  memset(&g_frame, 0, sizeof(g_frame));
+  g_frame.pixels = g_pixels;
+  g_frame.width  = preview_w;
+  g_frame.height = preview_h;
+
 #ifdef DM_HAVE_V4L2
   g_fd = open(DM_CAMERA_PATH, O_RDWR);
   if (g_fd >= 0)
@@ -243,8 +252,8 @@ int dm_camera_create(int preview_w, int preview_h)
       g_src_width  = 1280;
       g_src_height = 720;
 
-      if (dm_camera_try_fmt(V4L2_PIX_FMT_RGB565) == 0 ||
-          dm_camera_try_fmt(V4L2_PIX_FMT_SBGGR8) == 0 ||
+      if (dm_camera_try_fmt(V4L2_PIX_FMT_SBGGR8) == 0 ||
+          dm_camera_try_fmt(V4L2_PIX_FMT_RGB565) == 0 ||
           dm_camera_try_fmt(V4L2_PIX_FMT_RGB24) == 0)
         {
           struct v4l2_requestbuffers req;
@@ -371,6 +380,10 @@ int dm_camera_poll(struct dm_camera_frame_s *out)
       ret = poll(&pfd, 1, 0);
       if (ret <= 0)
         {
+          g_frame.pixels = g_pixels;
+          g_frame.width  = g_width;
+          g_frame.height = g_height;
+          g_frame.synthetic = false;
           return -EAGAIN;
         }
 

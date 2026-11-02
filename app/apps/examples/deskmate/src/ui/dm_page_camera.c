@@ -51,6 +51,7 @@ static lv_obj_t *s_canvas;
 static lv_obj_t *s_info;
 static lv_obj_t *s_stats;
 static uint16_t *s_prev;
+static uint16_t *s_fallback;
 static int  s_frames;
 static int  s_motion;
 static bool s_motion_latched;
@@ -105,8 +106,7 @@ static void dm_page_camera_ask_cb(lv_event_t *event)
       return;
     }
 
-  snprintf(prompt, sizeof(prompt),
-           "Look at the camera frame %d (%s backend, %dx%d) and describe it.",
+  snprintf(prompt, sizeof(prompt), DM_I18N_CAMERA_ASK,
            s_frames, dm_camera_backend(), DM_CAMERA_PREVIEW_W,
            DM_CAMERA_PREVIEW_H);
 
@@ -123,7 +123,7 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
 
   if (dm_camera_create(DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H) != 0)
     {
-      dm_label(s_root, "camera unavailable", DM_FONT_BODY,
+      dm_label(s_root, DM_I18N_CAMERA_ABSENT, DM_FONT_BODY,
                lv_color_hex(DM_COL_ERR));
       return -1;
     }
@@ -137,12 +137,28 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
   (void)dm_camera_poll(NULL);
   first = dm_camera_last();
 
+  if (first == NULL || first->pixels == NULL)
+    {
+      /* 真机上首帧可能还没就绪：先给一块黑底缓冲，别让 canvas 拿到 NULL。 */
+
+      s_fallback = calloc((size_t)DM_CAMERA_PREVIEW_W * DM_CAMERA_PREVIEW_H, 2);
+
+      if (s_fallback == NULL)
+        {
+          dm_label(s_root, DM_I18N_CAMERA_ABSENT, DM_FONT_BODY,
+                   lv_color_hex(DM_COL_ERR));
+          return -1;
+        }
+    }
+
   card = dm_card(s_root, DM_MARGIN, DM_MARGIN,
                  w - 2 * DM_MARGIN - info_w - DM_MARGIN, h - 2 * DM_MARGIN,
                  lv_color_hex(DM_COL_CARD));
 
   s_canvas = lv_canvas_create(card);
-  lv_canvas_set_buffer(s_canvas, (void *)first->pixels,
+  lv_canvas_set_buffer(s_canvas,
+                       (void *)((first != NULL && first->pixels != NULL) ?
+                                first->pixels : s_fallback),
                        DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H,
                        LV_COLOR_FORMAT_RGB565);
   lv_obj_align(s_canvas, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -213,7 +229,7 @@ static void dm_page_camera_update(void)
           if (!s_motion_latched && s_motion >= DM_CAMERA_MOTION_PCT)
             {
               s_motion_latched = true;
-              dm_agent_push_proactive("Motion detected in front of the camera.");
+              dm_agent_push_proactive(DM_I18N_MOTION_EVENT);
               DM_LOG("camera: motion %d%% -> proactive event", s_motion);
             }
         }

@@ -507,3 +507,10 @@ CONFIG_ESPRESSIF_HOSTED_OFFICIAL=y
 # 无线命令行：wapi scan/connect（验收④）
 
 # 无线 ioctl 派发（SIOCSIW*，验收④的 netdev 路径）
+
+# ── 无线 ioctl 层：让应用能对 wlan0 做 SIOCGIW*（扫描/关联/ESSID）──
+# 板载 ESP-Hosted 已把 wlan0 注册成 wireless netdev；缺了这三层，上层无线
+# ioctl 不会被派发到驱动，应用侧只能看到 eth0（实测 -ENODEV）。
+CONFIG_DRIVERS_WIRELESS=y
+CONFIG_NETDEV_WIRELESS_IOCTL=y
+CONFIG_NETDEV_WIRELESS_HANDLER=y

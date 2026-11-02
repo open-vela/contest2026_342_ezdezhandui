@@ -96,7 +96,7 @@ static int dm_home_create(lv_obj_t *parent, int w, int h)
   s_clock = dm_label(card, "--:--:--", DM_FONT_TITLE,
                      lv_color_hex(DM_COL_TEXT));
 
-  s_uptime = dm_label(card, DM_I18N_UPTIME ": 0 s", DM_FONT_SMALL,
+  s_uptime = dm_label(card, DM_I18N_UPTIME "：0 " DM_I18N_SECONDS, DM_FONT_SMALL,
                       lv_color_hex(DM_COL_MUTED));
 
   /* Right column: capability summary. */
@@ -160,10 +160,21 @@ static void dm_home_update(void)
       lv_label_set_text(s_clock, text);
     }
 
+  if (s_uptime != NULL)
+    {
+      struct timespec ts;
+
+      if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+        {
+          dm_label_set(s_uptime, DM_I18N_UPTIME "：%u " DM_I18N_SECONDS,
+                       (unsigned)ts.tv_sec);
+        }
+    }
+
   if (s_cap_camera != NULL)
     {
       dm_label_set(s_cap_camera, "%s: %s", DM_I18N_CAMERA_STATE,
-                   dm_camera_ready() ? dm_camera_backend() : "not opened");
+                   dm_camera_ready() ? dm_camera_backend() : DM_I18N_NOT_OPENED);
     }
 
   if (s_cap_net != NULL)

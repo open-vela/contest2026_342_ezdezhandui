@@ -15,6 +15,7 @@
          revision="dev-ai-contest-2026">
     <linkfile src="nuttx/arch/risc-v/src/esp32p4" dest="nuttx/arch/risc-v/src/esp32p4"/>
     <linkfile src="board/esp32p4" dest="vendor/espressif/boards/esp32p4"/>
+    <linkfile src="app/apps/examples/deskmate" dest="apps/examples/deskmate"/>
     <linkfile src="app/apps/examples/audiotest" dest="apps/examples/audiotest"/>
     <linkfile src="app/apps/system/v4l2ctl" dest="apps/system/v4l2ctl"/>
     <linkfile src="nuttx/arch/risc-v/include/esp32p4" dest="nuttx/arch/risc-v/include/esp32p4"/>
@@ -30,11 +31,13 @@
     <copyfile src="nuttx/arch/risc-v/Kconfig" dest="nuttx/arch/risc-v/Kconfig"/>
     <copyfile src="nuttx/arch/risc-v/src/cmake/Toolchain.cmake" dest="nuttx/arch/risc-v/src/cmake/Toolchain.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/CMakeLists.txt"/>
+    <copyfile src="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig" dest="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig"/>
     <copyfile src="nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
     <copyfile src="nuttx/drivers/audio/es8311.c" dest="nuttx/drivers/audio/es8311.c"/>
     <copyfile src="nuttx/drivers/input/gt9xx.c" dest="nuttx/drivers/input/gt9xx.c"/>
     <copyfile src="nuttx/drivers/mmcsd/CMakeLists.txt" dest="nuttx/drivers/mmcsd/CMakeLists.txt"/>
     <copyfile src="nuttx/drivers/mmcsd/sdio.c" dest="nuttx/drivers/mmcsd/sdio.c"/>
+    <copyfile src="nuttx/drivers/net/wifi_sim.c" dest="nuttx/drivers/net/wifi_sim.c"/>
     <copyfile src="nuttx/drivers/video/CMakeLists.txt" dest="nuttx/drivers/video/CMakeLists.txt"/>
     <copyfile src="nuttx/drivers/video/Kconfig" dest="nuttx/drivers/video/Kconfig"/>
     <copyfile src="nuttx/drivers/video/Make.defs" dest="nuttx/drivers/video/Make.defs"/>
@@ -71,5 +74,6 @@
     <copyfile src="app/ai_agent/src/infra/vela_tls.c" dest="packages/ai_agent/src/infra/vela_tls.c"/>
     <copyfile src="app/ai_agent/src/stubs.c" dest="packages/ai_agent/src/stubs.c"/>
     <copyfile src="app/ai_agent/src/tools/skill_loader.c" dest="packages/ai_agent/src/tools/skill_loader.c"/>
+    <copyfile src="board/vela/configs/goldfish-arm64-v8a-ap/defconfig" dest="vendor/openvela/boards/vela/configs/goldfish-arm64-v8a-ap/defconfig"/>
   </project>
 </manifest>

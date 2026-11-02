@@ -193,10 +193,10 @@ static int dm_page_chat_create(lv_obj_t *parent, int w, int h)
 
   static const char *presets[] =
   {
-    "What time is it?",
-    "How is the network?",
-    "What do you see?",
-    "Note this down",
+    DM_I18N_PRESET_TIME,
+    DM_I18N_PRESET_NET,
+    DM_I18N_PRESET_CAMERA,
+    DM_I18N_PRESET_NOTE,
   };
 
   s_root = dm_page_root(parent, w, h);
@@ -258,10 +258,7 @@ static int dm_page_chat_create(lv_obj_t *parent, int w, int h)
   lv_obj_align(s_keyboard, LV_ALIGN_BOTTOM_MID, 0, -DM_MARGIN);
   lv_obj_add_flag(s_keyboard, LV_OBJ_FLAG_HIDDEN);
 
-  dm_chat_bubble(DM_I18N_CHAT_AGENT,
-                 "DeskMate ready. Offline responder, or the ai_agent "
-                 "WebSocket backend when one is reachable.",
-                 false, false);
+  dm_chat_bubble(DM_I18N_CHAT_AGENT, DM_I18N_CHAT_READY, false, false);
 
   DM_LOG("ui: chat page built");
   return 0;

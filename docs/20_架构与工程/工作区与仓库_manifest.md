@@ -96,3 +96,35 @@ linkfile 子树整棵移走），再**只按 manifest 部署**（`<copyfile>` �
   `cmake_out/esp32p4-function-ev-board_nsh/` 供下次配置复用；
 - 内容层面的"编译 + 烧录 + 真机三项证据"已由共享层最小集实验完成（见上一节，证据目录
   `logs/20261101-211034_shared-minimal`），那次的树 = 交付内容（其余文件为基线版本）。
+
+## clean-room 通过 + 补上的一个真实缺口（2026-11-02）
+
+**结果**：在"评审端状态"的树上（工作区已对齐到交付内容）从零 configure 构建 → 烧录 → 真机三项证据全部复现：
+
+```
+MCUboot → NuttShell (NSH)
+connected to "Hello_World_2.4G" rssi=-50 ch=6
+DhcpDnsStatus iface=0 link=1 dhcp=1 ip=192.168.1.9
+wlan0 address 192.168.1.9 mask 255.255.255.0 gw 192.168.1.1
+```
+证据目录：`logs/20261102-090754_cleanroom`（固件 1830912 字节，烧录两镜像 hash 校验通过）。
+
+**排查过程中发现并修掉的一个真实缺口**：NuttX 架构层用 `arch/board/board.h` 找板级头文件，
+而 `<build>/include/arch/board` 指向 `${NUTTX_DIR}/arch/risc-v/include/board` —— 这个链接**只有 make 流程
+（`tools/configure.sh`）会创建，CMake 流程不会**。缺了它，`esp_idle.c` / `esp_i2c.c` / `esp_timerisr.c`
+等会因为找不到 `arch/board/board.h` 编译失败（评审端全新树必踩）。
+
+修法（改动落在我们自己的板级 CMakeLists，符合"公共层不放改动"的原则）：
+
+```cmake
+set(_board_inc  "${CMAKE_CURRENT_LIST_DIR}/include")
+set(_board_link "${NUTTX_DIR}/arch/risc-v/include/board")
+if(EXISTS "${_board_inc}" AND NOT EXISTS "${_board_link}")
+  file(CREATE_LINK "${_board_inc}" "${_board_link}" COPY_ON_ERROR SYMBOLIC)
+endif()
+```
+幂等：已存在就跳过。
+
+**另一个坑（工作区脏数据）**：`nuttx/arch/risc-v/include/board` 曾经指向 **esp32c6-devkitc**（早期 C6 交叉
+构建实验的残留），会让 P4 构建拿到错误的板级头文件（表现为 `BOARD_MIPI_DSI_* undeclared`）。重配前请确认
+该链接指向 P4 板级 include。

@@ -1,5 +1,12 @@
 # 项目状态（STATUS）
 
+> 最后更新：**2026-11-02** · **应用层中文化 + 真机移植**：DeskMate 中控 UI 已全中文
+> （自绘 CJK 子集字体 `dm_font_16/24`，字形数据 15.4 KB + 29.2 KB，P4 镜像余量 491 KB；
+> 新增确定性断言 `font:cjk-body/title` 逐字查轮廓，模拟器 **PASS 18/18**）。
+> 真机（ESP32-P4）已烧录并跑起来：中文/触摸/三页快照/切页/网口 全 PASS；上板暴露并修掉
+> 4 个真问题（快照目录无 hostfs、相机首帧空帧导致 canvas 断言、RGB565 start_capture 失败、
+> 板级缺无线 ioctl 层导致看不到 wlan0）。详见 `docs/30_实现/应用层_DeskMate_UI.md` §八/§九。
+
 > 最后更新：**2026-11-01** · **应用层（DeskMate 中控 UI）落地，并新增双模拟器验证轨**：
 > 新增应用 `apps/examples/deskmate`（→ `app/apps/examples/deskmate/`）——把**摄像头 /
 > WiFi / 网口 / 触摸屏**四条能力收进一个 LVGL 中控界面（首页 / 相机 / 对话 / 网络 / 设置

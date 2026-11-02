@@ -215,3 +215,73 @@ nsh> deskmate --selftest           # 同一份自检（快照 → /host 或 /tmp
   （离线回退 `EXAMPLES_DESKMATE_FONT_SIMSUN`，LVGL 内置 SimSun 16，约 149 KB）。
 - **TTS 播报**：应用侧**尚未**实现 `dm_audio`（平台侧 ES8311 播放链已打通）；主动事件目前只"上屏"，
   接上 `dm_audio` + TTS 即可"出声"——这是明确的下一步，不是已完成项。
+
+## 八、中文 UI（2026-11-02）
+
+界面语言从英文切到**中文**，并且不依赖内置大字体：
+
+| 项 | 做法 | 实测 |
+|---|---|---|
+| 文案 | `src/ui/dm_i18n.h` 全中文（80 个键）；页面/agent 里面向用户的字面量全部收进来 | — |
+| 不翻译 | `[dm-check]` 键名、`DM-READY/DM-EXIT/DM-TOUR DONE/DM-SELFTEST RESULT:`、`DM_LOG` 诊断、NSH 命令与参数 | 脚本断言不受影响 |
+| 字体 | 自绘子集：`fonts/dm_font_16.c`（正文）+ `fonts/dm_font_24.c`（标题），4bpp，`--no-compress` | 字形数据 **15.4 KB + 29.2 KB**；P4 镜像余量 **491 KB** |
+| 生成 | `tools/engineering/gen_dm_font.sh` 扫描应用全部字符串字面量取字形 | 324 字形（229 非 ASCII） |
+| 拉丁字形 | **拉丁取自 DejaVuSans、CJK 取自 DroidSansFallback（两字体 merge）** | 见下"踩坑" |
+| 断言 | `font:cjk-body` / `font:cjk-title`：`lv_font_get_glyph_dsc()` 逐字查轮廓 | 真机与模拟器均 `0 字缺` |
+
+### 8.1 两个踩过的坑
+
+1. **`DroidSansFallbackFull.ttf` 是纯 CJK 回退字体，不含 ASCII**。只用它生成时，
+   所有字母/数字都没有轮廓（UI 上会画方框）。`lv_font_conv` 支持多个 `--font`，
+   正解是 `--font DejaVuSans --range 0x20-0x7e --font DroidSansFallback --symbols <中日韩字符>`。
+2. **`--symbols` 里塞 ASCII 不可靠**：含 `\ " $` 等字符时会被工具当转义吞掉，症状是
+   "个别字母缺字"。ASCII 一律走 `--range`。
+3. 顺手修掉一个断言实现陷阱：LVGL 的 `lv_text_encoded_next` 是 `lv_text.c` 里的
+   **文件内常量函数指针**（不是导出符号），直接调用会跳进数据段把 UI 线程挂死；
+   断言里自带一个 20 行的 UTF-8 解码器。
+
+## 九、真机移植记录（ESP32-P4，2026-11-02）
+
+板子：`/dev/ttyACM0`（烧录/JTAG）+ `/dev/ttyUSB0`（console，115200，需 assert DTR/RTS）。
+启动日志确认四路外设都在位：
+
+```
+SC2336 chip ID: 0xcb3a            -> Camera registered on /dev/video0
+/dev/fb0 ready 1024x600 RGB565 @ 0x48000040 (1228800 bytes)
+GT911: cfg x_max=1024 y_max=600   -> GT911 touchscreen registered at /dev/input0
+eh_hosted_netdev: wlan0 registered (STA channel bound) / wlan0 up
+NuttShell (NSH) -> nsh>
+```
+
+### 9.1 第一次上板暴露的两个真问题（都已修）
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| `snapshot:written FAIL -2 bytes` | 默认快照目录写死 `/host/deskmate`，真机没有 hostfs → `-ENOENT` | 按 hostfs 是否真的挂上决定目录：挂上 `/host/deskmate`，否则 `/tmp/deskmate`（tmpfs） |
+| 点 Tab 切到相机页后 **断言死机**（`nsh_main`） | 首帧未就绪时 `dm_camera_poll()` 早退（`-EAGAIN`），`g_frame.pixels` 仍是 NULL，页面把它交给 `lv_canvas_set_buffer()` | ① `dm_camera_create()` 先填好 frame；② `poll()` 早退前也填；③ 页面再加一块黑底兜底缓冲 |
+| 相机 `esp_cam_ctlr_start failed: 258` | P4 上请求 `RGB565` 能过 `S_FMT` 但 `start_capture` 失败 | 格式优先级改成 **RAW8(SBGGR8) 优先**，应用侧做 2×2 去马赛克 |
+| `wifi:scan FAIL rc=-19 (ENODEV)` | 板级配置缺无线 ioctl 层 → 应用侧 `SIOCGIWNAME` 探不到 wlan0 | defconfig 补 `DRIVERS_WIRELESS` / `NETDEV_WIRELESS_IOCTL` / `NETDEV_WIRELESS_HANDLER`（esp_hosted 的 netdev 实现了 `SIOCGIWSCAN`） |
+
+### 9.2 真机自检现状
+
+修完前三条后，真机 `deskmate --agent mock --selftest` 已通过 17/18：
+`display:ready`（fbdev 1024×600）、`font:cjk-body/title`（0 字缺）、`touch:delivered`、
+三页快照各 1,228,800 B、`ui:page-rendered`、`net:interfaces`（`eth0 up 0.0.0.0`，网线未插）
+全部 PASS；唯一 FAIL 是 `wifi:scan`（见上表最后一行，修法已进 defconfig，待重构建复测）。
+
+### 9.3 取证链路
+
+```bash
+# 1) 烧录（MCUboot 双镜像，两镜像均 hash 校验）
+tools/build_flash/usb_stable.sh
+# 2) 复位并确认外设/target
+python3 tools/test/board.py reset
+# 3) 跑自检
+python3 tools/test/board.py run "deskmate --agent mock --selftest" --timeout 120
+# 4) 屏幕取证：帧缓冲 → PNG（OpenOCD dump + 与模拟器同一套判据）
+tools/test/hw_deskmate_evidence.sh
+```
+
+> console 端口被 Tabby 串口页占用时，读串口会报
+> `device reports readiness to read but returned no data`。本仓自带
+> `tools/engineering/tabby_mcp.py`（Tabby MCP），`close_tab` 关掉那个串口页即可释放。

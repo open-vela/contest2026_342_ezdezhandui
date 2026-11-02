@@ -1,0 +1,41 @@
+# Make 路径 filter-out 实证（2026-11-02）
+
+## 背景
+common/Make.defs（评审端基线版）无条件把 riscv_mtimer.c 加进 CMN_CSRCS；本板
+CONFIG_ONESHOT_COUNT=n 时它编译必失败，所以改成在芯片侧摘掉：
+arch/risc-v/src/esp32p4/Make.defs:
+    ifneq ($(CONFIG_ONESHOT_COUNT),y)
+    CMN_CSRCS := $(filter-out riscv_mtimer.c,$(CMN_CSRCS))
+    endif
+common/Make.defs 因此不再交付（评审端用基线那份）。
+
+## 做法（不需要跑整棵 make：在临时目录复现真实 include 链）
+真实链：arch/risc-v/src/Makefile:22 `include chip/Make.defs`，而
+esp32p4/Make.defs 先 `include common/Make.defs`（基线）再 `include chip/espressif/Make.defs`；
+第 52 行 `CSRCS = $(CHIP_CSRCS) $(CMN_CSRCS)`。临时目录用软链指向同一份文件，只替换变量。
+
+命令（节选）：
+    mkdir /tmp/mk-chain && cd /tmp/mk-chain
+    ln -s $TOPDIR/arch/risc-v/src/common common
+    ln -s $TOPDIR/arch/risc-v/src/esp32p4 chip
+    # Makefile: 设 TOPDIR/NUTTX_DIR/ARCH_SRCDIR/DELIM/OBJEXT/CONFIG_ONESHOT_COUNT=
+    #           include common/Make.defs / include chip/Make.defs
+    make show
+
+## 结果
+现状（有芯片侧 filter-out）:
+    riscv_mtimer.c in CMN_CSRCS : []
+    CMN_CSRCS 个数               : 56
+    esp_irq.c in CHIP_CSRCS      : [esp_irq.c]
+
+阴性对照（临时删掉那三行 filter-out，跑完立即还原、并 diff 校验与源文件一致）:
+    riscv_mtimer.c in CMN_CSRCS : [riscv_mtimer.c riscv_mtimer.c]
+    CMN_CSRCS 个数               : 58
+
+⇒ 基线的无条件加入确实存在，且被芯片侧 filter-out 在 `CSRCS = $(CHIP_CSRCS) $(CMN_CSRCS)`
+   之前清掉；riscv_mtimer.c 在 Make 路径不会被编译。
+   （对照里出现两次是因为临时 Makefile 也 include 了一次 common/Make.defs；真实流程只加一次。）
+
+## 说明
+本板在 openvela 里的 make 构建路径本身不通（README 记：评审走 `--cmake`），
+所以这里验证的是**规则与变量语义**，不是整棵 make 构建。

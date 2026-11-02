@@ -166,6 +166,9 @@ endif()
 | 烧录 | `usb_stable.sh` 两镜像 hash 校验通过（MCUboot 24608 B 从搬迁后的 `nuttx/bootloader-esp32p4` 重建） |
 | 真机三项 | ✅ 见下（证据目录 `logs/20261102-124236_espressif-move`） |
 | IRQ 守卫回归 | ✅ NSH 里执行 `exit`（8510a00 的复现场景）后串口**继续**输出 19 组 WiFi/SDIO 心跳 ⇒ 未复现"整机失聪"（同目录 `irq_guard_regression.txt`） |
+| `CONFIG_ESPRESSIF_HOSTED_OFFICIAL` | ✅ 本次 nsh 构建已覆盖（`configs/nsh/defconfig` 里 `ESPRESSIF_HOSTED_SDIO=y` + `ESPRESSIF_HOSTED_OFFICIAL=y`，构建日志里 `esp_hosted/official/port/...` 全部编过） |
+| **verify-drivers（全驱动）arch 目标** | ✅ 313 个 edge 全编过，`libarch.a` 3,552,682 B / 374 个成员；覆盖 `esp_adc/esp_csi/esp_dedic_gpio/esp_emac/esp_i2s/esp_lirc/esp_mipi_dsi/esp_touch/esp_rmt` + 新位置的 `esp_irq.c`/`esp_vectors.S`（同目录 `verify_drivers_arch_build.txt`）。2542 目标的**整机**构建（含 LVGL/应用）本轮没跑完，与上一轮结论一致 |
+| **Make 路径 filter-out** | ✅ 在临时目录复现真实 include 链（`chip/Make.defs` 先 `include common/Make.defs`）跑 `make show`：`CMN_CSRCS` 里**没有** `riscv_mtimer.c`；阴性对照（临时删掉那三行）里它出现 ⇒ 基线的无条件加入确实被芯片侧清掉（同目录 `make_path_filter_check.txt`） |
 
 ```
 [esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***

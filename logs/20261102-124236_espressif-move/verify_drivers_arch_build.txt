@@ -1,0 +1,32 @@
+# verify-drivers（全驱动配置）arch 目标构建验证（2026-11-02 13:47）
+
+## 目的
+nsh 配置只编译 19 个 espressif 层文件 + 4 个 P4 驱动；搬迁是"整层"搬，
+需要证明驱动更全的配置也能在新位置编过。
+
+## 做法
+- 全新构建目录 `cmake_out/esp32p4-verifydrv-fresh`（只预置 esp-hal-3rdparty 缓存）
+  `cmake -DBOARD_CONFIG=../vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/verify-drivers ... -GNinja`
+- 只构建 `arch` 目标（313 个 edge），不跑 2542 目标的整机（含 LVGL/应用，本轮时间不够；
+  上一轮 session 也得出同样结论）：
+
+      source build/envsetup.sh          # 需要 riscv-none-elf-* 在 PATH
+      cmake --build cmake_out/esp32p4-verifydrv-fresh --target arch -j8
+
+## 结果
+- 313 个 edge 全部编译通过，`arch/libarch.a` **3,552,682 字节**，含 **374** 个成员。
+- 归档里可见（本例覆盖了 nsh 配置编不到的驱动）：
+
+      esp_adc.c.o  esp_csi.c.o  esp_dedic_gpio.c.o  esp_emac.c.o
+      esp_i2s.c.o  esp_lirc.c.o  esp_mipi_dsi.c.o  esp_touch.c.o
+      esp_rmt.c.o                       <- 只有这个配置会编
+      esp_irq.c.o  esp_vectors.S.o  esp_start.c.o  esp_gpio.c.o  esp_serial.c.o
+      riscv_doirq.c.o                   <- 通用层基线版（守卫已移走）
+
+- 同一次构建里 MCUboot 也走完了 configure/build/install（`Performing install step for
+  'bootloader'`）⇒ 搬迁后的 `nuttx/bootloader-esp32p4` 工作树在第二条构建路径上同样可用。
+
+## 已知环境坑（不是代码问题）
+直接 `cmake --build` 时若 shell 没有 `riscv-none-elf-*` 的 PATH，会在最后
+`riscv-none-elf-ar` 一步报 `not found`（对象已全部编好）。`build.sh` / `source build/envsetup.sh`
+会把它加进 PATH；本次是先跑出该报错、再恢复 PATH 补完归档，`ARCH2_EXIT=0`。

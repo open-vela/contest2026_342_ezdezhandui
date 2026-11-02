@@ -1,0 +1,82 @@
+# IRQ 守卫下沉回归证据（2026-11-02）
+#
+# 背景：common/riscv_doirq.c 的早启动守卫已下沉到
+#       esp32p4/espressif/esp_irq.c 的 riscv_dispatch_irq()（全树唯一调用点）。
+# 场景：提交 8510a00 的复现场景 —— 在 NSH 里执行 `exit`（任务退出 -> up_exit()
+#       清 g_running_task -> 发 SYS_restore_context 的 ECALL）。守卫若失效，
+#       该 ECALL 会被反复重放（~5e5/s）导致整机失聪、串口再无输出。
+# 判据：`exit` 之后串口**继续**输出（WiFi/SDIO 任务心跳），即系统存活。
+# 采集：Tabby 串口会话 993d882c（/dev/ttyUSB0, 115200），2026-11-02 ~12:52
+
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+exit
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+eh_sdio: --- SDIO intr received ---
+eh_sdio: Intr: 00000000
+eh_sdio: --- Wait for SDIO intr ---
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x17 (CHIP_USB_UART_RESET),boot:0x7 (DOWNLOAD(USB/UART0/SPI))
+Core0 Saved PC:0x4ff4167e
+Core1 Saved PC:0x4fc06020
+waiting for download
+ESP-ROM:esp32p4-eco7-20260109
+Build:Jan  9 2026
+rst:0x17 (CHIP_USB_UART_RESET),boot:0xf (SPI_FAST_FLASH_BOOT)
+Core0 Saved PC:0x4fc0aa64
+Core1 Saved PC:0x4fc06020
+SPI mode:DIO, clock div:1
+load:0x4ff9f940,len:0xdac
+load:0x4ffa83c0,len:0x2ed0
+load:0x4ffb73d0,len:0xa00
+load:0x4ffb8be4,len:0x1940
+entry 0x4ffb953a
+[esp32p4] [INF] *** Booting MCUboot build v2.4.0-151-gcafbf800 ***
+[esp32p4] [INF] [boot] chip revision: v3.2
+[esp32p4] [INF] [boot] efuse block revision: v1.2
+[esp32p4] [INF] [boot.esp32p4] SPI Speed      : 80MHz
+[esp32p4] [INF] [boot.esp32p4] SPI Mode       : DIO
+[esp32p4] [INF] [boot.esp32p4] SPI Flash Size : 4MB
+[esp32p4] [INF] [boot] Enabling RNG early entropy source...
+[esp32p4] [INF] Image index: 0, Swap type: none
+[esp32p4] [INF] Disabling RNG early entropy source...

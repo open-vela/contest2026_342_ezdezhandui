@@ -1,0 +1,23 @@
+# 真机自检报告（含真实 AP）
+# 读法：board.py run "deskmate --agent mock --selftest --report /tmp/r.txt" 然后 cat /tmp/r.txt
+# 另可用 JTAG 读 g_selftest_scan_evidence（串口坏掉时的取证）
+
+[dm-check] display:ready                PASS 1024x600 16bpp fbdev
+[dm-check] font:cjk-body                PASS 0 字缺（首个：-）
+[dm-check] font:cjk-title               PASS 0 字缺（首个：-）
+[dm-check] lvgl:version                 PASS 
+[dm-check] net:interfaces               PASS eth0 UP 192.168.1.110; wlan0 UP 0.0.0.0
+[dm-check] snapshot:picture             PASS distinct=84 dominant=36% grad=2 n=12642
+[dm-check] snapshot:written             PASS dm_camera -> 1228800 bytes
+[dm-check] snapshot:written             PASS dm_home -> 1228800 bytes
+[dm-check] snapshot:written             PASS dm_net -> 1228800 bytes
+[dm-check] touch:delivered              PASS 0 -> 1
+[dm-check] touch:target                 PASS (133,459) ->
+[dm-check] ui:built                     PASS 4 objects, 5 pages
+[dm-check] ui:camera-page               PASS page=camera camera=off
+[dm-check] ui:home                      PASS page=home
+[dm-check] ui:net-page                  PASS eth0 UP 192.168.1.110; wlan0 UP 0.0.0.0
+[dm-check] ui:page-rendered             PASS home=0xa1e7b3cf camera=0xc7fbd067
+[dm-check] ui:tab-target                PASS (309,563)
+[dm-check] wifi:scan                    PASS 1 AP, first='Hello_World_2.4G' 0 dBm
+DM-SELFTEST RESULT: PASS (18/18)

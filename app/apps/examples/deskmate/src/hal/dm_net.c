@@ -207,14 +207,18 @@ static const char *dm_wifi_event_ssid(const struct iw_event *ev,
       return NULL;
     }
 
-  if (ptr >= (uintptr_t)sizeof(struct iw_point))
-    {
-      return (const char *)&ev->u.essid + sizeof(struct iw_point);
-    }
+  /* 驱动可能给两种形式：WAPI 规范的"缓冲内偏移"，或直接给数据地址
+   * （flat build 下两者都能读）。两种都认，避免又变成空 SSID。
+   */
 
   if (ptr + len <= total)
     {
       return base + ptr;
+    }
+
+  if (ptr >= 0x40000000u && ptr < 0x60000000u)
+    {
+      return (const char *)ptr;
     }
 
   return NULL;
@@ -428,6 +432,30 @@ int dm_net_wifi_link(char *ssid, size_t ssid_len, int *rssi)
 #endif
 }
 
+static size_t dm_wifi_event_len(uint16_t cmd)
+{
+  /* 驱动可能不填 ev.len：esp_hosted 的 netdev 在打包 iw_event 时只填了 cmd 和
+   * 联合体（实测就是这样，导致应用侧第一个事件就判非法、整张表被丢掉 ——
+   * 从机明明扫到 30 个 AP，应用却拿到 0 个）。这里按 cmd 反推长度兜底。
+   */
+
+  switch (cmd)
+    {
+      case SIOCGIWAP:
+        return IW_EV_LEN(ap_addr);
+      case SIOCGIWESSID:
+        return IW_EV_LEN(essid);
+      case SIOCGIWFREQ:
+        return IW_EV_LEN(freq);
+      case SIOCGIWENCODE:
+        return IW_EV_LEN(data);
+      case IWEVQUAL:
+        return IW_EV_LEN(qual);
+      default:
+        return 0;
+    }
+}
+
 static int dm_net_wifi_scan_once(struct dm_wifi_ap_s *aps, int max_aps)
 {
 #ifdef DM_HAVE_WAPI
@@ -533,9 +561,17 @@ static int dm_net_wifi_scan_once(struct dm_wifi_ap_s *aps, int max_aps)
 
   while (off + IW_EVENT_HEADER <= total)
     {
+      size_t elen;
+
       ev = (struct iw_event *)(scan_buf + off);
 
-      if (ev->len < IW_EVENT_HEADER || off + ev->len > total)
+      elen = ev->len;
+      if (elen < IW_EVENT_HEADER)
+        {
+          elen = dm_wifi_event_len(ev->cmd);
+        }
+
+      if (elen < IW_EVENT_HEADER || off + elen > total)
         {
           break;
         }
@@ -616,7 +652,7 @@ static int dm_net_wifi_scan_once(struct dm_wifi_ap_s *aps, int max_aps)
             break;
         }
 
-      off += ev->len;
+      off += elen;
     }
 
   if (cur != NULL)

@@ -407,3 +407,48 @@ ESP-Hosted 的 INFO 日志在 SDIO 数据路径上每秒数百行，会把 11520
 下一步（未做）：把扫描做成**板级能力**（内核态小 helper，或 boardctl/私有 ioctl），让应用
 通过"和开机线程同样的调用路径"拿 AP 列表；这也是让 `wifi:scan` 断言能升级成"必须 ≥1 个 AP"
 的前提。
+
+### 10.5 收官：扫描 0 个 AP 的真正根因是**主机侧解析**（已修，真机验证）
+
+第 10.4 节排掉四层问题后，我用 JTAG 读 netdev 新增的诊断全局，一次看清整条链：
+
+```
+g_dbg_wifi_setmode_rc = 0     # 扫描前 set_mode(STA) 成功
+g_dbg_wifi_mode_rc    = 0
+g_dbg_wifi_mode       = 1     # WIFI_MODE_STA
+g_dbg_wifi_scan_rc    = 0     # eh_host_wifi_scan_start 成功
+g_dbg_wifi_apnum_rc   = 0
+g_dbg_wifi_apnum      = 30    # ← 从机其实扫到了 30 个 AP！
+```
+
+**从机扫到了 30 个 AP，而应用侧 `g_scan_count` 一直是 0** —— 问题在主机侧取值：
+
+1. **netdev 打包 `iw_event` 时没有填 `ev.len`**（只填了 `cmd` 和联合体）。应用侧解析
+   循环第一步就是 `if (ev->len < IW_EVENT_HEADER) break;`，于是**第一个事件就把整张表
+   丢掉**，`found` 恒为 0。
+   修：netdev 打包时 `ev.len = IW_EV_LEN(field)`；应用侧同时兜底——`ev.len` 非法时按
+   `cmd` 反推长度（`dm_wifi_event_len()`）。
+2. **ESSID 指针不符合 WAPI 约定**：netdev 直接塞内核地址，应用侧按"缓冲内偏移"规则解析
+   → SSID 恒为空串。修：netdev 把名字字节**内联到缓冲区**、`pointer` 存偏移；应用侧同时
+   兼容"偏移"与"直接地址"两种形式。
+3. **没打包信号强度**：netdev 只发了 AP/ESSID/FREQ 三种事件，应用拿不到 dBm。修：补
+   `IWEVQUAL`（`level = ap->rssi`）。
+
+修完真机结果（`--report` 文件与 JTAG 双证据）：
+
+```
+[dm-check] wifi:scan                    PASS 1 AP, first='Hello_World_2.4G' 0 dBm
+DM-SELFTEST RESULT: PASS (18/18)
+```
+
+JTAG 直读应用内存的等价证据（`g_selftest_scan_evidence`）：
+
+```
+wifi:scan PASS 1 AP first='Hello_World_2.4G' bssid=88:00:33:77:ba:69 rssi=0 ch=0
+```
+
+`rssi=0` 是从机那条 AP record 里本来就是 0（信道/强度字段未填），不是解析问题——留作后续。
+
+**复盘**：这一路真正卡住的不是射频、不是 RPC 超时、也不是驱动不支持，而是**主机侧两个
+"结构体没填全"的协议细节**。诊断全局（`g_dbg_wifi_*`）是把"到底是射频没收到还是我们没
+解析对"一刀切开的关键手段；串口不可用时，JTAG 读 RAM 比任何日志都可靠。

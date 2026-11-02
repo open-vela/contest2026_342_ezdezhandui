@@ -66,6 +66,21 @@
 
 #define NETDEV_TAG "eh_hosted_netdev"
 
+/* 扫描链路的诊断寄存器（真机取证用）。
+ *
+ * 板上 115200 console 会被 SDIO 日志占满（nsh_consolewrite 发不出 buffer），
+ * 所以这些值故意做成**非 static 全局**：用 `tools/test/hw_var_read.sh` 按符号名
+ * 从 ELF 取地址、OpenOCD 读 RAM，就能在不依赖串口的情况下看清整条链。
+ */
+
+int g_dbg_wifi_setmode_rc;     /* 扫描前 set_mode(STA) 的返回值 */
+int g_dbg_wifi_mode_rc;        /* 回读 get_mode 的返回值 */
+int g_dbg_wifi_mode;           /* 回读到的模式（2 = WIFI_MODE_STA） */
+int g_dbg_wifi_scan_rc;        /* eh_host_wifi_scan_start 的返回值 */
+int g_dbg_wifi_apnum_rc;       /* scan_get_ap_num 的返回值 */
+int g_dbg_wifi_apnum;          /* scan_get_ap_num 给出的 AP 数 */
+int g_dbg_wifi_scan_calls;     /* 走进扫描分支的次数 */
+
 /* Frames handed up must fit the netdev buffer; the companion advertises 1536
  * byte transfers, and an Ethernet frame is at most 1518, so one MTU-sized
  * buffer is enough.
@@ -456,6 +471,10 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
           syslog(mret == ESP_OK ? LOG_INFO : LOG_WARNING,
                  "%s: pre-scan set_mode(STA) -> %d\n", NETDEV_TAG, mret);
 
+          g_dbg_wifi_scan_calls++;
+          g_dbg_wifi_setmode_rc = (int)mret;
+          g_dbg_wifi_mode_rc    = (int)eh_host_wifi_get_mode((wifi_mode_t *)&g_dbg_wifi_mode);
+
           /* 显式给扫描参数，不用 NULL（"IDF 默认"）。
            *
            * 真机实测（2026-11-02）：cfg=NULL 时扫描 RPC 能正常返回（rc=0、~11s），
@@ -474,6 +493,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
           scan_cfg.channel_bitmap.ghz_5_channels = 0;
 
           ret = eh_host_wifi_scan_start(&scan_cfg, true);
+          g_dbg_wifi_scan_rc = (int)ret;
           if (ret != ESP_OK)
             {
               syslog(LOG_ERR, "%s: scan failed: %d (retrying with defaults)\n",
@@ -487,6 +507,8 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
             }
 
           ret = eh_host_wifi_scan_get_ap_num(&count);
+          g_dbg_wifi_apnum_rc = (int)ret;
+          g_dbg_wifi_apnum    = (int)count;
           if (ret != ESP_OK)
             {
               return -EIO;
@@ -540,6 +562,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
               ev.u.ap_addr.sa_family = AF_INET;
               memcpy(ev.u.ap_addr.sa_data, ap->bssid, 6);
               need = IW_EV_LEN(ap_addr);
+              ev.len = (uint16_t)need;
 
               if (used + need > room)
                 {
@@ -549,14 +572,43 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
               memcpy(out + used, &ev, need);
               used += need;
 
-              /* The SSID, which is what a join matches on. */
+              /* The SSID, which is what a join matches on.
+               *
+               * WAPI 约定：essid.pointer 是**本缓冲区内的偏移**，名字字节跟在事件
+               * 结构后面。原来这里直接塞内核地址，应用侧按偏移规则解析 → 拿到空串。
+               */
+
+              {
+                size_t         alen = strnlen((FAR const char *)ap->ssid, 32) + 1;
+                size_t         elen = IW_EV_LEN(essid);
+
+                memset(&ev, 0, sizeof(ev));
+                ev.cmd = SIOCGIWESSID;
+                ev.u.essid.pointer = (FAR void *)(uintptr_t)(used + elen);
+                ev.u.essid.length  = alen;
+                ev.u.essid.flags   = 1;
+                ev.len = (uint16_t)elen;
+
+                if (used + elen + alen > room)
+                  {
+                    break;
+                  }
+
+                memcpy(out + used, &ev, elen);
+                memcpy(out + used + elen, ap->ssid, alen);
+                used += elen + alen;
+              }
+
+              /* 信号强度：应用要显示 dBm，缺了它整条记录没意义。 */
 
               memset(&ev, 0, sizeof(ev));
-              ev.cmd = SIOCGIWESSID;
-              ev.u.essid.pointer = (FAR void *)ap->ssid;
-              ev.u.essid.length  = strnlen((FAR const char *)ap->ssid, 32);
-              ev.u.essid.flags   = 1;
-              need = IW_EV_LEN(essid);
+              ev.cmd = IWEVQUAL;
+              ev.u.qual.level   = (uint8_t)(int8_t)ap->rssi;
+              ev.u.qual.qual    = 0;
+              ev.u.qual.noise   = 0;
+              ev.u.qual.updated = IW_QUAL_LEVEL_UPDATED | IW_QUAL_DBM;
+              need = IW_EV_LEN(qual);
+              ev.len = (uint16_t)need;
 
               if (used + need > room)
                 {
@@ -574,6 +626,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
               ev.u.freq.e    = 0;
               ev.u.freq.flags = IW_FREQ_FIXED;
               need = IW_EV_LEN(freq);
+              ev.len = (uint16_t)need;
 
               if (used + need > room)
                 {

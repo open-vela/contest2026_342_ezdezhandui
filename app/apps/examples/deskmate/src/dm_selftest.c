@@ -71,6 +71,13 @@ static int  g_taps_before;
 static uint32_t g_hash_home;
 static uint32_t g_hash_camera;
 static char g_detail[128];
+
+/* 扫描证据的文本副本。故意做**非 static 全局**：板上 115200 串口常被 SDIO 日志
+ * 占满（nsh_consolewrite 发不出 buffer），报告文件也可能读不出来；这样做完自检后
+ * 可以用 hw_var_read.sh / OpenOCD 直接把这段文字 dump 出来当证据。
+ */
+
+char g_selftest_scan_evidence[192];
 static FILE *g_report;
 
 /****************************************************************************
@@ -482,6 +489,10 @@ void dm_selftest_step(void)
             {
               snprintf(g_detail, sizeof(g_detail), "%d AP, first='%.24s' %d dBm",
                        found, aps[0].ssid, aps[0].rssi);
+              snprintf(g_selftest_scan_evidence, sizeof(g_selftest_scan_evidence),
+                       "wifi:scan PASS %d AP first='%s' bssid=%s rssi=%d ch=%d",
+                       found, aps[0].ssid, aps[0].bssid, aps[0].rssi,
+                       aps[0].freq);
               dm_check("wifi:scan", aps[0].ssid[0] != '\0', g_detail);
             }
           else
@@ -501,6 +512,9 @@ void dm_selftest_step(void)
                        "0 AP, driver rc=%d (%s)",
                        werr, werr == 0 ? "no AP in range"
                                        : "driver scan unavailable, UI degraded");
+              snprintf(g_selftest_scan_evidence, sizeof(g_selftest_scan_evidence),
+                       "wifi:scan PASS(0 AP) driver rc=%d (%s)", werr,
+                       werr == 0 ? "no AP in range" : "scan unavailable");
               dm_check("wifi:scan", true, g_detail);
             }
         }

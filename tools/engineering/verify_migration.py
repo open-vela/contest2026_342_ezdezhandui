@@ -146,12 +146,19 @@ def check_shared_clean():
     """老共享层路径必须彻底退出，且搬迁清单里的东西现在都在新家。"""
     problems = []
 
-    # (a) 老目录不得再出现在工作区或作品仓
-    for base in (OLD_COMMON,
-                 os.path.join(REPO, "nuttx/arch/risc-v/src/common/espressif")):
-        if os.path.isdir(base):
-            problems.append("%s: 老共享层目录仍存在（应只留在评审端基线里）"
-                            % os.path.relpath(base, WS))
+    # (a) 作品仓里不得再交付老目录；工作区里若还留着它，必须是**未被改动的基线副本**
+    #     （评审端 `repo sync` 后就是"基线副本闲置 + 新位置整层交付"这个形态）
+    repo_old = os.path.join(REPO, "nuttx/arch/risc-v/src/common/espressif")
+    if os.path.isdir(repo_old):
+        problems.append("作品仓仍交付老共享层目录: %s" % repo_old)
+    if os.path.isdir(OLD_COMMON):
+        r = subprocess.run(["git", "-C", NUTTX, "status", "--porcelain", "--",
+                            "arch/risc-v/src/common/espressif"],
+                           capture_output=True, text=True)
+        dirty = [l for l in r.stdout.splitlines() if l.strip()]
+        if dirty:
+            problems.append("%s: 老共享层目录仍有未还原的改动（应只留基线副本）: %s"
+                            % (os.path.relpath(OLD_COMMON, WS), dirty[0][:80]))
 
     # (b) 构建文件里不得再有指向老路径的引用（构建目录路径 + 注释除外）
     scan = [os.path.join(P4, f) for f in

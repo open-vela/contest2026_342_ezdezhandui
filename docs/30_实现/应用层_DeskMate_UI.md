@@ -1264,3 +1264,23 @@ esp_ppa_selftest: PPA: fill selftest OK (first=07c0 last=07c0)
 3.9fps×6 ≈ 14fps，与单页测量一致），全程**无 panic、无卡死** —— 验收里
 "面板不蓝屏、触摸可响应、相机不卡死"得到**定性**支持；精确到每秒的统计
 仍受本机控制台/JTAG 可靠性限制。
+
+### 18.11 真机复核 29/29；I2C 计时符号未进 ELF（遗留）
+
+把 I2C 改动落到 `nuttx/arch/risc-v/src/esp32p4/espressif/esp_i2c.c`（P4 实际编译的那份）
+后重新烧录并跑自检：
+
+```
+g_failures = 0, g_checks = 29   →   DM-SELFTEST PASS (29/29) ✔
+```
+
+**遗留问题**：`g_dbg_i2c_xfer_ms(_max)` 这两个计时全局**没有出现在最终 ELF 里**，
+尽管：
+- 源文件里有、`arch/CMakeFiles/arch.dir/.../esp_i2c.c.o` 对象里也有（`B` 符号）；
+- 同一对象提供的 `esp_i2cbus_initialize` 确实在 ELF 里（`40048912 T`）；
+- ELF 时间（01:51）晚于对象时间（01:50）。
+
+即"对象被链接了，但它的 .bss 全局没进 ELF"。已排除：不是 `g_xfer_stuck`
+（那是 esp_hosted SDIO 的符号，与 I2C 无关）。这条需要单独排查（可能与
+链接脚本对 arch 归档成员的 .bss 处理有关），**P4 的 I2C 部分因此仍未完成**；
+PPA 的计时（`g_dbg_ppa_ms*`）正常可用。

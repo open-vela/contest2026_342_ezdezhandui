@@ -211,6 +211,13 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
   s_info  = dm_label(card, "", DM_FONT_SMALL, lv_color_hex(DM_COL_TEXT));
   s_stats = dm_label(card, "", DM_FONT_SMALL, lv_color_hex(DM_COL_MUTED));
 
+  /* 固定宽度：文字变化时尺寸不变，上层（flex 卡片/页面）就不会重算布局。
+   * 真机实测：自动尺寸标签一改文字就整屏失效 → 单次 1.2MB framebuffer 回写。
+   */
+
+  lv_obj_set_width(s_info, info_w - 2 * DM_MARGIN);
+  lv_obj_set_width(s_stats, info_w - 2 * DM_MARGIN);
+
   (void)dm_button(card, DM_I18N_CAPTURE, 180, 46,
                   dm_page_camera_capture_cb, NULL);
   (void)dm_button(card, DM_I18N_ASK_VISION, 180, 46,
@@ -289,13 +296,23 @@ static void dm_page_camera_update(void)
             }
         }
 
-      /* 采集线程会换缓冲发布，所以每次都把画布源指到"最近完成"的那块，
-       * 否则 LVGL 会一直画创建时那一块（会看到撕裂/停帧）。
+      /* 采集线程会换缓冲发布，所以每帧都要把画布指到"最近完成"的那块。
+       *
+       * 注意：**不能**用 lv_canvas_set_buffer() —— 它会改画布尺寸，触发上层布局
+       * 重算，导致整屏失效（真机实测：单次刷写 614400 px = 整屏，一次就是 1.2MB
+       * 的 framebuffer 回写 ≈ 140ms 忙时尖峰）。这里原地改 draw_buf 的 data 指针，
+       * 尺寸/步长都不变，只会失效画布那一小块。
        */
 
-      lv_canvas_set_buffer(s_canvas, (void *)frame.pixels,
-                           DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H,
-                           LV_COLOR_FORMAT_RGB565);
+      {
+        lv_draw_buf_t *db = lv_canvas_get_draw_buf(s_canvas);
+
+        if (db != NULL)
+          {
+            db->data = (void *)frame.pixels;
+          }
+      }
+
       lv_obj_invalidate(s_canvas);
     }
 
@@ -324,16 +341,41 @@ static void dm_page_camera_update(void)
       }
   }
 
+  /* 文字每帧都改会让自动尺寸标签触发布局重算 → **整屏失效** → 一次 1.2MB
+   * 的 framebuffer 回写（真机实测 ~140ms 忙时尖峰）。降频到 1 秒一次，
+   * 每帧只失效画布那一小块。
+   */
+
   if (s_info != NULL)
     {
-      dm_label_set(s_info, "%s %s\n%s %d\n", DM_I18N_CAMERA_STATE,
-                   dm_camera_backend(), DM_I18N_CAMERA_FRAMES, s_frames);
+      static uint32_t info_ms;
+
+      if (info_ms == 0 ||
+          (uint32_t)TICK2MSEC(clock_systime_ticks()) - info_ms >= 1000u)
+        {
+          info_ms = (uint32_t)TICK2MSEC(clock_systime_ticks());
+          dm_label_set(s_info, "%s %s\n%s %d\n", DM_I18N_CAMERA_STATE,
+                       dm_camera_backend(), DM_I18N_CAMERA_FRAMES, s_frames);
+        }
     }
 
   if (s_stats != NULL)
     {
-      dm_label_set(s_stats, "%s %d%%\n%s", DM_I18N_CAMERA_MOTION, s_motion,
-                   source);
+      /* 同上：**不能每帧写**。这个标签和画布在同一个卡片里，它一脏就会和画布
+       * 合并成一个大脏区（实测平均 200k px/次刷写）。文字变了才写即可。
+       */
+
+      static char last_stats[96];
+      char now_stats[96];
+
+      snprintf(now_stats, sizeof(now_stats), "%s %d%%\n%s",
+               DM_I18N_CAMERA_MOTION, s_motion, source);
+
+      if (strcmp(now_stats, last_stats) != 0)
+        {
+          strlcpy(last_stats, now_stats, sizeof(last_stats));
+          lv_label_set_text(s_stats, now_stats);
+        }
     }
 }
 

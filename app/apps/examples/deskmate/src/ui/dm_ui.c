@@ -136,8 +136,20 @@ static void dm_ui_set_clock(void)
       return;
     }
 
-  if (strftime(text, sizeof(text), "%H:%M:%S", &tm_buf) > 0)
+  /* **只在秒数变化时**才设文字。
+   *
+   * lv_label_set_text 是无条件失效的：时钟在右上角、相机画布在左上角，
+   * 两者一起失效时 LVGL 会把脏区并成一个横跨整屏的大矩形 —— 真机实测
+   * 平均每次刷写 206k 像素（正好是 1024 宽的一条），framebuffer 回写把
+   * UI 单轮忙时推到 140ms。
+   */
+
+  static char last_text[32];
+
+  if (strftime(text, sizeof(text), "%H:%M:%S", &tm_buf) > 0 &&
+      strcmp(text, last_text) != 0)
     {
+      strlcpy(last_text, text, sizeof(last_text));
       lv_label_set_text(g_clock, text);
     }
 }
@@ -198,10 +210,13 @@ int dm_ui_create(void)
 
     g_agent_badge = dm_badge(bar, DM_I18N_AGENT_STATE "：-",
                              lv_color_hex(DM_COL_ON_ACCENT));
+    lv_obj_set_width(g_agent_badge, 150);
     lv_obj_align(g_agent_badge, LV_ALIGN_RIGHT_MID, -170, 0);
 
     g_clock = dm_label_at(bar, "--:--:--", DM_FONT_TITLE,
                           lv_color_hex(DM_COL_ON_ACCENT), 0, 12);
+    lv_obj_set_width(g_clock, 110);
+    lv_obj_set_style_text_align(g_clock, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_align(g_clock, LV_ALIGN_RIGHT_MID, -DM_MARGIN, 0);
   }
 
@@ -541,8 +556,23 @@ void dm_ui_tick(void)
 
   if (g_agent_badge != NULL)
     {
-      lv_label_set_text_fmt(g_agent_badge, DM_I18N_AGENT_STATE "：%s",
-                            dm_ui_agent_label());
+      /* **只在文字真的变了**才设。lv_label_set_text_fmt 是无条件失效的，
+       * 每 tick 设一次会让顶栏一直在脏区里，和相机画布合并成一个大脏区
+       * （真机实测：平均每次刷写 207k 像素 ≈ 整张卡片），framebuffer 回写
+       * 直接拖出上百毫秒的忙时。
+       */
+
+      static char last_badge[64];
+      char now_badge[64];
+
+      snprintf(now_badge, sizeof(now_badge), DM_I18N_AGENT_STATE "：%s",
+               dm_ui_agent_label());
+
+      if (strcmp(now_badge, last_badge) != 0)
+        {
+          strlcpy(last_badge, now_badge, sizeof(last_badge));
+          lv_label_set_text(g_agent_badge, now_badge);
+        }
     }
 
   /* Drain whatever the agent produced - LLM replies, offline answers, and

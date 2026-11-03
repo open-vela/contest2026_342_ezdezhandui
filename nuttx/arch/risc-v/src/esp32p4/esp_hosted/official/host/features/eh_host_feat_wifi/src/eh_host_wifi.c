@@ -46,6 +46,19 @@
 
 #define EH_SCAN_RPC_TIMEOUT_MS 15000
 
+/* 轻量状态查询（RSSI/BSSID/接口统计）的 RPC 超时。
+ *
+ * 原来这些查询也用 15 秒的扫描超时：一个查 RSSI 的 ioctl 就可能把调用者
+ * （真机上是 UI 线程）阻塞十几秒 —— 实测切到网络页时 UI 停顿 1.55 秒。
+ * 状态类查询是"尽力而为"的：超时就返回失败，上层显示上一次的值即可。
+ */
+
+#define EH_STATUS_RPC_TIMEOUT_MS 3000  /* 足够覆盖正常 ~1.5s 的往返，又不至于卡 15s */
+
+/* 取扫描结果（可能有多条记录），允许比状态查询慢，但别到 15 秒。 */
+
+#define EH_SCAN_GET_RPC_TIMEOUT_MS 3000
+
 #define EH_HOST_WIFI_TAG "eh_wifi"
 
 esp_err_t eh_host_wifi_init(const wifi_init_config_t *cfg)
@@ -499,7 +512,7 @@ esp_err_t eh_host_wifi_sta_get_ap_info(wifi_ap_record_t *out)
     if (!req) return ESP_FAIL;
 
     eh_rpc_ctrl_cmd_t *r = NULL;
-    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_RPC_TIMEOUT_MS;
+    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_STATUS_RPC_TIMEOUT_MS;
     if (eh_host_feat_rpc_request_sync(RPC_ID__Req_WifiStaGetApInfo, req, (void **)&r) != 0) return ESP_FAIL;
     int rc = r->resp_event_status;
     if (rc == 0) {
@@ -567,7 +580,7 @@ esp_err_t eh_host_wifi_scan_get_ap_num(uint16_t *out_count)
     if (!req) return ESP_FAIL;
 
     eh_rpc_ctrl_cmd_t *r = NULL;
-    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_RPC_TIMEOUT_MS;
+    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_STATUS_RPC_TIMEOUT_MS;
     if (eh_host_feat_rpc_request_sync(RPC_ID__Req_WifiScanGetApNum, req, (void **)&r) != 0) return ESP_FAIL;
     int rc = r->resp_event_status;
     if (rc == 0) *out_count = (uint16_t)r->u.e_scan_done.number;
@@ -1366,7 +1379,7 @@ esp_err_t eh_host_wifi_scan_get_ap_records(uint16_t *number,
     req->u.ap_records.number = cap;
 
     eh_rpc_ctrl_cmd_t *r = NULL;
-    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_RPC_TIMEOUT_MS;
+    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_GET_RPC_TIMEOUT_MS;
     if (eh_host_feat_rpc_request_sync(RPC_ID__Req_WifiScanGetApRecords, req,
                                          (void **)&r) != 0) return ESP_FAIL;
     int rc = r->resp_event_status;

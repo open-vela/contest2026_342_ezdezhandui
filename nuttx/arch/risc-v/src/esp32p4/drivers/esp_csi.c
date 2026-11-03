@@ -51,6 +51,16 @@
 #include "esp_private/esp_cache_private.h"
 
 #include "esp_ldo.h"
+
+/* 相机退出时保留共享 MIPI PHY LDO 的提示（只打一次，免得刷屏）。 */
+
+#define DM_CSI_KEEP_LDO_LOG()                                            \
+  do {                                                                   \
+      static bool said;                                                  \
+      if (!said) { said = true;                                          \
+        _info("CSI: keep the shared MIPI PHY LDO on "                    \
+              "(DSI needs it too)\n"); }                                \
+    } while (0)
 #include "esp_csi.h"
 
 /* Register-level capture probe.  Off by default: it costs ~1.2 s inside the
@@ -655,7 +665,15 @@ static int esp_csi_data_uninit(FAR struct imgdata_s *data)
 
   if (priv->ldo_acquired)
     {
-      esp_ldo_channel_release(&priv->ldo);
+      /* **不要**释放这路 LDO。
+       *
+       * 它是 MIPI PHY 的供电（板级 esp32p4_hmi_power.c 也用 CH3 给 MIPI 供电），
+       * **DSI 和 CSI 共用**。相机退出时把它关掉，DSI 的 PHY 立刻失去供电，
+       * 面板就冻在最后一帧（真机现象：用过相机后一直蓝屏，复位才恢复）。
+       * 这路供电归显示侧所有，相机只借用、不释放。
+       */
+
+      DM_CSI_KEEP_LDO_LOG();
       priv->ldo_acquired = false;
     }
 

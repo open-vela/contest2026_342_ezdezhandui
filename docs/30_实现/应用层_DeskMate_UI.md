@@ -740,3 +740,26 @@ DM-SELFTEST RESULT: PASS (25/25)      # 真机，--agent mock --camera
 [dm-check] touch:delivered              PASS 0 -> 1
 DM-SELFTEST RESULT: PASS (25/25)
 ```
+
+### 16.6 遗留：**用过相机之后** DSI 会停（需复位才恢复）
+
+现象与取证（本轮真机实测）：
+
+| 观测 | 结论 |
+|---|---|
+| 全新复位、不开相机：面板正常、点得动（用户确认） | 基础显示链路 OK |
+| 用过相机（`--camera` 自检）之后：面板蓝屏 | 相机生命周期把 DSI 弄停 |
+| 同一时刻 JTAG dump 帧缓冲：白色卡片 48.9% + 强调蓝 24.1% | **应用在正常绘制**，是面板不显示 |
+| DSI 的 DMA 通道寄存器 `sar=0x4812c040 / dar=0x50105000 / block_ts=0x257ff / ctl0=0x001e1b41` | 通道**配置仍在** |
+| 控制器通道使能 `chen0 = 0`（boot 时是 0x2） | 通道被**停用** |
+| GDMA 计数器：`acquire=1 / release=0 / deinit=0 / clockoff=0` | **不是** GDMA 释放路径停的 |
+
+已排除/已尝试：
+- `dw_gdma_acquire_group_handle()` 的全局复位（上轮已加"已在跑就不复位"）→ 相机**启动**不再打死 DSI（22/22 那次用户确认过有画面）
+- 相机退出时释放共享 MIPI PHY LDO（本轮已改为**不释放**）→ 仍然蓝屏
+- `dw_gdma` 释放路径（本轮加了 `foreign_owner` 守卫 + 计数器）→ 计数器证明它**根本没跑**
+
+下一步（下轮）：在 DSI/相机两侧加"每一步的 `chen0` 快照"（JTAG 可读），定位到底哪一步清了 ch1 的使能位；
+兜底方案是相机关闭后**重新拉起 DSI 视频**（`esp_mipi_dsi_video_start()`）。
+
+**当前可用状态**：不开相机 = 完全正常（真机 25/25、日志安静）；用过相机后需要复位一次。

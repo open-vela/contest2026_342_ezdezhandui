@@ -12,6 +12,8 @@
 
 #include <nuttx/config.h>
 
+#include <nuttx/clock.h>
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -37,6 +39,33 @@
 
 static struct dm_display_metrics_s g_metrics;
 static lv_display_t *g_disp;
+
+/* 显示提交计数：LVGL 每完成一次渲染/刷写就 +1，并记录时间。
+ * 自检用它做 display:fed 判据 —— "面板真的在被喂数据"，而不是只看帧缓冲内容
+ * （真机踩过：帧缓冲里 UI 完好，但面板早就停了，靠内容判据分辨不出来）。
+ */
+
+volatile uint32_t g_disp_commits;
+volatile uint32_t g_disp_px;
+volatile uint32_t g_disp_last_ms;
+
+static void dm_display_render_ready_cb(lv_event_t *e)
+{
+  (void)e;
+
+  g_disp_commits++;
+  g_disp_last_ms = (uint32_t)TICK2MSEC(clock_systime_ticks());
+}
+
+uint32_t dm_display_commits(void)
+{
+  return g_disp_commits;
+}
+
+uint32_t dm_display_last_ms(void)
+{
+  return g_disp_last_ms;
+}
 static bool g_created;
 
 #if DM_DISPLAY_FBDEV
@@ -160,6 +189,12 @@ int dm_display_create(void)
 
     lv_nuttx_init(&info, &result);
 
+    if (result.disp != NULL)
+      {
+        lv_display_add_event_cb(result.disp, dm_display_render_ready_cb,
+                                LV_EVENT_RENDER_READY, NULL);
+      }
+
     if (result.disp == NULL)
       {
         DM_ERR("LVGL could not attach to %s", DM_FB_PATH);
@@ -226,6 +261,8 @@ int dm_display_create(void)
     lv_display_set_flush_cb(g_disp, dm_flush_cb);
     lv_display_set_buffers(g_disp, g_mem_pixels, NULL, (uint32_t)g_mem_size,
                            LV_DISPLAY_RENDER_MODE_FULL);
+    lv_display_add_event_cb(g_disp, dm_display_render_ready_cb,
+                            LV_EVENT_RENDER_READY, NULL);
 
     g_metrics.width       = width;
     g_metrics.height      = height;

@@ -1,0 +1,7 @@
+# C3/C4 + display:fed（B4/D1）之后的真机自检：28/28
+# 命令：deskmate --agent mock --camera --selftest --report /tmp/r23.txt
+# JTAG 复核（不依赖串口）：g_failures=0, g_checks=28
+
+[dm-check] ui:responsive   PASS loops=36 max_busy=40ms in 2050ms
+[dm-check] cam:fps         PASS 22 frames in 2050ms (10 fps), cost=0 us/frame
+[dm-check] display:fed     PASS 24 commits in 2050ms (11/s)

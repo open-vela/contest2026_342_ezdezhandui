@@ -109,4 +109,9 @@ uint32_t dm_display_frame_hash(void);
 
 void dm_display_destroy(void);
 
+/* 显示提交计数 / 最近一次提交时间（ms）：display:fed 判据用。 */
+
+uint32_t dm_display_commits(void);
+uint32_t dm_display_last_ms(void);
+
 #endif /* __APPS_EXAMPLES_DESKMATE_HAL_DM_DISPLAY_H */

@@ -41,8 +41,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define DM_CAMERA_MOTION_PCT 6        /* Percent of changed samples */
-#define DM_CAMERA_MOTION_DIFF 1200    /* Per-pixel RGB565 delta */
 
 /****************************************************************************
  * Private Data
@@ -52,7 +50,6 @@ static lv_obj_t *s_root;
 static lv_obj_t *s_canvas;
 static lv_obj_t *s_info;
 static lv_obj_t *s_stats;
-static uint16_t *s_prev;
 static uint16_t *s_fallback;
 static int  s_frames;
 static int  s_motion;
@@ -165,12 +162,6 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
       return 0;
     }
 
-  s_prev = malloc((size_t)DM_CAMERA_PREVIEW_W * DM_CAMERA_PREVIEW_H * 2);
-  if (s_prev != NULL)
-    {
-      memset(s_prev, 0, (size_t)DM_CAMERA_PREVIEW_W * DM_CAMERA_PREVIEW_H * 2);
-    }
-
   (void)dm_camera_poll(NULL);
   first = dm_camera_last();
 
@@ -232,7 +223,6 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
 static void dm_page_camera_update(void)
 {
   struct dm_camera_frame_s frame;
-  size_t samples = (size_t)DM_CAMERA_PREVIEW_W * DM_CAMERA_PREVIEW_H;
   const char *source;
 
   memset(&frame, 0, sizeof(frame));
@@ -264,36 +254,15 @@ static void dm_page_camera_update(void)
     {
       s_frames++;
 
-      if (s_prev != NULL)
+      /* 运动占比由**采集线程**算好（C3：dm_ui_tick() 里不允许 O(像素) 循环）。 */
+
+      s_motion = dm_camera_motion();
+
+      if (!s_motion_latched && s_motion >= DM_CAMERA_MOTION_PCT)
         {
-          const size_t step = 7;
-          int changed = 0;
-
-          for (size_t i = 0; i + step < samples; i += step)
-            {
-              int d = (int)s_prev[i] - (int)frame.pixels[i];
-
-              if (d < 0)
-                {
-                  d = -d;
-                }
-
-              if (d > DM_CAMERA_MOTION_DIFF)
-                {
-                  changed++;
-                }
-            }
-
-          memcpy(s_prev, frame.pixels, samples * 2);
-
-          s_motion = (int)(((size_t)changed * 100) / (samples / step));
-
-          if (!s_motion_latched && s_motion >= DM_CAMERA_MOTION_PCT)
-            {
-              s_motion_latched = true;
-              dm_agent_push_proactive(DM_I18N_MOTION_EVENT);
-              DM_LOG("camera: motion %d%% -> proactive event", s_motion);
-            }
+          s_motion_latched = true;
+          dm_agent_push_proactive(DM_I18N_MOTION_EVENT);
+          DM_LOG("camera: motion %d%% -> proactive event", s_motion);
         }
 
       /* 采集线程会换缓冲发布，所以每帧都要把画布指到"最近完成"的那块。

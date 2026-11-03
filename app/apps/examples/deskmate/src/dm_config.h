@@ -109,6 +109,13 @@
 
 #define DM_CAMERA_SHOT_FRAMES 0
 
+/* 运动检测（采集线程里做，见 C3）：采样步长 7，单点差值超过 DIFF 算"变了"，
+ * 变化占比 ≥ PCT 判定为有运动。
+ */
+
+#define DM_CAMERA_MOTION_DIFF 1200  /* RGB565 打包值的差 */
+#define DM_CAMERA_MOTION_PCT  6
+
 /* 相机预览的目标帧间隔（ms）。主循环每轮都会调当前页的 update()，不节流的话
  * 相机页会以最高频率做"采集+转换+运动检测+整块重绘"，UI 直接卡死（实测）。
  * 0 = 不节流。可用 --cam-fps N 覆盖。

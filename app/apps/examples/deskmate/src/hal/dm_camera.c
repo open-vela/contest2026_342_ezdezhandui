@@ -77,6 +77,8 @@ static bool g_streaming;
 static struct dm_camera_frame_s g_frame;
 static uint16_t *g_pixels;      /* 采集线程正在写的缓冲 */
 static uint16_t *g_pixels_pub;  /* 最近一次完成、交给 UI 画的缓冲 */
+static uint16_t *g_prev;        /* 上一帧副本：运动检测在采集线程里做 */
+static volatile int g_motion;   /* 最近一次运动占比 (%) */
 static volatile uint32_t g_pub_seq;   /* 已发布的帧序号 */
 
 /* 诊断（JTAG 可读）：采集线程到底在干什么。 */
@@ -276,7 +278,8 @@ int dm_camera_create(int preview_w, int preview_h)
 
   g_pixels     = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
   g_pixels_pub = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
-  if (g_pixels == NULL || g_pixels_pub == NULL)
+  g_prev       = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
+  if (g_pixels == NULL || g_pixels_pub == NULL || g_prev == NULL)
     {
       DM_ERR("camera: no memory for a %dx%d preview", preview_w, preview_h);
       return -ENOMEM;
@@ -284,6 +287,7 @@ int dm_camera_create(int preview_w, int preview_h)
 
   memset(g_pixels, 0, (size_t)preview_w * preview_h * sizeof(uint16_t));
   memset(g_pixels_pub, 0, (size_t)preview_w * preview_h * sizeof(uint16_t));
+  memset(g_prev, 0, (size_t)preview_w * preview_h * sizeof(uint16_t));
 
   /* 先把 frame 描述好：真机首帧没就绪时 poll() 会返回 -EAGAIN，页面仍然要知道
    * 预览缓冲在哪（否则 lv_canvas_set_buffer(NULL) 会直接断言死机）。
@@ -295,7 +299,7 @@ int dm_camera_create(int preview_w, int preview_h)
   g_frame.height = preview_h;
 
 #ifdef DM_HAVE_V4L2
-  g_fd = open(DM_CAMERA_PATH, O_RDWR);
+  g_fd = open(DM_CAMERA_PATH, O_RDWR | O_NONBLOCK);
   if (g_fd >= 0)
     {
       g_src_width  = 1280;
@@ -413,6 +417,11 @@ bool dm_camera_ready(void)
   return g_ready;
 }
 
+int dm_camera_motion(void)
+{
+  return g_motion;
+}
+
 /* 采集一次：只允许采集线程调用。转换到写缓冲，成功后与发布缓冲对调。
  * 这样 UI 线程拿到的永远是"已完成"的那块，不会看到半张图。
  */
@@ -509,6 +518,38 @@ static int dm_camera_capture_once(void)
   g_frame.height    = g_height;
   g_frame.seq       = g_seq;
   g_frame.synthetic = g_synthetic;
+
+  /* 运动检测在这里做（采集线程），**不要**留给 UI 线程 —— 它是 O(像素) 的：
+   * 原来放在 dm_ui_tick() 里，每帧要扫 8k+ 个采样点再 memcpy 115KB。
+   */
+
+  {
+    const size_t samples = (size_t)g_width * (size_t)g_height;
+    const size_t step = 7;
+    int changed = 0;
+
+    if (samples > 0 && g_prev != NULL)
+      {
+        for (size_t i = 0; i + step < samples; i += step)
+          {
+            int d = (int)g_prev[i] - (int)g_pixels_pub[i];
+
+            if (d < 0)
+              {
+                d = -d;
+              }
+
+            if (d > DM_CAMERA_MOTION_DIFF)
+              {
+                changed++;
+              }
+          }
+
+        memcpy(g_prev, g_pixels_pub, samples * sizeof(uint16_t));
+
+        g_motion = (int)(((size_t)changed * 100) / (samples / step));
+      }
+  }
 
   g_pub_seq = g_seq;
   g_dbg_cap_pub++;
@@ -626,6 +667,12 @@ void dm_camera_destroy(void)
     {
       free(g_pixels_pub);
       g_pixels_pub = NULL;
+    }
+
+  if (g_prev != NULL)
+    {
+      free(g_prev);
+      g_prev = NULL;
     }
 
   g_ready = false;

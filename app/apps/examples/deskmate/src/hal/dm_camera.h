@@ -68,6 +68,10 @@ const char *dm_camera_backend(void);
 
 bool dm_camera_ready(void);
 
+/* 最近一次运动占比 (%)，由采集线程算好。 */
+
+int dm_camera_motion(void);
+
 /* Fetch the newest frame.  Returns 0 when a frame was produced, -EAGAIN when
  * nothing new is available this iteration.
  */

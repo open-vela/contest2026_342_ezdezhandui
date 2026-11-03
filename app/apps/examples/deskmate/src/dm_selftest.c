@@ -71,6 +71,8 @@ static enum dm_selftest_state_e g_state = DM_ST_IDLE;
 static uint32_t s_perf_t0;
 static uint32_t s_perf_l0;
 static uint32_t s_perf_f0;
+static uint32_t s_perf_d0;
+static int      s_perf_stage;
 static char g_snap_path[128];
 static char g_snap_dir[112];
 static int  g_frames;
@@ -716,20 +718,40 @@ void dm_selftest_step(void)
 
         /* 切到相机页，记录基线，交给 DM_ST_PERF_WAIT 采样 2 秒。 */
 
-        dm_ui_stats_reset();
-        s_perf_t0 = (uint32_t)TICK2MSEC(clock_systime_ticks());
-        s_perf_l0 = 0;
-        s_perf_f0 = dm_page_camera_frames();
         (void)dm_ui_goto_id("camera");
-        g_state = DM_ST_PERF_WAIT;
+        s_perf_stage = 0;
+        s_perf_t0    = (uint32_t)TICK2MSEC(clock_systime_ticks());
+        g_state      = DM_ST_PERF_WAIT;
         return;
 
       case DM_ST_PERF_WAIT:
         {
-          uint32_t dt = (uint32_t)TICK2MSEC(clock_systime_ticks()) - s_perf_t0;
+          uint32_t now = (uint32_t)TICK2MSEC(clock_systime_ticks());
+          uint32_t dt;
           uint32_t loops;
           uint32_t frames;
           uint32_t fps;
+
+          /* 分两段：先等页面**建完并稳定**（切页建对象本身就要上百毫秒，
+           * 那不是卡顿），再从干净基线开始量稳态。
+           */
+
+          if (s_perf_stage == 0)
+            {
+              if (now - s_perf_t0 < 500u)
+                {
+                  return;
+                }
+
+              dm_ui_stats_reset();
+              s_perf_t0    = now;
+              s_perf_f0    = dm_page_camera_frames();
+              s_perf_d0    = dm_display_commits();
+              s_perf_stage = 1;
+              return;
+            }
+
+          dt = now - s_perf_t0;
 
           if (dt < 2000u)
             {
@@ -751,6 +773,31 @@ void dm_selftest_step(void)
           dm_check("ui:responsive", busy <= 50u && loops >= 10u, g_detail);
 
           /* cam:fps —— 预览帧率；没有相机（模拟器）时如实跳过。 */
+
+          /* display:fed —— 面板是不是真的在被喂数据（不再只看帧缓冲内容）。 */
+
+          {
+            uint32_t commits = dm_display_commits() - s_perf_d0;
+
+            /* 有相机在跑 → 预览会持续驱动重绘，提交数必须持续增长；
+             * 没有相机（模拟器/纯静态界面）→ LVGL 本来就不重绘，如实跳过。
+             */
+
+            if (!dm_camera_ready())
+              {
+                snprintf(g_detail, sizeof(g_detail),
+                         "%u commits in %ums (静态界面，无需重绘)",
+                         commits, dt);
+                dm_check("display:fed", true, g_detail);
+              }
+            else
+              {
+                snprintf(g_detail, sizeof(g_detail),
+                         "%u commits in %ums (%u/s)", commits, dt,
+                         (commits * 1000u) / (dt > 0 ? dt : 1u));
+                dm_check("display:fed", commits >= 5u, g_detail);
+              }
+          }
 
           if (!dm_camera_ready())
             {

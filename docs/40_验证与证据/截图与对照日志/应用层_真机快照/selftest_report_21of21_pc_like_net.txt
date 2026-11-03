@@ -1,0 +1,26 @@
+# 真机自检（21/21）：含类 PC 网络页三条新判据
+# 命令：python3 tools/test/board.py run "deskmate --agent mock --selftest --report /tmp/r.txt"
+# 注意：应用默认 AGENT_MODE=ws，ai_agent 未起时 dm_agent_init 会阻塞，故加 --agent mock
+
+[dm-check] display:ready                PASS 1024x600 16bpp fbdev
+[dm-check] font:cjk-body                PASS 0 字缺（首个：-）
+[dm-check] font:cjk-title               PASS 0 字缺（首个：-）
+[dm-check] lvgl:version                 PASS 
+[dm-check] net:ap-degraded              PASS supported=0 rc=-138 (CP 为 STA 版固件)
+[dm-check] net:eth-static               PASS if=eth0 rc=0 ip=192.168.77.9 mask=255.255.255.0
+[dm-check] net:interfaces               PASS eth0 UP 192.168.1.110; wlan0 UP 0.0.0.0
+[dm-check] net:ipv4-valid               PASS accepts 3 valid, rejects 4 invalid
+[dm-check] snapshot:picture             PASS distinct=97 dominant=54% grad=2 n=12642
+[dm-check] snapshot:written             PASS dm_camera -> 1228800 bytes
+[dm-check] snapshot:written             PASS dm_home -> 1228800 bytes
+[dm-check] snapshot:written             PASS dm_net -> 1228800 bytes
+[dm-check] touch:delivered              PASS 0 -> 1
+[dm-check] touch:target                 PASS (133,459) ->
+[dm-check] ui:built                     PASS 4 objects, 5 pages
+[dm-check] ui:camera-page               PASS page=camera camera=off
+[dm-check] ui:home                      PASS page=home
+[dm-check] ui:net-page                  PASS eth0 UP 192.168.1.110; wlan0 UP 0.0.0.0
+[dm-check] ui:page-rendered             PASS home=0xb3a375d5 camera=0xc7fbd067
+[dm-check] ui:tab-target                PASS (309,563)
+[dm-check] wifi:scan                    PASS 1 AP, first='Hello_World_2.4G' 0 dBm
+DM-SELFTEST RESULT: PASS (21/21)

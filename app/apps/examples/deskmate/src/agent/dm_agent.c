@@ -15,6 +15,9 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/time.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -453,6 +456,42 @@ static int dm_agent_ws_read(char *out, size_t out_len)
   return 1;
 }
 
+static int dm_agent_ws_connect(void);
+static volatile int g_ws_last_try_ms;
+
+static void *dm_agent_ws_worker(void *arg)
+{
+  (void)arg;
+
+  (void)dm_agent_ws_connect();
+
+  /* 失败就等下一次 poll 触发重连（5s 节流）。 */
+
+  if (!g_ws_ready)
+    {
+      g_ws_last_try_ms = (int)(clock() / (CLOCKS_PER_SEC / 1000));
+    }
+
+  return NULL;
+}
+
+static void dm_agent_ws_kick(void)
+{
+  pthread_t tid;
+  pthread_attr_t attr;
+
+  pthread_attr_init(&attr);
+  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  pthread_attr_setstacksize(&attr, 8192);
+
+  if (pthread_create(&tid, &attr, dm_agent_ws_worker, NULL) != 0)
+    {
+      DM_WARN("agent: cannot start the ws connect worker");
+    }
+
+  pthread_attr_destroy(&attr);
+}
+
 static int dm_agent_ws_connect(void)
 {
   struct sockaddr_in addr;
@@ -474,11 +513,39 @@ static int dm_agent_ws_connect(void)
       return -errno;
     }
 
-  if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-    {
-      close(fd);
-      return -errno;
-    }
+  /* 有界连接：绝不允许"后端没起来"把调用者（含 UI 启动路径）堵死。
+   * 非阻塞 connect + 1.2s 轮询；再给收发各 2s 超时，防止对端不读时 send 卡住。
+   */
+
+  {
+    int flags = fcntl(fd, F_GETFL, 0);
+    struct pollfd pfd = { .fd = fd, .events = POLLOUT };
+    int err = 0;
+    socklen_t elen = sizeof(err);
+    struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+
+    (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
+        errno != EINPROGRESS)
+      {
+        DM_LOG("agent: connect(%s:%d) failed: %d", g_host, g_port, errno);
+        close(fd);
+        return -errno;
+      }
+
+    if (poll(&pfd, 1, 1200) <= 0 ||
+        getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen) < 0 || err != 0)
+      {
+        DM_LOG("agent: connect(%s:%d) timed out or refused", g_host, g_port);
+        close(fd);
+        return -ETIMEDOUT;
+      }
+
+    (void)fcntl(fd, F_SETFL, flags);
+  }
 
   g_fd = fd;
 
@@ -523,7 +590,12 @@ int dm_agent_init(const char *mode)
 
   if (g_mode == DM_AGENT_WS)
     {
-      (void)dm_agent_ws_connect();
+      /* 关键：**不要**在这里同步连接。
+       * 实测：ai_agent 没起来时阻塞式 connect/handshake 会把整个应用卡在启动路径上
+       * （UI 都不出来）。改成后台线程连接 + 失败 5s 后重试。
+       */
+
+      dm_agent_ws_kick();
     }
 
   return 0;
@@ -611,6 +683,17 @@ int dm_agent_poll(char *buf, size_t len)
   /* Anything the WebSocket backend pushed at us (including proactive
    * messages the agent sends to "deskmate-ui") comes first.
    */
+
+  if (g_mode == DM_AGENT_WS && !g_ws_ready)
+    {
+      int now = (int)(clock() / (CLOCKS_PER_SEC / 1000));
+
+      if (now - g_ws_last_try_ms >= 5000)
+        {
+          g_ws_last_try_ms = now;
+          dm_agent_ws_kick();
+        }
+    }
 
   if (g_mode == DM_AGENT_WS && g_ws_ready)
     {

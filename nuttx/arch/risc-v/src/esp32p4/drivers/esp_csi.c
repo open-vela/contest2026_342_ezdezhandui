@@ -573,6 +573,96 @@ void esp_csi_isp_prepare(uint32_t h_res, uint32_t v_res, uint32_t bpp)
 }
 
 /****************************************************************************
+ * Name: esp_csi_isp_rgb565_init
+ *
+ * Description:
+ *   Enable the ISP pipeline (not bypass) and let it do the **Bayer demosaic in
+ *   hardware**, outputting RGB565 — the official esp_video semantics.
+ *
+ *   Why: the current path captures RAW8 and converts Bayer->RGB565 on the CPU
+ *   (~20-30 ms per frame on the capture thread).  `isp_ll_set_output_data_color_format()`
+ *   accepts ISP_COLOR_RGB565 with demosaic_en=1, so the hardware can do it.
+ *
+ *   Enabled by CONFIG_ESP_CSI_ISP_RGB565 (default off: the RAW path is the one
+ *   verified end-to-end today).
+ *
+ ****************************************************************************/
+
+static void esp_csi_isp_rgb565_init(uint32_t h_res, uint32_t v_res)
+{
+  FAR isp_dev_t *isp = ISP_LL_GET_HW(0);
+  hal_utils_clk_div_t div = { 0 };
+  hal_utils_clk_info_t info;
+  uint32_t src_hz = 0;
+  int brg_id = 0;
+  int ret;
+
+  if (g_esp_csi_isp_ready)
+    {
+      return;
+    }
+
+  ret = mipi_csi_brg_claim(MIPI_CSI_BRG_USER_SHARE, &brg_id);
+  if (ret != 0)
+    {
+      _err("ERROR: ISP rgb565: csi bridge claim failed: %d\n", ret);
+      return;
+    }
+
+  (void)esp_clk_tree_src_get_freq_hz((soc_module_clk_t)ISP_CLK_SRC_DEFAULT,
+                                     ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED,
+                                     &src_hz);
+  if (src_hz == 0)
+    {
+      src_hz = 160000000;
+    }
+
+  info.src_freq_hz = src_hz;
+  info.exp_freq_hz = 80000000;
+  info.max_integ    = ISP_LL_TX_MAX_CLK_INT_DIV;
+  info.min_integ    = 1;
+  info.round_opt    = HAL_DIV_ROUND;
+  (void)hal_utils_calc_clk_div_integer(&info, &div.integer);
+  if (div.integer == 0)
+    {
+      div.integer = 1;
+    }
+
+  PERIPH_RCC_ATOMIC()
+    {
+      isp_ll_enable_module_clock(isp, true);
+      isp_ll_reset_module_clock(isp);
+      isp_ll_select_clk_source(isp, ISP_CLK_SRC_DEFAULT);
+      isp_ll_set_clock_div(isp, &div);
+    }
+
+  (void)esp_clk_tree_enable_src((soc_module_clk_t)ISP_CLK_SRC_DEFAULT, true);
+
+  isp_ll_init(isp);
+  isp_ll_clk_enable(isp, true);
+  isp_ll_set_input_data_source(isp, ISP_INPUT_DATA_SOURCE_CSI);
+  isp_ll_enable_line_start_packet_exist(isp, false);
+  isp_ll_enable_line_end_packet_exist(isp, false);
+  isp_ll_set_intput_data_h_pixel_num(isp, h_res);
+  isp_ll_set_intput_data_v_row_num(isp, v_res);
+  isp_ll_set_bayer_mode(isp, COLOR_RAW_ELEMENT_ORDER_BGGR);
+  isp_ll_set_output_data_color_format(isp, ISP_COLOR_RGB565);
+  isp_ll_color_enable(isp, true);
+
+  /* 管道打开：ISP 自己做去马赛克并输出 RGB565 */
+
+  isp->cntl.isp_en        = 1;
+  isp->frame_cfg.hadr_num = h_res - 1;
+  isp->frame_cfg.vadr_num = v_res - 1;
+
+  g_esp_csi_isp_ready = true;
+
+  _info("CSI: ISP RGB565 init: src=%" PRIu32 " Hz div=%" PRIu32
+        " %" PRIu32 "x%" PRIu32 " (硬件去马赛克)\n",
+        src_hz, (uint32_t)div.integer, h_res, v_res);
+}
+
+/****************************************************************************
  * Name: esp_csi_ctlr_create
  *
  * Description:
@@ -664,9 +754,13 @@ static int esp_csi_ctlr_create(FAR struct esp_csi_priv_s *priv)
    * 要复位才恢复）。放到开机时做，相机与显示就能共存（真机已验证）。
    */
 
+#ifdef CONFIG_ESP_CSI_ISP_RGB565
+  esp_csi_isp_rgb565_init(priv->config.h_res, priv->config.v_res);
+#else
   esp_csi_isp_bypass_init(priv->config.h_res, priv->config.v_res,
                           priv->config.input_color == CAM_CTLR_COLOR_RAW10 ? 10u :
                           priv->config.input_color == CAM_CTLR_COLOR_RAW12 ? 12u : 8u);
+#endif
 
   return OK;
 
@@ -1134,7 +1228,11 @@ void esp_csi_get_default_config(FAR struct esp_csi_config_s *config)
    */
 
   config->input_color         = CAM_CTLR_COLOR_RAW8;
+#ifdef CONFIG_ESP_CSI_ISP_RGB565
+  config->output_color        = CAM_CTLR_COLOR_RGB565;
+#else
   config->output_color        = CAM_CTLR_COLOR_RAW8;
+#endif
 
   config->byte_swap_en        = false;
   config->input_8bit_swap_en  = false;

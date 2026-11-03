@@ -114,6 +114,13 @@
  */
 
 #define DM_CAMERA_MOTION_DIFF 1200  /* RGB565 打包值的差 */
+
+/* 让 CSI 驱动走 ISP 的硬件去马赛克、直接输出 RGB565（对应驱动里的
+ * CONFIG_ESP_CSI_ISP_RGB565）。两边必须同时打开。
+ * 默认关：RAW8 + CPU 转换是当前验证过的路径。
+ */
+
+/* #define DM_CSI_ISP_RGB565 1 */
 #define DM_CAMERA_MOTION_PCT  6
 
 /* 相机预览的目标帧间隔（ms）。主循环每轮都会调当前页的 update()，不节流的话

@@ -1054,3 +1054,40 @@ LVGL 的输入读定时器就在这把锁上阻塞上秒。
 
 剩余的 419 ms 是**拿到锁之后那次 I2C 传输本身**的耗时 —— 要彻底消掉需要
 调 I2C 超时/重试（或把触摸中断路径的 I2C 读拆小），属驱动层后续优化。
+
+## 十八、驱动层性能优化（官方语义对照）
+
+### 18.1 相机：ISP 硬件去马赛克（P1）
+
+**结论（代码核查）**：ISP **支持 CSI 输入 → RGB565 输出**，且 `demosaic_en=1`：
+`isp_ll_set_output_data_color_format(ISP_COLOR_RGB565)` 返回 valid
+（`components/esp_hal_cam/esp32p4/include/hal/isp_ll.h:454`），
+输入源 `ISP_INPUT_DATA_SOURCE_CSI` 同样受支持；CSI 桥的 LL 也处理 RGB565。
+
+**已落地**：`esp_csi.c` 新增 `esp_csi_isp_rgb565_init()`（真 ISP 管道 + 硬件去马赛克，
+bayer=BGGR），与应用侧 `DM_CSI_ISP_RGB565` 一起通过编译开关切换（**默认关**，
+RAW8+CPU 转换仍是验证过的路径）。
+
+**阻塞点（真机实测）**：打开开关后 `esp_cam_new_csi_ctlr()` 报
+`failed to configure format conversion`（262）。原因是**控制器（esp_cam_ctlr）的
+格式转换要求通过官方 `esp_isp_new_processor()` 创建的 ISP 处理器对象**，而不是
+我们直接写 LL 寄存器。这条要把 `esp_csi.c` 迁到官方的
+`esp_isp_new_processor + esp_cam_new_csi_ctlr` 组合（一次较大的驱动重构），
+**本轮不做**，已记为下一阶段工作。
+
+**顺带修掉的一个真问题**：应用侧缓冲大小此前按 V4L2 协商的格式算（RAW8=1 字节/像素），
+而 ISP 路径实际输出 RGB565（2 字节/像素）→ `set_buf` 报 `buffer too small`。
+现在开关打开时按驱动的实际输出（×2）分配。
+
+### 18.2 触摸：419ms 残留的来源（P2，待改）
+
+`gt9xx_read()` 已改 trylock（`devlock`），但残留 419ms 来自**更外层**：
+`nuttx/arch/risc-v/src/common/espressif/esp_i2c.c` 的 `esp_i2c_transfer()`
+里 `nxmutex_lock(&priv->lock)` —— 这是**整条 I2C0 总线**的锁，触摸、相机 SCCB、
+ES8311 共用。相机做 SCCB 操作时，触摸的传输就在这把锁上等。
+
+**注意**：本板触摸 INT **未引出**（`esp32p4_touch_gt911.c` 注释明确），所以只能轮询。
+
+**下一阶段**：给触摸这条路径一个**总线上限等待**（例如 `esp_i2c_transfer` 增加
+trylock 变体，或给触摸专用 transfer 带超时），而不是把总线锁全局改成 trylock
+（会影响音频/相机）。

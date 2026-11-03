@@ -329,6 +329,16 @@ int dm_camera_create(int preview_w, int preview_h)
                              (g_src_format == V4L2_PIX_FMT_RGB565 ? 2 :
                               g_src_format == V4L2_PIX_FMT_RGB24 ? 3 : 1);
 
+#ifdef DM_CSI_ISP_RGB565
+              /* 驱动走 ISP 硬件去马赛克，**固定输出 RGB565**（每像素 2 字节），
+               * 而 V4L2 协商可能仍回报 RAW8（驱动的格式表里没有 RGB565）。
+               * 这里按驱动的实际输出分配缓冲，避免 set_buf 的 "buffer too small"。
+               */
+
+              bytes = (size_t)g_src_width * g_src_height * 2;
+              g_src_format = V4L2_PIX_FMT_RGB565;
+#endif
+
               for (i = 0; i < DM_CAMERA_BUFFERS && i < (int)req.count; i++)
                 {
                   struct v4l2_buffer buf;

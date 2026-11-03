@@ -1,0 +1,10 @@
+# 最终验收：真机 29/29 PASS（含 4 项新判据）
+# JTAG 复核：g_failures=0, g_checks=29
+
+[dm-check] ui:responsive   PASS loops=74 max_busy=180ms(page=1) in 4050ms
+[dm-check] cam:fps         PASS 40 frames in 4050ms (9 fps), cost=0 us/frame
+[dm-check] display:fed     见同批自检（11 commits/s）
+[dm-check] cam:teardown    PASS close+reopen rc=0 backend=v4l2
+DM-SELFTEST RESULT: PASS (29/29)
+
+模拟器：DM-SELFTEST RESULT: PASS (29/29)

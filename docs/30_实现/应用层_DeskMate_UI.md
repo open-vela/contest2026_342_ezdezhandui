@@ -1221,3 +1221,15 @@ esp_ppa_selftest: PPA: fill selftest OK (first=07c0 last=07c0)
 
 **下一轮（P3c）**：让相机画布的合成/缩放走 PPA（LVGL 只失效不绘制），并评估
 `esp_mipi_dsi_flush_framebuffer` 的脏区策略。
+
+### 18.9 P4 常设计时 + 复核结果
+
+**新增两个 JTAG 可读计时**（长跑回归用）：
+
+| 计数器 | 位置 | 含义 |
+|---|---|---|
+| `g_dbg_i2c_xfer_ms(_max)` | `esp_i2c_transfer()` | I2C0 传输耗时（含等总线锁）——触摸/相机 SCCB/ES8311 共用这条总线 |
+| `g_dbg_ppa_ms(_max)` | `esp_ppa_test.c` 的 `ppa_do_fill()` | PPA 一次 2D 操作耗时 |
+
+**复核**：PPA 编入镜像后重跑真机自检 —— `g_failures=0, g_checks=29`
+（即 **DM-SELFTEST PASS (29/29)**），说明 PPA 的编译集成与兼容头没有破坏原有行为。

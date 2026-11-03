@@ -21,6 +21,8 @@
 #include <errno.h>
 #include <debug.h>
 
+#include <nuttx/clock.h>
+
 #include "driver/ppa.h"
 #include "esp_cache.h"
 
@@ -37,6 +39,11 @@
  ****************************************************************************/
 
 int g_esp_ppa_test_rc = -999;         /* 0 = 通过；<0 = 失败原因 */
+
+/* 诊断（JTAG 可读）：PPA 一次操作的耗时（毫秒，累计 / 单次最大） */
+
+volatile uint32_t g_dbg_ppa_ms;
+volatile uint32_t g_dbg_ppa_ms_max;
 
 /****************************************************************************
  * Public Functions
@@ -92,7 +99,21 @@ int esp_ppa_selftest(void)
   fill.fill_color_val    = PPA_TEST_RED;
   fill.mode              = PPA_TRANS_MODE_BLOCKING;
 
-  ret = ppa_do_fill(client, &fill);
+  {
+    uint32_t dbg_t0 = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
+    ret = ppa_do_fill(client, &fill);
+
+    {
+      uint32_t dbg_dt = (uint32_t)TICK2MSEC(clock_systime_ticks()) - dbg_t0;
+
+      g_dbg_ppa_ms += dbg_dt;
+      if (dbg_dt > g_dbg_ppa_ms_max)
+        {
+          g_dbg_ppa_ms_max = dbg_dt;
+        }
+    }
+  }
 
   /* PPA 写内存 → CPU，读回校验 */
 

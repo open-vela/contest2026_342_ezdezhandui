@@ -1007,3 +1007,27 @@ app busy: max = 1560 ms                 ← 同一窗口
 
 **下一轮**：用补好的 `refr_area_part` 计时再测一次 60 秒窗口，
 把 `busy` 与 `refresh` 对齐 —— 两者相等 ⇒ 绘制慢；`refresh` 远小于 `busy` ⇒ 在定时器/应用侧。
+
+### 17.6 尖峰定位完成：在 `lv_timer_handler`，不在重绘/刷写/应用 tick
+
+把 `busy` 再拆成 `lv_timer_handler()` 与 `dm_ui_tick()` 两段（`g_ui_max_timer_ms` /
+`g_ui_max_tick_ms`），真机 60 秒窗口（相机页）：
+
+| 指标 | 最大值 | 结论 |
+|---|---|---|
+| `lv_timer_handler()` 单次 | **1550 ms** | ❌ 元凶在这一段 |
+| `dm_ui_tick()` 单次 | 10 ms | ✅ 应用侧没问题 |
+| 其中的重绘 `refr_area_part()` | 30 ms | ✅ |
+| 其中的刷写 `draw_buf_flush()` | 10 ms | ✅ |
+
+所以：**停顿发生在 `lv_timer_handler` 里某个非"重绘/刷写"的定时器回调**。
+剩下的候选只有 LVGL 的其它定时器，其中嫌疑最大的是**输入设备（触摸）读取定时器**：
+
+- 本板触摸是 GT9xx，属**轮询型**驱动：没有触摸时 `read()` 也会立刻返回一个
+  `npoints == 0` 的样本；
+- `lv_nuttx_touchscreen.c` 的注释里记录过同类坑：`continue_reading` 被误置为
+  true 时 `lv_indev_read_timer_cb()` 会**永不返回**（且它在刷新定时器之前执行）。
+
+**下一轮**：在 `lv_nuttx_touchscreen.c` 的 read 回调前后加计时（或直接给
+indev 的 `read_period` 设限 / 只保留真正的接触样本），确认/排除触摸读取，
+再决定改法。

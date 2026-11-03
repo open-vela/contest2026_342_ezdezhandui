@@ -493,7 +493,19 @@ uint32_t dm_ui_max_gap_ms(void)
  */
 
 static uint32_t g_ui_max_busy_ms;
+volatile uint32_t g_ui_max_timer_ms;   /* lv_timer_handler 单次最大 */
+volatile uint32_t g_ui_max_tick_ms;    /* dm_ui_tick 单次最大 */
 static int      g_ui_max_busy_page = -1;
+
+void dm_ui_note_timer(uint32_t ms)
+{
+  if (ms > g_ui_max_timer_ms) g_ui_max_timer_ms = ms;
+}
+
+void dm_ui_note_tick(uint32_t ms)
+{
+  if (ms > g_ui_max_tick_ms) g_ui_max_tick_ms = ms;
+}
 
 void dm_ui_note_busy(uint32_t ms)
 {

@@ -68,6 +68,8 @@ uint32_t dm_ui_max_gap_ms(void);
 /* 每轮忙时（ms）上报与读数：卡顿判据用忙时，而不是含 idle 睡眠的间隔。 */
 
 void dm_ui_note_busy(uint32_t ms);
+void dm_ui_note_timer(uint32_t ms);
+void dm_ui_note_tick(uint32_t ms);
 uint32_t dm_ui_max_busy_ms(void);
 
 /* 发生最大忙时时所在的页面索引（-1 未知）——用来归因"谁把 UI 拖住了"。 */

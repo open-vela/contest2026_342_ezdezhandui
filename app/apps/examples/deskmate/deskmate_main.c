@@ -533,9 +533,14 @@ int main(int argc, FAR char *argv[])
 
       {
         unsigned int busy0 = dm_now_ms();
+        unsigned int t1;
 
         idle = lv_timer_handler();
+        t1 = dm_now_ms();
+        dm_ui_note_timer(t1 - busy0);
+
         dm_ui_tick();
+        dm_ui_note_tick(dm_now_ms() - t1);
         dm_ui_note_busy(dm_now_ms() - busy0);
       }
 

@@ -16,6 +16,7 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <time.h>
 #include <netutils/netlib.h>
 #include <netutils/dhcpc.h>
 #include <string.h>
@@ -174,8 +175,17 @@ static void dm_net_fill_flags(struct dm_net_if_s *entry)
          */
 
         entry->wireless = true;
-        DM_LOG("net: %s treated as wireless by name (SIOCGIWNAME unsupported)",
-               entry->name);
+
+        {
+          static bool said;
+
+          if (!said)
+            {
+              said = true;
+              DM_LOG("net: %s treated as wireless by name "
+                     "(SIOCGIWNAME unsupported, 只提示一次)", entry->name);
+            }
+        }
       }
   }
 #endif
@@ -267,7 +277,25 @@ static void dm_net_wifi_ensure_infra(const char *ifname)
 
 int dm_net_refresh(void)
 {
+  static bool in_refresh;
+
+  /* 重入保护：任何调用方都不可能再把 UI 线程刷爆（实测首页曾经每个 UI tick
+   * 调一次、30-50Hz，把控制台灌满后应用阻塞在 printf 上，界面冻住）。
+   *
+   * 频率节流放在唯一调用点 dm_ui_tick() 里（1s 一次）；这里只挡重入，
+   * 不依赖 clock()/时间，避免再引入不可达代码路径。
+   */
+
+  if (in_refresh)
+    {
+      return 0;
+    }
+
+  in_refresh = true;
+
+#ifdef DM_NET_TRACE
   DM_LOG("net: refresh step=getifaddrs");
+#endif
   memset(&g_status, 0, sizeof(g_status));
 
 #if defined(CONFIG_NET) && defined(CONFIG_LIBC_NETDB)
@@ -278,6 +306,7 @@ int dm_net_refresh(void)
     if (getifaddrs(&list) != 0)
       {
         DM_WARN("net: getifaddrs failed: %d", errno);
+        in_refresh = false;
         return -errno;
       }
 
@@ -340,7 +369,9 @@ int dm_net_refresh(void)
   }
 #endif
 
+#ifdef DM_NET_TRACE
   DM_LOG("net: refresh step=summarize");
+#endif
   for (int i = 0; i < g_status.count; i++)
     {
       if (g_status.ifs[i].wireless)
@@ -381,6 +412,8 @@ int dm_net_refresh(void)
     }
 
   g_refreshed = true;
+  in_refresh = false;
+
   return 0;
 }
 

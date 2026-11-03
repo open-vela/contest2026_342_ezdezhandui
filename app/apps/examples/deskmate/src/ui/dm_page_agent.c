@@ -134,7 +134,7 @@ static int dm_page_agent_create(lv_obj_t *parent, int w, int h)
                        lv_color_hex(DM_COL_CARD));
   dm_label(card, DM_I18N_AGENT_QR, DM_FONT_BODY, lv_color_hex(DM_COL_ACCENT));
 
-  (void)dm_net_refresh();
+  /* 网络状态由 dm_ui_tick 统一刷新（1s 节流），页面只读缓存。 */
   net = dm_net_status();
   if (net != NULL && net->primary[0] != '\0')
     {

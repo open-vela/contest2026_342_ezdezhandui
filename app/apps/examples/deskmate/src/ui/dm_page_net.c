@@ -716,7 +716,7 @@ static void dm_page_net_update(void)
     s_last_refresh_ms = now;
   }
 
-  (void)dm_net_refresh();
+  /* 网络状态由 dm_ui_tick 统一刷新（1s 节流），页面只读缓存。 */
   net = dm_net_status();
 
   if (s_if_list != NULL)

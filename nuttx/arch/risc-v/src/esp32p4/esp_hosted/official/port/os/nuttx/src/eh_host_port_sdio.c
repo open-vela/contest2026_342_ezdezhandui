@@ -88,6 +88,17 @@ static void xfer_guard_disarm(void)
  * (appendix BU.6).  Capped, so the console stays readable.
  */
 
+/* 每事务级 trace：默认不编译（见 Kconfig 的说明）。
+ * 这套日志一次 WiFi 操作就是几十行，而 115200 控制台和应用输出是同一条 ——
+ * 灌满后应用的 printf 会阻塞、UI 冻住（真机实测）。
+ */
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE
+#  define EH_SDIO_TRACE(...) syslog(LOG_INFO, __VA_ARGS__)
+#else
+#  define EH_SDIO_TRACE(...) do { } while (0)
+#endif
+
 static void port_trace(const char *fn, int id, int dir, unsigned a,
                        unsigned b, int r)
 {
@@ -95,8 +106,8 @@ static void port_trace(const char *fn, int id, int dir, unsigned a,
 
   if (lines < 24)
     {
-      syslog(LOG_INFO, "eh_host_port_sdio: %s %s id=%d addr=0x%05x size=%u ret=%d\n",
-             fn, dir ? "exit" : "enter", id, a, b, r);
+      EH_SDIO_TRACE("eh_host_port_sdio: %s %s id=%d addr=0x%05x size=%u ret=%d\n",
+                    fn, dir ? "exit" : "enter", id, a, b, r);
       lines++;
     }
 }
@@ -105,6 +116,7 @@ static void port_trace(const char *fn, int id, int dir, unsigned a,
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
 
 #define TAG "eh_host_port_sdio"
+
 
 /* CCCR/FBR registers used here; the values are the SDIO specification's. */
 
@@ -769,7 +781,7 @@ int eh_host_port_sdio_read_reg(void *ctx, uint32_t reg, uint8_t *data,
 
     if (reg == 0x00050 && size >= 4 && seen < 8)
       {
-        syslog(LOG_INFO,
+        EH_SDIO_TRACE(
                "%s: transport INT_RAW read: ret=%d bytes=%02x %02x %02x %02x"
                " (bit23=%u)\n",
                SDIO_TAG, ret, data[0], data[1], data[2], data[3],
@@ -1039,7 +1051,7 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
 
     if (traced < 10)
       {
-        syslog(LOG_INFO,
+        EH_SDIO_TRACE(
                "%s: read_block addr=0x%05x (masked would be 0x%03x) size=%u "
                "ret=%d bytes=%02x %02x %02x %02x %02x %02x %02x %02x "
                "%02x %02x %02x %02x %02x %02x %02x %02x\n",
@@ -1080,7 +1092,7 @@ int eh_host_port_sdio_read_block(void *ctx, uint32_t reg, uint8_t *data,
             }
 
           line[16 * 3] = '\0';
-          syslog(LOG_INFO, "%s: payload read addr=0x%05x size=%u:%s\n",
+          EH_SDIO_TRACE("%s: payload read addr=0x%05x size=%u:%s\n",
                  SDIO_TAG, (unsigned)reg, (unsigned)size, line);
         }
     }
@@ -1285,7 +1297,7 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
                           ((uint32_t)lenreg[2] << 16) |
                           ((uint32_t)lenreg[3] << 24);
 
-          syslog(LOG_INFO,
+          EH_SDIO_TRACE(
                  "eh_host_port_sdio: watchdog INT_RAW=%08" PRIx32
                  " (newpkt=%u) LEN=%" PRIu32 "\n",
                  rawv, (unsigned)((rawv >> 23) & 1u), lenv);

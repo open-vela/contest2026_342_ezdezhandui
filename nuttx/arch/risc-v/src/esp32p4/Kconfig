@@ -296,6 +296,19 @@ config ESPRESSIF_HOSTED_OFFICIAL
 		state that has to be recovered (a full power cycle of the board,
 		not a JTAG reset) before the link can move payload again.
 	select NETDEV_IOCTL
+config ESPRESSIF_HOSTED_LOG_VERBOSE
+	bool "Verbose esp-hosted SDIO/transport tracing"
+	default n
+	depends on ESPRESSIF_HOSTED_SDIO
+	---help---
+		Print per-transfer SDIO traces (read_reg/read_block/payload/watchdog/
+		write_block) and the one-off bring-up diagnostics.
+
+		Default off: on this board a single WiFi operation produces dozens of
+		these lines, and the 115200 console is the same one the application
+		uses for its own output -- a full console blocks printf() and freezes
+		the UI (measured). Turn this on only when debugging the SDIO link.
+
 config ESPRESSIF_HOSTED_WIFI
 	bool "Wi-Fi control over esp-hosted (scan/connect)"
 	depends on ESPRESSIF_HOSTED_OFFICIAL

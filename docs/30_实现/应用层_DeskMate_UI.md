@@ -674,3 +674,43 @@ DM-SELFTEST RESULT: PASS (25/25)
 | CSI/DSI 共存 | `csi:dsi-coexist`（摄像头出帧 + 显示仍绘制） | ✅ |
 | 类 PC 网络页 | `net:ipv4-valid` / `net:eth-static` / `net:ap-degraded` + WiFi 密码连接 | ✅（热点=平台限制，已降级并注明） |
 | Agent 页 | `agent:page` / `agent:qr` / `agent:bridge` | ✅ |
+
+## 十六、真机「蓝屏卡死」+ 日志噪声：根因与修复
+
+### 16.1 根因（两个问题其实是同一个连环）
+
+1. `src/ui/dm_page_home.c` 在**每次页面 update**（LVGL tick，30–50 Hz）里调 `dm_net_refresh()`；
+   每次 refresh 都做 `getifaddrs()` + 逐接口 ioctl，并且打 3 行日志。
+2. 控制台被灌满后，**应用自己的 `printf` 阻塞在 NSH 控制台上** → UI 线程停住：
+   画面冻在某一帧（看着像"蓝屏"）、触摸无响应（"卡死"）。
+
+顺带发现并修掉一个真 bug：`dm_net_refresh()` 里我用 `clock()` 做节流，编译产物在
+`jal clock` 之后直接接了一条 `ebreak`（编译器把后续代码判成不可达），**一调用就
+PANIC**（`riscv_exception: Breakpoint`，EPC 落在 `dm_net_refresh`）。
+现在 refresh 只做**重入保护**，频率节流放在唯一调用点 `dm_ui_tick()`（1 s），不依赖 `clock()`。
+
+### 16.2 修法
+
+| 侧 | 改动 |
+|---|---|
+| 应用 | 页面不再各自 refresh，只读缓存 `dm_net_status()`；`dm_ui_tick()` 里**全局唯一**一处 1 s 节流刷新；`dm_net_refresh()` 加重入保护；`refresh step` 日志进 `DM_NET_TRACE`；`SIOCGIWNAME` 失败提示只打一次 |
+| 平台 | 新增 Kconfig `CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE`（默认 **n**）：`port_trace`、`transport INT_RAW`、`read_block addr=`、`payload read`、`watchdog INT_RAW`、`write_block` 全部改为 `EH_SDIO_TRACE()`（默认不编译）；entry 的 bring-up 诊断（D1 测试、dhcp raw）改为 `EH_LOGV()`；保留版本/枚举/`transport ready`/DHCP 结果/错误 |
+
+### 16.3 前后对比（真机实测）
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| 每事务日志（read_reg/read_block/payload/watchdog/transport） | 25 s 内 ~38 行 | **0 行** |
+| 空闲 10 s 窗口 | 持续刷 | **1 行** |
+| 启动+应用运行（60 s 窗口） | ~53 行 + 刷新风暴 | **18 行** |
+| 应用启动 | **PANIC**（`_assert` ← `dm_net_refresh` 的 ebreak） | `DM-READY`，无 panic |
+
+### 16.4 验收
+
+```
+DM-SELFTEST RESULT: PASS (25/25)      # 真机，--agent mock --camera
+工具：deskmate --agent mock --camera --selftest --report /tmp/r2.txt
+```
+
+模拟器同样 **PASS (25/25)**。调试 SDIO 链路时打开
+`CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE=y` 即可恢复全部 trace。

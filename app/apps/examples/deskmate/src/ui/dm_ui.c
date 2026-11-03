@@ -26,6 +26,7 @@
 #include "dm_log.h"
 #include "hal/dm_display.h"
 #include "ui/dm_i18n.h"
+#include "hal/dm_net.h"
 #include "ui/dm_page.h"
 #include "ui/dm_theme.h"
 #include "ui/dm_ui.h"
@@ -459,6 +460,24 @@ void dm_ui_toast(const char *text)
 void dm_ui_tick(void)
 {
   char msg[512];
+  static uint32_t s_last_net_ms;
+
+  /* 全局唯一一处网络刷新：1s 一次。
+   *
+   * 之前是各页面在自己的 update() 里调 dm_net_refresh()，首页每 tick（30-50Hz）
+   * 都调一次 —— 每次 getifaddrs + 逐接口 ioctl 还打日志，把 NSH 控制台灌满后
+   * 应用自己的 printf 阻塞，UI 直接冻住（真机现象：蓝屏 + 卡死）。
+   */
+
+  {
+    uint32_t now = lv_tick_get();
+
+    if (s_last_net_ms == 0 || now - s_last_net_ms >= 1000)
+      {
+        s_last_net_ms = now;
+        (void)dm_net_refresh();
+      }
+  }
 
   dm_ui_set_clock();
 

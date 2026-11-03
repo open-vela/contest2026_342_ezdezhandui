@@ -179,7 +179,7 @@ static void dm_home_update(void)
 
   if (s_cap_net != NULL)
     {
-      (void)dm_net_refresh();
+  /* 网络状态由 dm_ui_tick 统一刷新（1s 节流），页面只读缓存。 */
       net = dm_net_status();
       (void)dm_net_describe(desc, sizeof(desc));
       dm_label_set(s_cap_net, "%s: %s", DM_I18N_NET_STATE,

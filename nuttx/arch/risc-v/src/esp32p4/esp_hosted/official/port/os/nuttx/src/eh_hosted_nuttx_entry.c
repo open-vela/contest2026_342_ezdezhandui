@@ -49,6 +49,17 @@
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
 
+/* bring-up 期的"一次性诊断"日志：只在 ENABLE VERBOSE 时输出。
+ * 保留的是：starting / companion connected / leaving the Wi-Fi initialized /
+ * DHCP 结果 / 所有错误与警告 —— 这些用正常 LOG_INFO/LOG_ERR 打。
+ */
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE
+#  define EH_LOGV(...) syslog(LOG_INFO, __VA_ARGS__)
+#else
+#  define EH_LOGV(...) do { } while (0)
+#endif
+
 #define ENTRY_TAG "eh_hosted_nuttx"
 
 /* Defaults so this file works in a tree whose Kconfig predates the options
@@ -169,13 +180,13 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
     esp_configgpio(d1, INPUT | PULLUP);
     nxsig_usleep(2000);
-    syslog(LOG_INFO, "%s: D1 test: as input+pullup -> %d\n",
+    EH_LOGV("%s: D1 test: as input+pullup -> %d\n",
            ENTRY_TAG, esp_gpioread(d1));
 
     esp_configgpio(d1, OUTPUT);
     esp_gpiowrite(d1, true);
     nxsig_usleep(2000);
-    syslog(LOG_INFO, "%s: D1 test: driven high -> readback %d (1 = nothing else pulls it low)\n",
+    EH_LOGV("%s: D1 test: driven high -> readback %d (1 = nothing else pulls it low)\n",
            ENTRY_TAG, esp_gpioread(d1));
 
     /* Toggle it slowly so the analyser can confirm both the pad control and the
@@ -186,14 +197,14 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
       {
         esp_configgpio(d1, OUTPUT);
         esp_gpiowrite(d1, (i & 1) == 0 ? false : true);
-        syslog(LOG_INFO, "%s: D1 toggle %d -> wrote %d, read %d\n",
+        EH_LOGV("%s: D1 toggle %d -> wrote %d, read %d\n",
                ENTRY_TAG, i, (i & 1) == 0 ? 0 : 1, esp_gpioread(d1));
         nxsig_usleep(1000000);
       }
 
     esp_configgpio(d1, INPUT | OUTPUT | PULLUP | DRIVE_3);
     nxsig_usleep(2000);
-    syslog(LOG_INFO, "%s: D1 test: restored -> %d\n",
+    EH_LOGV("%s: D1 test: restored -> %d\n",
            ENTRY_TAG, esp_gpioread(d1));
   }
 
@@ -923,7 +934,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                         }
 
                       line[24 * 3] = '\0';
-                      syslog(LOG_INFO, "%s: dhcp status raw:%s\n",
+                      EH_LOGV("%s: dhcp status raw:%s\n",
                              ENTRY_TAG, line);
                     }
 

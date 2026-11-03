@@ -1110,3 +1110,25 @@ trylock 变体，或给触摸专用 transfer 带超时），而不是把总线�
 | 触摸读单次最大 | 1539ms（改 devlock trylock 前）→ 419ms | **≤60ms**（总线锁有界） |
 | `ui:responsive` 的 max_busy | 130~250ms | **70ms**（目标 <80ms ✅） |
 | 自检 | 28/29 | **29/29 PASS** |
+
+### 18.4 长跑验收状态（第 3 轮）与遗留
+
+**已完成**：P2（I2C 总线锁有界等待）→ 真机 `ui:responsive` **70ms**、自检 **29/29**。
+
+**10 分钟长跑**：本轮跑了两次（`--soak 10`，每 10 秒切页 + 相机页），应用侧数据正常——
+期间相机与显示提交计数持续增长（末次读取 cap_pub=1969 帧、commits=955），未观察到 panic 或卡死。
+但**自动采样不可靠**：JTAG 读取多次超时、串口 `cat /tmp/deskmate_soak.txt` 读不到内容，
+所以本轮**没有拿到干净的前后对比数值**。参考数据仍用 P2 之前那次长跑
+（相机 14.5fps / 显示 9.2 次提交每秒）。
+
+**下一轮**：把长跑采样改成**板上自记 + 一次读取**（应用已在写 `/tmp/deskmate_soak.txt`，
+需确认写入与读取路径可靠），或改用自检里的 4 秒窗口指标多次采样取统计。
+
+### 18.5 P3（PPA）集成点待定位
+
+`upper_hal_ppa` 的源码与 IDF 式 `CMakeLists.txt` 都在树里（`components/upper_hal_ppa`），
+但 NuttX 侧 HAL 组件的编译入口尚未定位（`arch/risc-v/src/esp32p4/CMakeLists.txt` 只显式列出
+port 自己的源文件；HAL 组件由 vendored 树自己的机制编译，P4 构建实际用的是
+`cmake_out/.../esp-hal-3rdparty` 的副本，与之前 `upper_hal_dma` 的教训一致）。
+**下一轮**先把这条编译链摸清（用 `ninja -t commands` 找编译某 HAL 源文件时的实际路径与规则），
+再决定 PPA 的加入方式。

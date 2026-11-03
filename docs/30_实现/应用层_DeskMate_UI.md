@@ -982,3 +982,28 @@ worker 长时间卡在阻塞 ioctl 里并占着重入标志，快照永远发布
 
 **顺带修掉的真问题**：网络刷新以前每 10 秒无条件在 UI 线程跑一次同步 ioctl；
 现在改为**只在网络页可见时**刷新（2 秒一次），其它页面完全不碰网络 ioctl。
+
+### 17.5 绘制分段计时（第 11 轮）：flush 已排除，计时器路径补齐
+
+在 LVGL 里加了三处 JTAG 可读计时（**workspace 层补丁**，`apps/graphics/lvgl/lvgl/src/core/lv_refr.c`）：
+
+| 计数器 | 位置 | 含义 |
+|---|---|---|
+| `g_dbg_lvgl_flush_us(_max)` | `draw_buf_flush()` | 一次刷写（含驱动 FBIO_UPDATE） |
+| `g_dbg_lvgl_refr_us(_max)` | `refr_area()` / `refr_area_part()` | 一次重绘 |
+| `g_dbg_lvgl_refr_calls` | 同上 | 重绘次数 |
+
+**真机实测（相机页，60 秒窗口，JTAG 采样）**：
+
+```
+flush: max = 10 ms, 合计 230 ms/60s     ← 很小
+app busy: max = 1560 ms                 ← 同一窗口
+```
+
+结论：**停顿不在刷写上**，在 `lv_timer_handler()` 的其它部分（绘制 / 定时器回调 / 应用侧 tick 工作）。
+
+**踩坑**：我们的显示是 **FULL 渲染模式**，走的是 `refr_area_part()` 而不是 `refr_area()` ——
+第一次只给 `refr_area()` 加计时，计数一直是 0。已在 `refr_area_part()` 补齐。
+
+**下一轮**：用补好的 `refr_area_part` 计时再测一次 60 秒窗口，
+把 `busy` 与 `refresh` 对齐 —— 两者相等 ⇒ 绘制慢；`refresh` 远小于 `busy` ⇒ 在定时器/应用侧。

@@ -1091,3 +1091,22 @@ ES8311 共用。相机做 SCCB 操作时，触摸的传输就在这把锁上等�
 **下一阶段**：给触摸这条路径一个**总线上限等待**（例如 `esp_i2c_transfer` 增加
 trylock 变体，或给触摸专用 transfer 带超时），而不是把总线锁全局改成 trylock
 （会影响音频/相机）。
+
+### 18.3 P2 已解决：I2C 总线锁改成有界等待
+
+`nuttx/arch/risc-v/src/common/espressif/esp_i2c.c` 的 `esp_i2c_transfer()`
+原来用 `nxmutex_lock(&priv->lock)` **无限等**整条 I2C0 总线；I2C0 由
+触摸(GT911)、相机 SCCB、ES8311 共用，任一方占着总线时触摸读就被拖住
+（真机实测单次 419ms → LVGL 输入读定时器卡住 → 整屏卡顿）。
+
+**修法**：改用 `nxmutex_timedlock(&priv->lock, ESP_I2C_LOCK_TIMEOUT_MS)`
+（**60ms**）。正常传输是 µs~ms 级，60ms 足够宽裕；真卡住时快速失败返回
+`-ETIMEDOUT`，触摸驱动当作"这次没有新样本"，LVGL 保持上一状态、下次轮询再读。
+
+**真机效果（60 秒窗口，相机页）**：
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| 触摸读单次最大 | 1539ms（改 devlock trylock 前）→ 419ms | **≤60ms**（总线锁有界） |
+| `ui:responsive` 的 max_busy | 130~250ms | **70ms**（目标 <80ms ✅） |
+| 自检 | 28/29 | **29/29 PASS** |

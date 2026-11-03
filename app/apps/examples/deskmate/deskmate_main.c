@@ -69,6 +69,7 @@
 static const char *g_usage =
   "Usage: " DM_PROGNAME " [options]\n"
   "  --selftest          run the headless scenario, print the report and exit\n"
+  "  --freeze-preview    stop re-pointing the canvas at new frames (diagnostic)\n"
   "  --soak <sec>        cycle pages every <sec> seconds and log metrics (long run)\n"
   "  --tour              walk every page and snapshot it (demo, no assertions)\n"
   "  --snap <path>       snapshot destination (default " DM_SNAP_HOST_DIR "/dm_selftest.bin)\n"
@@ -230,6 +231,12 @@ int main(int argc, FAR char *argv[])
       if (strcmp(argv[i], "--selftest") == 0)
         {
           selftest = true;
+        }
+      else if (strcmp(argv[i], "--freeze-preview") == 0)
+        {
+          extern int g_freeze_preview;
+
+          g_freeze_preview = 1;
         }
       else if (strcmp(argv[i], "--soak") == 0 && i + 1 < argc)
         {

@@ -121,6 +121,10 @@
  * 0 = 不节流。可用 --cam-fps N 覆盖。
  */
 
+/* 预览节流（ms）。真机实验：66ms(15fps) 时相机页偶发 200ms 刷写尖峰（怀疑与
+ * 采集/转换争 PSRAM 带宽有关）；100ms(10fps) 用于验证该假设。--cam-fps 可覆盖。
+ */
+
 #define DM_CAMERA_PREVIEW_MS 66
 #define DM_CAMERA_PREVIEW_H 180
 

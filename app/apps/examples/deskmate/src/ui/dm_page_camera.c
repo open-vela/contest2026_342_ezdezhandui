@@ -70,6 +70,10 @@ static uint32_t s_cost_n;
 static uint32_t s_report_ms;
 static uint32_t s_calls;
 
+/* 诊断开关：冻结预览（不改 draw_buf->data），用来验证"每帧换图源是否触发整屏重绘"。 */
+
+int g_freeze_preview;
+
 uint32_t dm_page_camera_calls(void)
 {
   return s_calls;
@@ -189,6 +193,13 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
                                 first->pixels : s_fallback),
                        DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H,
                        LV_COLOR_FORMAT_RGB565);
+  /* 画布必须**定死 1:1 尺寸**：父卡片是 flex 布局，会把画布拉伸到卡片宽度，
+   * LVGL 就得每帧做图像缩放（软件渲染），真机实测这会把单轮 UI 忙时拖到
+   * 200~340ms。显式设定尺寸 + 移出布局流，绘制就退化成一次 320x180 的 blit。
+   */
+
+  lv_obj_set_size(s_canvas, DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H);
+  lv_obj_add_flag(s_canvas, LV_OBJ_FLAG_FLOATING);
   lv_obj_align(s_canvas, LV_ALIGN_TOP_LEFT, 0, 0);
 
   /* Right column: what the pipeline is doing. */
@@ -284,7 +295,7 @@ static void dm_page_camera_update(void)
       {
         lv_draw_buf_t *db = lv_canvas_get_draw_buf(s_canvas);
 
-        if (db != NULL)
+        if (db != NULL && !g_freeze_preview)
           {
             db->data = (void *)frame.pixels;
           }

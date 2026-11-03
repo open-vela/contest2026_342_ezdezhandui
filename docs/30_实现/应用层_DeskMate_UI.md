@@ -840,3 +840,28 @@ DM-SELFTEST RESULT: PASS (25/25)
 
 **当前可交付状态**：不开相机 = 完全正常（真机 25/25、日志安静、面板可点，用户已确认）；
 用过相机后需复位一次（已在 Kconfig help 与本文档写明）。
+
+### 16.10 相机→蓝屏：完整实验清单（全部未能根治）
+
+按顺序做了 6 组实验，每一组都用真机 + 用户目视判定：
+
+| # | 实验 | 结果 |
+|---|---|---|
+| 1 | `dw_gdma_acquire_group_handle` 加"已在跑就不复位" | 修掉"开相机瞬间显示死"，但退出后仍蓝屏 |
+| 2 | 相机 uninit 不释放共享 MIPI PHY LDO | 仍蓝屏 |
+| 3 | 相机改"抓 3 帧就停流" | 仍蓝屏（不是并发时长问题） |
+| 4 | 跳过 ISP bypass bring-up | **相机打开期间面板正常**（相机无画面），但关掉相机后仍蓝屏 |
+| 5 | 应用 6 个退出路径补 `dm_camera_destroy()` | 仍蓝屏 |
+| 6 | 相机 uninit **末尾**（相机 DMA 已拆）重拉 DSI 视频 | 仍蓝屏 |
+| 7 | 在相机启动后重拉 DSI 视频 | **直接 Exception 7（store access fault）** |
+
+代码层事实：`capture_close()` **会**调 `IMGDATA_UNINIT`，`esp_csi_data_uninit` 正常执行
+（ctlr disable + del + LDO 保留）；`dw_gdma_del_channel` 只销毁通道，不做控制器级操作。
+
+**结论**：这条共享 MIPI/ISP/GDMA 链路的相机与显示共存问题，靠现有驱动层的开关组合救不回来，
+需要一次**专门的驱动级 debug 会话**（在 ISP bypass 打开的前提下，逐寄存器比对相机 close
+前后 DSI 侧的 bridge/DPI/PHY 状态），不是应用层能收口的。
+
+**交付状态（已如实写入文档与 Kconfig help）**：
+- 不开相机：真机 25/25、日志安静、面板正常可点（用户已多次确认）
+- 开过相机：需要复位一次

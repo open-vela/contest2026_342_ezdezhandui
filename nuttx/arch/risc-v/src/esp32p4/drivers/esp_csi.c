@@ -716,6 +716,10 @@ static int esp_csi_data_uninit(FAR struct imgdata_s *data)
    * 拆解流程里顺手做。当前只留快照，供定位用。
    */
 
+  /* 这里**不**重拉 DSI：实测在 uninit 末尾重拉仍然救不回面板（见文档 §16.10），
+   * 且相机启动/采集期间重拉会直接触发 Exception 7。只留快照供定位。
+   */
+
   _info("CSI: uninit done (chen0 disable=%08x del=%08x)\n",
         (unsigned)g_dbg_csi_chen0_disable, (unsigned)g_dbg_csi_chen0_del);
 

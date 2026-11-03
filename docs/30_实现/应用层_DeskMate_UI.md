@@ -1031,3 +1031,26 @@ app busy: max = 1560 ms                 ← 同一窗口
 **下一轮**：在 `lv_nuttx_touchscreen.c` 的 read 回调前后加计时（或直接给
 indev 的 `read_period` 设限 / 只保留真正的接触样本），确认/排除触摸读取，
 再决定改法。
+
+### 17.7 尖峰根因确认：GT9xx 触摸读的**阻塞互斥锁**
+
+用 `lv_indev_read_timer_cb` / `touchscreen_read` 计时（JTAG 可读）定位到：
+**单次触摸读 1539 ms**（累计 18 秒），与 `lv_timer_handler` 的 1550ms 完全吻合。
+
+查 `nuttx/drivers/input/gt9xx.c`：`gt9xx_read()` 用 `nxmutex_lock(&priv->devlock)`
+—— 而驱动自己的**中断/工作线程**也持有同一把锁做 I2C 传输。一旦 I2C 慢/重试，
+LVGL 的输入读定时器就在这把锁上阻塞上秒。
+
+**修法**：`gt9xx_read()` 改用 `nxmutex_trylock()`，锁忙时返回 `-EAGAIN`
+（等价于"这次没有新样本"，LVGL 保持上一状态，33ms 后再轮询）。
+
+**效果（真机，60 秒窗口，相机页）**：
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| 触摸读单次最大 | **1539 ms** | **419 ms** |
+| `ui:responsive` 的 max_busy | 190~350 ms | **130 ms** |
+| `cam:fps` | 7~10 fps | 10 fps（PASS） |
+
+剩余的 419 ms 是**拿到锁之后那次 I2C 传输本身**的耗时 —— 要彻底消掉需要
+调 I2C 超时/重试（或把触摸中断路径的 I2C 读拆小），属驱动层后续优化。

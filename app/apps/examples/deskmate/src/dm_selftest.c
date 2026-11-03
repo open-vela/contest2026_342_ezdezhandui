@@ -472,6 +472,35 @@ void dm_selftest_step(void)
           dm_check("ui:net-page",
                    dm_ui_current_id() != NULL &&
                    strcmp(dm_ui_current_id(), "net") == 0, desc);
+
+          /* Agent 页：真实数据通道 + 二维码（复用 LVGL 的 qrcodegen） */
+
+          {
+            int rc = dm_ui_goto_id("agent");
+            const char *id = dm_ui_current_id();
+
+            snprintf(g_detail, sizeof(g_detail), "page=%s rc=%d",
+                     id != NULL ? id : "?", rc);
+            dm_check("agent:page",
+                     id != NULL && strcmp(id, "agent") == 0, g_detail);
+          }
+
+          snprintf(g_detail, sizeof(g_detail), "qr=%d", g_app_agent_qr_ok);
+          dm_check("agent:qr", g_app_agent_qr_ok == 1, g_detail);
+
+          {
+            const char *st = dm_agent_state();
+
+            snprintf(g_detail, sizeof(g_detail), "state=%s sent=%u recv=%u",
+                     st != NULL ? st : "?", dm_agent_sent_count(),
+                     dm_agent_recv_count());
+            dm_check("agent:bridge",
+                     st != NULL && (strcmp(st, "ws") == 0 ||
+                                    strcmp(st, "online") == 0 ||
+                                    strcmp(st, "offline") == 0 ||
+                                    strcmp(st, "mock") == 0 ||
+                                    strcmp(st, "off") == 0), g_detail);
+          }
           dm_check("net:interfaces", net != NULL && net->count > 0, desc);
 
           /* 类 PC 的三条判据：地址校验、静态地址能写回、热点如实降级 */
@@ -618,6 +647,53 @@ void dm_selftest_step(void)
               dm_check("snapshot:picture",
                        stats.distinct >= 3 && stats.dominant_pct <= 90 &&
                        stats.grad_mean <= 8, g_detail);
+            }
+
+          /* CSI 与 DSI 共存：摄像头出帧的同时，显示必须还活着。
+           *
+           * 真机踩过的坑：CSI 走 dw_gdma 框架，首次取 group handle 会对控制器做
+           * **全局复位**，把 DSI 用裸 LL 配的通道抹掉 → 屏变纯色。修好后两者可同时工作。
+           */
+
+          if (!dm_camera_ready())
+            {
+              dm_check("csi:dsi-coexist", true,
+                       "camera off (run with --camera to exercise it)");
+            }
+          else
+            {
+              struct dm_camera_frame_s frame;
+              int got = 0;
+              int tries;
+
+              for (tries = 0; tries < 40; tries++)
+                {
+                  if (dm_camera_poll(&frame) == 0 && frame.pixels != NULL)
+                    {
+                      got = 1;
+                      break;
+                    }
+
+                  usleep(50000);
+                }
+
+              /* 显示侧：同一时刻再取一次画面统计，确认 UI 仍能正常绘制。 */
+
+              if (dm_display_stats(&stats) == 0)
+                {
+                  snprintf(g_detail, sizeof(g_detail),
+                           "camera=%s frame=%s display distinct=%d grad=%d",
+                           dm_camera_backend(), got ? "ok" : "none",
+                           stats.distinct, stats.grad_mean);
+
+                  dm_check("csi:dsi-coexist",
+                           got && stats.distinct >= 3 && stats.grad_mean <= 8,
+                           g_detail);
+                }
+              else
+                {
+                  dm_check("csi:dsi-coexist", false, "display stats failed");
+                }
             }
         }
 

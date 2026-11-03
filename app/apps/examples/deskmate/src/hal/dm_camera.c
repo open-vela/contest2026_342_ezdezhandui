@@ -286,7 +286,13 @@ int dm_camera_create(int preview_w, int preview_h)
                 {
                   struct v4l2_buffer buf;
 
-                  g_bufs[i].mem = malloc(bytes);
+                  /* 必须按缓存行对齐（64B，这里给 128B 余量）：CSI HAL 在 start 时会对这个
+       * 缓冲区做 esp_cache_msync(M2C)，而它要求地址按 cache line 对齐 ——
+       * 用 malloc 的 8/16B 对齐会被判非法，直接返回 ESP_ERR_INVALID_ARG(258)，
+       * 现象就是 esp_cam_ctlr_start failed: 258（实测）。
+       */
+
+      g_bufs[i].mem = memalign(128, bytes);
                   g_bufs[i].len = bytes;
 
                   if (g_bufs[i].mem == NULL)

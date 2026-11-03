@@ -43,6 +43,11 @@ extern dm_page_t dm_page_camera;
 extern dm_page_t dm_page_chat;
 extern dm_page_t dm_page_net;
 extern dm_page_t dm_page_settings;
+extern dm_page_t dm_page_agent;
+
+/* Agent 页生成配对二维码的结果（自检断言用，非 static 便于 JTAG 取证）。 */
+
+extern int g_app_agent_qr_ok;
 
 /****************************************************************************
  * Public Function Prototypes

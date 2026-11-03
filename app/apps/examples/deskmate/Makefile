@@ -29,7 +29,7 @@ CSRCS  += src/ui/dm_page_camera.c
 CSRCS  += src/ui/dm_page_chat.c
 CSRCS  += src/ui/dm_page_home.c
 CSRCS  += src/ui/dm_page_net.c
-CSRCS  += src/ui/dm_page_settings.c
+CSRCS  += src/ui/dm_page_settings.c src/ui/dm_page_agent.c
 CSRCS  += src/ui/dm_ui.c
 CSRCS  += src/ui/dm_widgets.c
 

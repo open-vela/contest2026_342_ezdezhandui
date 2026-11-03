@@ -29,6 +29,18 @@
 #define DM_I18N_TAB_CHAT        "对话"
 #define DM_I18N_TAB_NET         "网络"
 #define DM_I18N_TAB_SETTINGS    "设置"
+#define DM_I18N_TAB_AGENT       "智能体"
+#define DM_I18N_AGENT_TITLE     "智能体"
+#define DM_I18N_AGENT_STATE     "连接状态"
+#define DM_I18N_AGENT_ONLINE    "在线"
+#define DM_I18N_AGENT_OFFLINE   "离线（后台连不上）"
+#define DM_I18N_AGENT_MOCK      "离线应答（mock）"
+#define DM_I18N_AGENT_COUNTS    "收发"
+#define DM_I18N_AGENT_LAST      "最近回复"
+#define DM_I18N_AGENT_NONE      "还没有收到回复"
+#define DM_I18N_AGENT_QR        "配对二维码"
+#define DM_I18N_AGENT_QR_HINT   "手机扫码配对；也可以直接在「对话」页聊天"
+#define DM_I18N_AGENT_RECONNECT "重连"
 
 /* 首页 */
 

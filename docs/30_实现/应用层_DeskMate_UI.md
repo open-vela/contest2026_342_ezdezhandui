@@ -630,3 +630,47 @@ DM-SELFTEST RESULT: PASS (22/22)
 用户目视确认：面板正常中文界面 + 相机页有画面。
 
 证据：`docs/40_验证与证据/截图与对照日志/应用层_真机快照/selftest_report_22of22_csi_dsi_coexist.txt`
+
+## 十五、Agent 页：把 ai_agent 的能力嵌进 DeskMate（真机 25/25）
+
+### 15.1 为什么不是"启用它的 LVGL UI"
+
+`packages/ai_agent/src/ui/lvgl_ui_channel.c` 是一个**会自己初始化显示驱动 + 自建
+lv_timer_handler 线程**的整屏 UI（圆屏聊天 + PTT）。直接启用
+`CONFIG_AI_AGENT_LVGL_UI` 会和 DeskMate 的单线程 LVGL **抢屏**。
+
+所以做法是：**只复用它的数据通道与算法，不启用它的 UI**。
+
+### 15.2 页面内容
+
+| 区域 | 内容 |
+|---|---|
+| 左 | 连接状态（`ws · 在线` / `ws · 离线` / `离线应答(mock)` / `off`）、收发计数、**最近一条真实回复**（`dm_agent_last_recv()`）、`重连` 按钮 |
+| 右 | **配对二维码**（内容 `http://<本机IP>:28789/?chat=deskmate-ui`）+ 地址文本 + 使用提示 |
+
+- 二维码用 **LVGL 的 `lv_qrcode`**（`lv_qrcode_create/set_size/update`），底层就是
+  `qrcodegen`——与 ai_agent 的 `qrcode_display.c` 用的是**同一套编码算法**。
+- 聊天本身仍走「对话」页（同一个 ws，`chat_id=deskmate-ui`），主动推送进顶栏 + 对话页。
+- ws 连接是**非阻塞 + 后台重连**（见 §12），ai_agent 没起来也不会卡住 UI。
+
+### 15.3 真机验收（25/25）
+
+```
+[dm-check] agent:bridge      PASS state=mock sent=0 recv=0
+[dm-check] agent:page        PASS page=agent rc=0
+[dm-check] agent:qr          PASS qr=1
+[dm-check] csi:dsi-coexist   PASS camera=v4l2 frame=ok display distinct=256 grad=2
+DM-SELFTEST RESULT: PASS (25/25)
+```
+
+说明：本轮验收用 `--agent mock` 跑（ai_agent 服务未启动，`state=mock` 是如实的）；
+页面本身走的是真实 ws 桥接，启动 `ai_agent` 后 `state` 会变 `ws · 在线`，回复进
+`最近回复` 与「对话」页。
+
+### 15.4 三件事的总账
+
+| 工作流 | 真机判据 | 状态 |
+|---|---|---|
+| CSI/DSI 共存 | `csi:dsi-coexist`（摄像头出帧 + 显示仍绘制） | ✅ |
+| 类 PC 网络页 | `net:ipv4-valid` / `net:eth-static` / `net:ap-degraded` + WiFi 密码连接 | ✅（热点=平台限制，已降级并注明） |
+| Agent 页 | `agent:page` / `agent:qr` / `agent:bridge` | ✅ |

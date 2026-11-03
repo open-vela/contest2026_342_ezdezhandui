@@ -63,6 +63,14 @@ int dm_agent_poll(char *buf, size_t len);
 unsigned int dm_agent_sent_count(void);
 unsigned int dm_agent_recv_count(void);
 
+/* 最近一条收到的消息（Agent 页显示"真实回复"用）；没有则返回空串。 */
+
+const char *dm_agent_last_recv(void);
+
+/* 手动触发一次重连（Agent 页的"重连"按钮）。 */
+
+void dm_agent_reconnect(void);
+
 /* Feed the proactive engine: called with a text the device wants to say on
  * its own initiative (motion detected, daily briefing, ...).  It is rendered
  * like an agent message.

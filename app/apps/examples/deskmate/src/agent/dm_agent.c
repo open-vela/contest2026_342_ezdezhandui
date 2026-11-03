@@ -85,6 +85,10 @@ static struct dm_agent_msg_s g_queue[DM_AGENT_QDEPTH];
 static int g_head;
 static int g_tail;
 
+/* 最近一条**来自智能体**的消息（Agent 页展示"真实回复"用）。 */
+
+static char g_last_recv[DM_AGENT_MSGLEN];
+
 static unsigned int g_sent;
 static unsigned int g_recv;
 
@@ -105,6 +109,11 @@ static void dm_agent_enqueue(const char *text, bool proactive)
   strlcpy(g_queue[g_head].text, text, DM_AGENT_MSGLEN);
   g_queue[g_head].proactive = proactive;
   g_head = next;
+
+  if (!proactive)
+    {
+      strlcpy(g_last_recv, text, sizeof(g_last_recv));
+    }
 
   if (proactive)
     {
@@ -720,6 +729,21 @@ int dm_agent_poll(char *buf, size_t len)
 unsigned int dm_agent_sent_count(void)
 {
   return g_sent;
+}
+
+const char *dm_agent_last_recv(void)
+{
+  return g_last_recv;
+}
+
+void dm_agent_reconnect(void)
+{
+  if (g_mode == DM_AGENT_WS)
+    {
+      g_ws_ready = false;
+      g_ws_last_try_ms = 0;
+      dm_agent_ws_kick();
+    }
 }
 
 unsigned int dm_agent_recv_count(void)

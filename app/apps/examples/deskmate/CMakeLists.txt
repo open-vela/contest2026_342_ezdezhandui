@@ -33,6 +33,7 @@ if(CONFIG_EXAMPLES_DESKMATE)
     src/ui/dm_page_home.c
     src/ui/dm_page_net.c
     src/ui/dm_page_settings.c
+    src/ui/dm_page_agent.c
     src/ui/dm_ui.c
     src/ui/dm_widgets.c)
 

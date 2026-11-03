@@ -35,7 +35,7 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define DM_PAGE_COUNT 5
+#define DM_PAGE_COUNT 6
 #define DM_TOAST_TICKS 40          /* UI ticks a toast stays visible */
 
 /****************************************************************************
@@ -49,9 +49,10 @@ static dm_page_t *g_pages[DM_PAGE_COUNT] =
   &dm_page_chat,
   &dm_page_net,
   &dm_page_settings,
+  &dm_page_agent,
 };
 
-static int g_tab_index[DM_PAGE_COUNT] = { 0, 1, 2, 3, 4 };
+static int g_tab_index[DM_PAGE_COUNT] = { 0, 1, 2, 3, 4, 5 };
 
 static lv_obj_t *g_screen;
 static lv_obj_t *g_content;

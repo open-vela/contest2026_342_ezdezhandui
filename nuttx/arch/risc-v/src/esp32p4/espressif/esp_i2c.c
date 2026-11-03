@@ -1145,6 +1145,20 @@ static int esp_i2c_polling_waitdone(struct esp_i2c_priv_s *priv)
  *
  ****************************************************************************/
 
+/* I2C 总线锁的有界等待（毫秒）+ 传输计时。
+ *
+ * I2C0 由触摸(GT911)、相机 SCCB、ES8311 共用。任一驱动占着总线时，其它调用方
+ * 不应无限等待（真机实测触摸读被拖到 419ms，进而让 LVGL 输入读定时器卡住、
+ * 整屏卡顿）。60ms 对正常传输足够宽裕，真卡住时快速失败返回 -ETIMEDOUT。
+ *
+ * 注意：本文件才是 **P4 实际编译** 的 I2C 实现（common/espressif 下的那份不参与构建）。
+ */
+
+#define ESP_I2C_LOCK_TIMEOUT_MS 60
+
+volatile uint32_t g_dbg_i2c_xfer_ms;
+volatile uint32_t g_dbg_i2c_xfer_ms_max;
+
 static int esp_i2c_transfer(struct i2c_master_s *dev,
                             struct i2c_msg_s *msgs,
                             int count)
@@ -1159,7 +1173,7 @@ static int esp_i2c_transfer(struct i2c_master_s *dev,
 
   DEBUGASSERT(count > 0);
 
-  ret = nxmutex_lock(&priv->lock);
+  ret = nxmutex_timedlock(&priv->lock, ESP_I2C_LOCK_TIMEOUT_MS);
   if (ret < 0)
     {
       return ret;

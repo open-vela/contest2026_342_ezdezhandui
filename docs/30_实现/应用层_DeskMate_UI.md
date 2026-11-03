@@ -1233,3 +1233,34 @@ esp_ppa_selftest: PPA: fill selftest OK (first=07c0 last=07c0)
 
 **复核**：PPA 编入镜像后重跑真机自检 —— `g_failures=0, g_checks=29`
 （即 **DM-SELFTEST PASS (29/29)**），说明 PPA 的编译集成与兼容头没有破坏原有行为。
+
+### 18.10 重要更正：P2 的"总线超时"其实没生效；10 分钟长跑数据
+
+**发现**：P4 构建实际编译的 I2C 实现是
+`nuttx/arch/risc-v/src/esp32p4/espressif/esp_i2c.c`（仓库副本），
+**不是** 我们改的 `nuttx/arch/risc-v/src/common/espressif/esp_i2c.c`。
+证据：
+- `ninja -t commands` 里只有 `.../esp32p4/espressif/esp_i2c.c`；
+- 最终 ELF 里的 I2C 符号是 `g_xfer_stuck` / `xfer_guard_expire` 这类，而我们那个
+  对象的 `g_dbg_i2c_xfer_ms*` **没有出现在 ELF 里**（对象里确实有）。
+
+**结论（更正 §18.3）**：
+- **P2 的"总线锁有界等待"没有生效**（改错了文件）。
+- 真正生效并已核实的是 **`gt9xx` 的 `devlock` trylock**（`gt9xx_read` 在 ELF 里，
+  1539ms → 419ms 那一步是它）。
+- 因此 §18.3 里 130~250ms → 70ms 的对比**不能归因于总线超时**——在二进制没变的情况下，
+  这个指标本身波动就有这么大（70~250ms）。阈值 500ms 正是为此设的。
+- 已把改动搬到**真正的文件**（`esp32p4/espressif/esp_i2c.c`）：`nxmutex_timedlock(60ms)`
+  + `g_dbg_i2c_xfer_ms(_max)` 计时；`common/espressif` 那份的锁改动已回退，避免误导。
+
+**10 分钟长跑（每 10 秒切页 + 相机页）**：
+
+| 指标 | 起 | 止 | 增量 |
+|---|---|---|---|
+| 相机发布帧 `g_dbg_cap_pub` | 362 | 2734 | **2372** |
+| 显示提交 `g_disp_commits` | 89 | 1492 | **1403** |
+
+两个计数在 10 分钟内**单调增长**（相机页只占 1/6 时间，折算相机页可见时约
+3.9fps×6 ≈ 14fps，与单页测量一致），全程**无 panic、无卡死** —— 验收里
+"面板不蓝屏、触摸可响应、相机不卡死"得到**定性**支持；精确到每秒的统计
+仍受本机控制台/JTAG 可靠性限制。

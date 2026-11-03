@@ -224,6 +224,16 @@ static const struct imgdata_ops_s g_esp_csi_ops =
 
 static struct esp_csi_priv_s g_esp_csi_priv;
 
+/* 摄像头启动链路的诊断（非 static → 可用 JTAG 按符号直接读）。
+ *
+ * 板上串口并不可靠（驱动日志会淹没它），而 `CSI: ctlr start rc=%d` 是定位
+ * `esp_cam_ctlr_start failed: 258` 的关键，所以同时落进这里的全局。
+ */
+
+int g_dbg_csi_create_rc = -999;
+int g_dbg_csi_start_rc  = -999;
+int g_dbg_csi_handle    = -1;
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -869,6 +879,8 @@ static int esp_csi_data_start_capture(FAR struct imgdata_s *data,
   if (!priv->ctlr_created)
     {
       ret = esp_csi_ctlr_create(priv);
+      g_dbg_csi_create_rc = ret;
+
       if (ret < 0)
         {
           return ret;
@@ -883,7 +895,10 @@ static int esp_csi_data_start_capture(FAR struct imgdata_s *data,
    * transfer.
    */
 
+  g_dbg_csi_handle = (priv->ctlr != NULL) ? 1 : 0;
+
   esp_err_t csi_start_err = esp_cam_ctlr_start(priv->ctlr);
+  g_dbg_csi_start_rc = (int)csi_start_err;
 
   /* Report the controller-start result either way.  s_ctlr_csi_start() runs a
    * fixed sequence -- cache msync(M2C), dw_gdma_channel_config_transfer(),

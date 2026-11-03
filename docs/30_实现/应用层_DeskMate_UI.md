@@ -1284,3 +1284,35 @@ g_failures = 0, g_checks = 29   →   DM-SELFTEST PASS (29/29) ✔
 （那是 esp_hosted SDIO 的符号，与 I2C 无关）。这条需要单独排查（可能与
 链接脚本对 arch 归档成员的 .bss 处理有关），**P4 的 I2C 部分因此仍未完成**；
 PPA 的计时（`g_dbg_ppa_ms*`）正常可用。
+
+### 18.12 P4 触摸 I2C 计时上线 + P2 残留的真实数据（390ms）
+
+把计时从"会被链接器丢弃的 `esp_i2c.c`"挪到**确定会链接**的
+`nuttx/drivers/input/gt9xx.c`（`gt9xx_read` 确实在 ELF 里），新增：
+
+- `g_dbg_touch_i2c_us(_max)`：触摸 I2C 读耗时（微秒）
+
+**真机实测（一次自检全过程）**：
+
+| 指标 | 值 |
+|---|---|
+| `g_failures / g_checks` | 0 / **29** → **PASS (29/29)** ✔ |
+| `g_dbg_touch_i2c_us_max` | **390,000 µs = 390 ms** |
+| `g_ui_max_busy_ms` | 180 ms |
+
+**两个结论**：
+
+1. **P4 的"触摸 I2C 耗时"这一项完成**（数据可读，JTAG 直接取）。
+2. **P2 的 390ms 残留是真实存在的，而且我们之前的修法根本没生效**：
+   - `nuttx.map` 的"丢弃段"里明确列着
+     `.bss.g_dbg_i2c_xfer_ms_max` / `.bss.g_dbg_i2c_xfer_ms`（size 0x4，地址 0x0），
+     说明 `esp_i2c.c` 那个成员的段被 `-ffunction-sections/-fdata-sections` + gc-sections
+     丢掉了；
+   - 也就是说 **`nxmutex_timedlock(60ms)` 从来没跑过**，触摸 I2C 读仍会被总线拖到 390ms。
+   - 根因：树里 I2C 驱动有**多份副本**，最终链接进去的不是我们改的那份。
+3. 真正可用的协防是 **`gt9xx` 的 `devlock` trylock**（已核实生效，1539ms → 419ms），
+   但它挡不住"拿到锁之后那次 I2C 传输本身"的 390ms。
+
+**下一轮**：用 `nuttx.map` 反查**真正被链接**的 I2C 实现（找提供
+`esp_i2c_transfer` 那个 `esp_i2cbus_ops` 的对象），把有界等待落到那份上；
+若确认无法从 I2C 层限制，则在 `gt9xx` 层把读周期/等待再做一层约束。

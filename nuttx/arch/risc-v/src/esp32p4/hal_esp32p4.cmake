@@ -590,6 +590,16 @@ if(CONFIG_ESPRESSIF_PPA)
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_srm.c
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_blend.c
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_fill.c)
+
+  # PPA 源码用 ::__containerof()::（IDF 宏），我们只给它们注入一份兼容头，
+  # 不去改动 vendored 源码。
+  set(_ppa_srcs
+      ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_core.c
+      ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_srm.c
+      ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_blend.c
+      ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_fill.c)
+  target_compile_options(arch PRIVATE
+      "-include${CMAKE_CURRENT_LIST_DIR}/esp_hosted/compat/ppa_compat.h")
 endif()
 
 if(CONFIG_ESPRESSIF_IDF_ENV_FPGA)

@@ -1164,3 +1164,24 @@ ppa_core.c:15: fatal error: freertos/portmacro.h: No such file or directory
 `esp_hosted/compat/freertos_compat/freertos/` 下补 `portmacro.h` 与 `semphr.h`
 （信号量用 NuttX `sem_t` + `esp_os_*` 风格封装），再打开 `CONFIG_ESPRESSIF_PPA`
 做一次"最小 PPA fill/SRM"验证（注意 cache 一致）。这是 P3 的最后一公里。
+
+### 18.7 P3a 达成：PPA 已编入构建（4 个目标文件）
+
+**补齐的两处 FreeRTOS/IDF 兼容**（PPA HAL 是 IDF 风格代码）：
+
+| 缺口 | 做法 |
+|---|---|
+| `freertos/portmacro.h` | 新增，转包含 `FreeRTOS.h`（`portMUX_TYPE`/`portENTER_CRITICAL*` 已在其中映射到 `esp_os_*`），并补 IDF 的 `__containerof` |
+| `freertos/semphr.h` | 新增：`xSemaphoreCreateBinaryWithCaps` / `vSemaphoreDeleteWithCaps` / `xSemaphoreTake` / `xSemaphoreGive(FromISR)` 映射到端口的 `esp_os_queue_*`（容量 1 的队列即二值信号量） |
+| `__containerof` 可见性 | 部分 PPA 源看不到该宏；用 `target_compile_options(arch PRIVATE -include .../ppa_compat.h)` 注入（不改 vendored 源码） |
+
+**验证**：打开 `CONFIG_ESPRESSIF_PPA` 后构建通过，`ppa_core.c.o / ppa_srm.c.o /
+ppa_blend.c.o / ppa_fill.c.o` 4 个目标文件全部生成 ✔。
+（ELF 里暂时看不到 `ppa_do_*` 符号是正常的——还没有调用者，`-ffunction-sections`
++ gc-sections 会把未引用段回收。）
+
+**开关**：`hal_esp32p4.cmake` 里受 `CONFIG_ESPRESSIF_PPA` 控制，默认关；
+关掉后 CMake 重配置即从构建图移除，默认路径不受影响。
+
+**下一轮（P3b）**：写一个最小 PPA 调用（`ppa_do_fill` 或 SRM blit）验证硬件真的动起来，
+注意 `esp_cache_msync` 的 cache 一致性；再决定是否把相机画布的 blit/缩放交给 PPA。

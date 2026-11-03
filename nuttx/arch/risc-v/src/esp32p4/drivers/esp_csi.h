@@ -188,6 +188,12 @@ esp_csi_imgdata_initialize(FAR const struct esp_csi_config_s *config);
 
 int esp_csi_imgdata_uninitialize(FAR struct imgdata_s *data);
 
+/* Bring up the ISP input module (shared CSI bridge) once, early.
+ * Call it at boot **before** starting MIPI-DSI (see the comment in esp_csi.c).
+ */
+
+void esp_csi_isp_prepare(uint32_t h_res, uint32_t v_res, uint32_t bpp);
+
 /****************************************************************************
  * Name: esp_csi_frames
  *

@@ -553,6 +553,26 @@ static void esp_csi_isp_bypass_init(uint32_t h_res, uint32_t v_res,
 }
 
 /****************************************************************************
+ * Name: esp_csi_isp_prepare
+ *
+ * Description:
+ *   Board-level entry point for the ISP bypass bring-up, so it can be done
+ *   **at boot, before the MIPI-DSI display is started**.
+ *
+ *   Why: this bring-up touches the shared MIPI/CSI path and, when it runs
+ *   later (at the first camera open, while the DSI is streaming), it stops the
+ *   DSI display (measured: the panel freezes after using the camera until a
+ *   reset).  Doing it once at boot — before the display exists — lets the
+ *   camera open later hit the `g_esp_csi_isp_ready` fast path and skip it.
+ *
+ ****************************************************************************/
+
+void esp_csi_isp_prepare(uint32_t h_res, uint32_t v_res, uint32_t bpp)
+{
+  esp_csi_isp_bypass_init(h_res, v_res, bpp);
+}
+
+/****************************************************************************
  * Name: esp_csi_ctlr_create
  *
  * Description:
@@ -636,15 +656,17 @@ static int esp_csi_ctlr_create(FAR struct esp_csi_priv_s *priv)
    * CSI bridge before the CSI DMA is started.
    */
 
-  /* 二分实验（2026-11-03）：ISP bypass 动的可能是与 DSI 共享的 MIPI/CSI 桥，
-   * 先用 CONFIG_ESP_CSI_SKIP_ISP_BYPASS 试着跳过，看面板是否还被相机弄停。
+  /* 通常这里会 **直接返回**：板级初始化已经在开机时（MIPI-DSI 起来之前）调过
+   * esp_csi_isp_prepare()，g_esp_csi_isp_ready 已为真。
+   *
+   * 这一点很关键：这段 bring-up 动的是与 DSI 共享的 MIPI/CSI 链路，如果等到
+   * 相机第一次打开、DSI 正在出图时才做，会把显示打停（真机：用过相机后面板蓝屏、
+   * 要复位才恢复）。放到开机时做，相机与显示就能共存（真机已验证）。
    */
 
-#ifndef CONFIG_ESP_CSI_SKIP_ISP_BYPASS
   esp_csi_isp_bypass_init(priv->config.h_res, priv->config.v_res,
                           priv->config.input_color == CAM_CTLR_COLOR_RAW10 ? 10u :
                           priv->config.input_color == CAM_CTLR_COLOR_RAW12 ? 12u : 8u);
-#endif
 
   return OK;
 

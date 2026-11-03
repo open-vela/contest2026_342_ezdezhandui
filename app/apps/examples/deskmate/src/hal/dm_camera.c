@@ -440,7 +440,8 @@ int dm_camera_poll(struct dm_camera_frame_s *out)
        * 就停"，让两条通道不长时间并发。
        */
 
-      if (++g_captured >= DM_CAMERA_SHOT_FRAMES)
+      if (DM_CAMERA_SHOT_FRAMES > 0 &&
+          ++g_captured >= DM_CAMERA_SHOT_FRAMES)
         {
           enum v4l2_buf_type stop = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 

@@ -34,6 +34,8 @@
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/video/imgdata.h>
 #include <nuttx/video/imgsensor.h>
+
+#include "esp_csi.h"
 #include <nuttx/video/sc2336.h>
 #include <nuttx/video/v4l2_cap.h>
 
@@ -172,7 +174,16 @@ int esp32p4_camera_initialize(void)
   syslog(LOG_INFO, "Camera registered on %s\n",
          CONFIG_ESP32P4_FUNCTION_EV_BOARD_CAMERA_DEVPATH);
 
-  return OK;
+  /* 趁显示（MIPI-DSI）还没起来，先把 ISP 输入模块配好。
+   *
+   * 这段 bring-up 动的是与 DSI 共享的 MIPI/CSI 链路；如果在"相机第一次打开、
+   * DSI 正在出图"的时候才做，会把显示打停（真机：用过相机后蓝屏、需复位）。
+   * 开机时做掉，之后相机打开会命中 g_esp_csi_isp_ready 的快路径而跳过它。
+   */
+
+  esp_csi_isp_prepare(1280, 720, 8);
+
+return OK;
 
 errout_csi:
   esp_csi_imgdata_uninitialize(g_camera_imgdata);

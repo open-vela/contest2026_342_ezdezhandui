@@ -296,18 +296,6 @@ config ESPRESSIF_HOSTED_OFFICIAL
 		state that has to be recovered (a full power cycle of the board,
 		not a JTAG reset) before the link can move payload again.
 	select NETDEV_IOCTL
-config ESP_CSI_SKIP_ISP_BYPASS
-	bool "Skip the CSI ISP bypass bring-up (keeps MIPI-DSI alive)"
-	default y
-	---help---
-		The ISP bypass bring-up touches the shared MIPI/CSI path and stops the
-		MIPI-DSI display (measured: after using the camera the panel freezes until
-		a reset; the framebuffer still holds a valid UI).
-
-		Default y keeps the display alive at the cost of an empty camera preview.
-		Set n only when debugging capture, and expect to reset the board after
-		using the camera.
-
 config ESPRESSIF_HOSTED_LOG_VERBOSE
 	bool "Verbose esp-hosted SDIO/transport tracing"
 	default n

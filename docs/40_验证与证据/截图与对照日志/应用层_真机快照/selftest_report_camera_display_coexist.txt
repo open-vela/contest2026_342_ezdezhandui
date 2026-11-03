@@ -1,0 +1,29 @@
+# 相机与显示共存：真机自检（连续预览 + 开机预配 ISP）
+# 命令：deskmate --agent mock --camera --selftest --report /tmp/r15.txt
+
+[dm-check] agent:bridge                 PASS state=mock sent=0 recv=0
+[dm-check] agent:page                   PASS page=agent rc=0
+[dm-check] agent:qr                     PASS qr=1
+[dm-check] csi:dsi-coexist              PASS camera=v4l2 frame=ok display distinct=79 grad=2
+[dm-check] display:ready                PASS 1024x600 16bpp fbdev
+[dm-check] font:cjk-body                PASS 0 字缺（首个：-）
+[dm-check] font:cjk-title               PASS 0 字缺（首个：-）
+[dm-check] lvgl:version                 PASS 
+[dm-check] net:ap-degraded              PASS supported=0 rc=-138 (CP 为 STA 版固件)
+[dm-check] net:eth-static               PASS if=eth0 rc=0 ip=192.168.77.9 mask=255.255.255.0
+[dm-check] net:interfaces               PASS eth0 UP 192.168.1.110; wlan0 UP 0.0.0.0
+[dm-check] net:ipv4-valid               PASS accepts 3 valid, rejects 4 invalid
+[dm-check] snapshot:picture             PASS distinct=79 dominant=59% grad=2 n=12642
+[dm-check] snapshot:written             PASS dm_camera -> 1228800 bytes
+[dm-check] snapshot:written             PASS dm_home -> 1228800 bytes
+[dm-check] snapshot:written             PASS dm_net -> 1228800 bytes
+[dm-check] touch:delivered              PASS 0 -> 1
+[dm-check] touch:target                 PASS (133,459) ->
+[dm-check] ui:built                     PASS 4 objects, 6 pages
+[dm-check] ui:camera-page               PASS page=camera camera=v4l2
+[dm-check] ui:home                      PASS page=home
+[dm-check] ui:net-page                  PASS eth0 UP 192.168.1.110; wlan0 UP 0.0.0.0
+[dm-check] ui:page-rendered             PASS home=0xa8c0d7df camera=0x27b04f35
+[dm-check] ui:tab-target                PASS (259,563)
+[dm-check] wifi:scan                    PASS 1 AP, first='Hello_World_2.4G' 0 dBm
+DM-SELFTEST RESULT: PASS (25/25)

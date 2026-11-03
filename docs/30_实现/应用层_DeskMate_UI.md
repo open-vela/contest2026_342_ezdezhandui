@@ -865,3 +865,34 @@ DM-SELFTEST RESULT: PASS (25/25)
 **交付状态（已如实写入文档与 Kconfig help）**：
 - 不开相机：真机 25/25、日志安静、面板正常可点（用户已多次确认）
 - 开过相机：需要复位一次
+
+### 16.11 ✅ 相机与显示共存：根因与最终修法
+
+**根因**：`esp_csi_isp_bypass_init()`（ISP 输入模块 bring-up，动的是与 MIPI-DSI
+**共享的 MIPI/CSI 链路**）原先是在**相机第一次打开时**才执行 —— 那一刻 DSI 正在出图，
+于是显示被打停（面板蓝屏、要复位才恢复；帧缓冲里 UI 其实完好）。
+
+**修法（一行时机的改变）**：把这段 bring-up **提前到开机时、MIPI-DSI 起来之前**做一次。
+
+| 位置 | 改动 |
+|---|---|
+| `nuttx/.../drivers/esp_csi.c` + `esp_csi.h` | 新增公开入口 `esp_csi_isp_prepare(h_res, v_res, bpp)`（内部仍走 `g_esp_csi_isp_ready` 的"只做一次"守卫） |
+| 板级 `board/.../src/esp32p4_camera.c` | `esp32p4_camera_initialize()` 里调 `esp_csi_isp_prepare(1280, 720, 8)`（bring-up 顺序 484 < 516，即**先于**显示 516 的 DSI 初始化） |
+| 应用 | 恢复相机**连续预览**（`DM_CAMERA_SHOT_FRAMES` 0 = 连续；之前的"抓 3 帧"是误判期间的权宜） |
+| Kconfig | 删掉临时的 `ESP_CSI_SKIP_ISP_BYPASS`（不再需要） |
+
+之后相机再打开时，`esp_csi_isp_bypass_init()` 命中 `g_esp_csi_isp_ready` 快路径**直接返回**，
+不再触碰共享链路 —— 相机与显示因此可以共存。
+
+**真机验证（用户目视 + 自检）**：
+
+```
+[dm-check] csi:dsi-coexist   PASS camera=v4l2 frame=ok display distinct=... grad=...
+DM-SELFTEST RESULT: PASS (25/25)
+```
+
+- 面板正常显示中文界面、可触摸；相机页**画面实时更新**（用户确认）
+- 模拟器 `tools/test/sim_deskmate.sh` → `RESULT: PASS`（25/25）
+
+**排查过程**：§16.6–§16.10 记录了 8 组失败的假设（GDMA 复位/释放、LDO、单帧、退出拆解、重拉 DSI…）
+与两组成功的侦察（开机预配 ISP + 恢复连续预览）。教训：**共享外设的初始化时机**比"加开关规避"更根本。

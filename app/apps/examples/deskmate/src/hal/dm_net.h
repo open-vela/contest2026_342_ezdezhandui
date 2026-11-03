@@ -116,6 +116,24 @@ int dm_net_wifi_scan_results(struct dm_wifi_ap_s *aps, int max_aps);
 
 int dm_net_wifi_probe(void);
 
+/* 热点能力最小实验：让 netdev 走一次 set_mode(AP)+set_config(AP) 再恢复；
+ * 结果由 netdev 记进 g_dbg_ap_*（JTAG 可读）。 */
+
+int dm_net_ap_probe(void);
+
+/* 等关联成功（轮询 SIOCGIWESSID），最多 timeout_ms；成功时给出 SSID/RSSI。 */
+
+int dm_net_wifi_wait_link(char *ssid, size_t ssid_len, int *rssi,
+                          int timeout_ms);
+
+/* 连接诊断结果（非 static，串口坏掉时可用 JTAG 读） */
+
+extern int  g_app_wifi_connect_rc;
+extern int  g_app_wifi_link_ok;
+extern int  g_app_wifi_link_rssi;
+extern int  g_app_wifi_dhcp_rc;
+extern char g_app_wifi_ip[24];
+
 /* Associate with an AP.  psk may be NULL/empty for an open network.
  * Returns 0 on success.
  */

@@ -212,6 +212,9 @@ int main(int argc, FAR char *argv[])
   const char *start_page = NULL;
   const char *report_path = NULL;
   bool wifi_probe = false;
+  bool ap_probe = false;
+  const char *join_ssid = NULL;
+  const char *join_psk = NULL;
   bool camera_on = false;
   bool selftest = false;
   bool tour = false;
@@ -245,6 +248,19 @@ int main(int argc, FAR char *argv[])
       else if (strcmp(argv[i], "--camera") == 0)
         {
           camera_on = true;
+        }
+      else if (strcmp(argv[i], "--ap-probe") == 0)
+        {
+          ap_probe = true;
+        }
+      else if (strcmp(argv[i], "--wifi-connect") == 0 && i + 1 < argc)
+        {
+          join_ssid = argv[++i];
+
+          if (i + 1 < argc && argv[i + 1][0] != '-')
+            {
+              join_psk = argv[++i];
+            }
         }
       else if (strcmp(argv[i], "--wifi-probe") == 0)
         {
@@ -308,6 +324,44 @@ int main(int argc, FAR char *argv[])
 
   (void)dm_agent_init(agent_mode);
   (void)dm_net_refresh();
+
+  if (ap_probe)
+    {
+      int rc = dm_net_ap_probe();
+
+      printf("DM-AP-PROBE rc=%d (see g_dbg_ap_* in RAM)\n", rc);
+      fflush(stdout);
+      dm_agent_destroy();
+      dm_display_destroy();
+      lv_deinit();
+      return rc == 0 ? 0 : 1;
+    }
+
+  if (join_ssid != NULL)
+    {
+      char linked[DM_NET_SSID_LEN];
+      int  rssi = 0;
+
+      g_app_wifi_connect_rc = dm_net_wifi_connect(join_ssid, join_psk);
+      printf("DM-WIFI-CONNECT ssid='%s' rc=%d\n", join_ssid,
+             g_app_wifi_connect_rc);
+      fflush(stdout);
+
+      if (dm_net_wifi_wait_link(linked, sizeof(linked), &rssi, 20000) == 0)
+        {
+          printf("DM-WIFI-LINK ok ssid='%s' rssi=%d\n", linked, rssi);
+        }
+      else
+        {
+          printf("DM-WIFI-LINK timeout\n");
+        }
+
+      fflush(stdout);
+      dm_agent_destroy();
+      dm_display_destroy();
+      lv_deinit();
+      return g_app_wifi_link_ok ? 0 : 1;
+    }
 
   if (wifi_probe)
     {

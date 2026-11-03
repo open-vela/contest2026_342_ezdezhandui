@@ -81,6 +81,24 @@ int g_dbg_wifi_apnum_rc;       /* scan_get_ap_num 的返回值 */
 int g_dbg_wifi_apnum;          /* scan_get_ap_num 给出的 AP 数 */
 int g_dbg_wifi_scan_calls;     /* 走进扫描分支的次数 */
 
+/* 连接（含密码）与 AP 能力实验的诊断（同样非 static，JTAG 可读） */
+
+/* 哨兵初值 -999：把"分支根本没跑到"与"跑到了但结果为空"区分开
+ * （两者默认都是 0，上一轮就是因此无法判定 ENCODE 到底有没有到达驱动）。
+ */
+
+#define DM_DBG_UNSET (-999)
+
+int g_dbg_wifi_enc_rc = DM_DBG_UNSET;      /* SIOCSIWENCODE(EXT) 的返回 */
+int g_dbg_wifi_psk_len = DM_DBG_UNSET;     /* 收到的密码长度 */
+int g_dbg_wifi_setcfg_rc = DM_DBG_UNSET;   /* set_config(STA) 的返回 */
+int g_dbg_wifi_connect_rc = DM_DBG_UNSET;  /* WifiConnect RPC 的返回 */
+int g_dbg_ap_setmode_rc = DM_DBG_UNSET;    /* set_mode(WIFI_MODE_AP) 的返回 */
+int g_dbg_ap_setcfg_rc = DM_DBG_UNSET;     /* set_config(WIFI_IF_AP) 的返回 */
+int g_dbg_ap_restore_rc = DM_DBG_UNSET;    /* 实验后恢复 set_mode(STA) 的返回 */
+
+static char g_sta_psk[65];     /* 暂存的 STA 密码：ENCODE 先到、ESSID 后到 */
+
 /* Frames handed up must fit the netdev buffer; the companion advertises 1536
  * byte transfers, and an Ethernet frame is at most 1518, so one MTU-sized
  * buffer is enough.
@@ -641,6 +659,94 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
           return OK;
         }
 
+      case SIOCSIWENCODE:
+      case SIOCSIWENCODEEXT:
+        {
+          /* 密码：先在 ENCODE 里收下，等 ESSID 到齐再一次性 set_config+connect。
+           *
+           * 之前这个 netdev 根本没实现这两条 ioctl，所以"选网 + 输密码"里的密码
+           * 无处可去（应用侧发 SIOCSIWENCODEEXT 只会拿到 ENOSYS）。
+           */
+
+          FAR const uint8_t *key = (FAR const uint8_t *)iwr->u.encoding.pointer;
+          size_t             klen = iwr->u.encoding.length;
+
+          if (cmd == SIOCSIWENCODEEXT && key != NULL &&
+              klen >= sizeof(struct iw_encode_ext))
+            {
+              FAR const struct iw_encode_ext *ext =
+                (FAR const struct iw_encode_ext *)key;
+
+              key  = (FAR const uint8_t *)ext + offsetof(struct iw_encode_ext, key);
+              klen = ext->key_len;
+            }
+
+          if (key == NULL || klen == 0)
+            {
+              g_sta_psk[0] = '\0';
+              g_dbg_wifi_psk_len = 0;
+              g_dbg_wifi_enc_rc = OK;
+              return OK;
+            }
+
+          if (klen > sizeof(g_sta_psk) - 1)
+            {
+              klen = sizeof(g_sta_psk) - 1;
+            }
+
+          memcpy(g_sta_psk, key, klen);
+          g_sta_psk[klen] = '\0';
+
+          g_dbg_wifi_psk_len = (int)klen;
+          g_dbg_wifi_enc_rc  = OK;
+          syslog(LOG_INFO, "%s: passphrase stored (%u bytes)\n", NETDEV_TAG,
+                 (unsigned)klen);
+          return OK;
+        }
+
+      case SIOCSIWAP:
+        {
+          /* AP（热点）能力实验：**默认不编译**。
+           *
+           * 实测（2026-11-03）：这台板子的从机固件是 STA 版，
+           * `set_mode(WIFI_MODE_AP)` 返回 0 但 `set_config(WIFI_IF_AP)` 返回 -1，
+           * 而且随后连"恢复 STA 模式"也失败——从机进入坏状态，之后所有 RPC 都超时，
+           * 应用连 `dm_net_refresh()` 都过不去（要重启从机才能恢复）。
+           * 所以这个实验只在显式打开 CONFIG_ESPRESSIF_HOSTED_AP_PROBE 时才做。
+           */
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_AP_PROBE
+          wifi_config_t ap;
+
+          g_dbg_ap_setmode_rc = (int)eh_host_wifi_set_mode(WIFI_MODE_AP);
+
+          memset(&ap, 0, sizeof(ap));
+          strlcpy((FAR char *)ap.ap.ssid, "DeskMate-AP", sizeof(ap.ap.ssid));
+          strlcpy((FAR char *)ap.ap.password, "deskmate123",
+                  sizeof(ap.ap.password));
+          ap.ap.ssid_len       = 11;
+          ap.ap.channel        = 6;
+          ap.ap.max_connection = 4;
+          ap.ap.authmode       = WIFI_AUTH_WPA2_PSK;
+
+          g_dbg_ap_setcfg_rc = (int)eh_host_wifi_set_config(WIFI_IF_AP, &ap);
+
+          g_dbg_ap_restore_rc = (int)eh_host_wifi_set_mode(WIFI_MODE_STA);
+
+          syslog(LOG_INFO, "%s: AP probe mode=%d cfg=%d restore=%d\n",
+                 NETDEV_TAG, g_dbg_ap_setmode_rc, g_dbg_ap_setcfg_rc,
+                 g_dbg_ap_restore_rc);
+          return OK;
+#else
+          /* 不做实验：直接把"不支持"记进诊断，返回 ENOTSUP。 */
+
+          g_dbg_ap_setmode_rc = DM_DBG_UNSET;
+          g_dbg_ap_setcfg_rc  = -ENOTSUP;
+          g_dbg_ap_restore_rc = DM_DBG_UNSET;
+          return -ENOTSUP;
+#endif
+        }
+
       case SIOCSIWESSID:
         {
           /* Join: fill the station configuration and connect.  The ESSID
@@ -670,7 +776,14 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
           memset(&cfg, 0, sizeof(cfg));
           memcpy(cfg.sta.ssid, ssid, iwr->u.essid.length);
 
+          if (g_sta_psk[0] != '\0')
+            {
+              strlcpy((FAR char *)cfg.sta.password, g_sta_psk,
+                      sizeof(cfg.sta.password));
+            }
+
           ret = eh_host_wifi_set_config(WIFI_IF_STA, &cfg);
+          g_dbg_wifi_setcfg_rc = (int)ret;
           if (ret != ESP_OK)
             {
               syslog(LOG_ERR, "%s: set_config failed: %d\n", NETDEV_TAG, ret);
@@ -678,6 +791,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
             }
 
           ret = eh_host_wifi_connect();
+          g_dbg_wifi_connect_rc = (int)ret;
           if (ret != ESP_OK)
             {
               syslog(LOG_ERR, "%s: connect failed: %d\n", NETDEV_TAG, ret);

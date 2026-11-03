@@ -54,6 +54,14 @@ enum
   DM_SCAN_FAIL
 };
 
+/* 连接/热点实验的诊断（非 static：JTAG 可读） */
+
+int  g_app_wifi_connect_rc = -999;   /* -999 = 该路径没跑到（哨兵） */
+int  g_app_wifi_link_ok;
+int  g_app_wifi_link_rssi;
+int  g_app_wifi_dhcp_rc = -999;
+char g_app_wifi_ip[24];
+
 static pthread_mutex_t g_scan_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int g_scan_state = DM_SCAN_IDLE;
 static int g_scan_count;
@@ -1022,6 +1030,72 @@ int dm_net_wifi_probe(void)
 
   printf("[dm-wifi-probe] end aps=%d\n", found);
   return found;
+}
+
+int dm_net_ap_probe(void)
+{
+#ifdef DM_HAVE_WAPI
+  const char *ifname = dm_net_wifi_ifname();
+  struct iwreq iwr;
+
+  if (ifname == NULL || dm_net_socket() < 0)
+    {
+      return -ENODEV;
+    }
+
+  memset(&iwr, 0, sizeof(iwr));
+  strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
+
+  if (ioctl(g_sock, SIOCSIWAP, (unsigned long)&iwr) < 0)
+    {
+      DM_WARN("wifi: AP probe ioctl failed (%d)", errno);
+      return -errno;
+    }
+
+  return 0;
+#else
+  return -ENODEV;
+#endif
+}
+
+int dm_net_wifi_wait_link(char *ssid, size_t ssid_len, int *rssi,
+                          int timeout_ms)
+{
+  int waited;
+
+  g_app_wifi_link_ok   = 0;
+  g_app_wifi_link_rssi = 0;
+
+  for (waited = 0; waited <= timeout_ms; waited += 500)
+    {
+      char    name[DM_NET_SSID_LEN];
+      int     level = 0;
+
+      if (dm_net_wifi_link(name, sizeof(name), &level) == 0 &&
+          name[0] != '\0')
+        {
+          g_app_wifi_link_ok   = 1;
+          g_app_wifi_link_rssi = level;
+
+          if (ssid != NULL && ssid_len > 0)
+            {
+              strlcpy(ssid, name, ssid_len);
+            }
+
+          if (rssi != NULL)
+            {
+              *rssi = level;
+            }
+
+          DM_LOG("wifi: associated with '%s' (%d dBm) after %d ms", name, level,
+                 waited);
+          return 0;
+        }
+
+      usleep(500000);
+    }
+
+  return -ETIMEDOUT;
 }
 
 int dm_net_wifi_last_error(void)

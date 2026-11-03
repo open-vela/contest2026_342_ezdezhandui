@@ -74,6 +74,11 @@ static uint32_t s_calls;
 
 int g_freeze_preview;
 
+/* 诊断（JTAG 可读）：画布运行时真实尺寸。如果被 flex 拉大，blit 面积会成倍增加。 */
+
+volatile int g_dbg_cam_canvas_w;
+volatile int g_dbg_cam_canvas_h;
+
 uint32_t dm_page_camera_calls(void)
 {
   return s_calls;
@@ -199,8 +204,12 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
    */
 
   lv_obj_set_size(s_canvas, DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H);
-  lv_obj_add_flag(s_canvas, LV_OBJ_FLAG_FLOATING);
   lv_obj_align(s_canvas, LV_ALIGN_TOP_LEFT, 0, 0);
+
+  /* 注意：**不要**给画布加 LV_OBJ_FLAG_FLOATING。
+   * 实测加浮动后，画布每次失效会迫使 LVGL 重绘更大区域（含父卡片背景），
+   * 相机页单轮忙时从 ~200ms 涨到 ~350ms。定死 1:1 尺寸就够了。
+   */
 
   /* Right column: what the pipeline is doing. */
 
@@ -300,6 +309,9 @@ static void dm_page_camera_update(void)
             db->data = (void *)frame.pixels;
           }
       }
+
+      g_dbg_cam_canvas_w = (int)lv_obj_get_width(s_canvas);
+      g_dbg_cam_canvas_h = (int)lv_obj_get_height(s_canvas);
 
       lv_obj_invalidate(s_canvas);
     }

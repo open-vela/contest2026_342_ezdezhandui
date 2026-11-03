@@ -552,17 +552,29 @@ void dm_ui_tick(void)
 
   {
     uint32_t now = lv_tick_get();
-    uint32_t period = (dm_ui_page_index("net") == g_current) ? 2000u : 10000u;
+    static bool net_primed;
 
     /* 网络刷新会同步做 getifaddrs/WAPI ioctl，真机上一次可能几百毫秒到几秒
-     * （根因是端口 RPC 没有短超时，见 docs §17.2）。这里**降频**：
-     * 只有站在网络页时才 2 秒刷一次，其它页面 10 秒一次，把对 UI 的影响压到最小。
+     * （端口 RPC 超时 3 秒，见 docs §17.2）。
+     *
+     * 所以：**只在网络页可见时**才刷（2 秒一次），其它页面完全不碰 ——
+     * 否则相机页的测量窗口会周期性地被它拖出 200ms~1.5s 的尖峰（真机实测，
+     * 之前一直误以为是相机页自身绘制的问题）。
      */
 
-    if (s_last_net_ms == 0 || now - s_last_net_ms >= period)
+    if (g_current == dm_ui_page_index("net"))
       {
-        s_last_net_ms = now;
+        if (s_last_net_ms == 0 || now - s_last_net_ms >= 2000u)
+          {
+            s_last_net_ms = now;
+            (void)dm_net_refresh();
+          }
+      }
+    else if (!net_primed)
+      {
+        net_primed = 1;   /* 开机补一次，保证首页/自检有初始快照 */
         (void)dm_net_refresh();
+        s_last_net_ms = now;
       }
   }
 

@@ -317,6 +317,7 @@ int main(int argc, FAR char *argv[])
   if (dm_touch_create() != 0)
     {
       DM_ERR("touch bring-up failed");
+      dm_camera_destroy();
       dm_display_destroy();
       lv_deinit();
       return 1;
@@ -337,6 +338,7 @@ int main(int argc, FAR char *argv[])
       printf("DM-AP-PROBE rc=%d (see g_dbg_ap_* in RAM)\n", rc);
       fflush(stdout);
       dm_agent_destroy();
+      dm_camera_destroy();
       dm_display_destroy();
       lv_deinit();
       return rc == 0 ? 0 : 1;
@@ -380,6 +382,7 @@ int main(int argc, FAR char *argv[])
 
       fflush(stdout);
       dm_agent_destroy();
+      dm_camera_destroy();
       dm_display_destroy();
       lv_deinit();
       return g_app_wifi_link_ok ? 0 : 1;
@@ -404,6 +407,7 @@ int main(int argc, FAR char *argv[])
       printf("DM-WIFI-PROBE DONE\n");
       fflush(stdout);
       dm_agent_destroy();
+      dm_camera_destroy();
       dm_display_destroy();
       lv_deinit();
       return 0;

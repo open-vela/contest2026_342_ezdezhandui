@@ -209,6 +209,14 @@ static int dm_page_camera_create(lv_obj_t *parent, int w, int h)
   lv_obj_set_width(s_info, info_w - 2 * DM_MARGIN);
   lv_obj_set_width(s_stats, info_w - 2 * DM_MARGIN);
 
+  /* **高度也固定**：这两行文字每秒变一次，如果高度随内容变，LVGL 会重跑父容器
+   * 的 flex 布局 → 较大脏区 → 一次上百毫秒的刷写尖峰（真机实测 180ms）。
+   * 固定成两行高度之后，文字变化只失效标签自己。
+   */
+
+  lv_obj_set_height(s_info, lv_font_get_line_height(DM_FONT_SMALL) * 2 + 6);
+  lv_obj_set_height(s_stats, lv_font_get_line_height(DM_FONT_SMALL) * 2 + 6);
+
   (void)dm_button(card, DM_I18N_CAPTURE, 180, 46,
                   dm_page_camera_capture_cb, NULL);
   (void)dm_button(card, DM_I18N_ASK_VISION, 180, 46,

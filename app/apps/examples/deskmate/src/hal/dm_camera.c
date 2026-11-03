@@ -302,6 +302,12 @@ int dm_camera_create(int preview_w, int preview_h)
   g_fd = open(DM_CAMERA_PATH, O_RDWR | O_NONBLOCK);
   if (g_fd >= 0)
     {
+      /* 采集分辨率保持 1280x720。
+       *
+       * 试过优先 640x480（想降低 PSRAM 带宽竞争），实测反而更差：预览掉到 5fps
+       * 且出现 1.5 秒停顿（SC2336 在这个尺寸下走的是另一条出图模式）。已回退。
+       */
+
       g_src_width  = 1280;
       g_src_height = 720;
 

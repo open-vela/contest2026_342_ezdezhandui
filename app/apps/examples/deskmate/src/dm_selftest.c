@@ -776,7 +776,7 @@ void dm_selftest_step(void)
 
           dt = now - s_perf_t0;
 
-          if (dt < 2000u)
+          if (dt < 4000u)
             {
               return;
             }

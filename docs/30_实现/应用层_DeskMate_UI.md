@@ -585,3 +585,48 @@ g_dbg_wifi_rssi      = -31 dBm      # netdev 侧同一个值
 - 摄像头 start 时**不得**做控制器级复位（只配置自己的通道）；
 - 新增自检判据 `csi:dsi-coexist`：开摄像头后读 DSI 侧 DMA/桥寄存器仍在跑 +
   屏上画面判据仍成立。
+
+## 十四、CSI/DSI 共存：**已修好**（真机 22/22）
+
+### 14.1 `esp_cam_ctlr_start failed: 258` 的真根因：缓冲没按缓存行对齐
+
+给 CSI 侧加了 JTAG 可读的逐步诊断（`g_dbg_csi_*`，串口丢行时靠它），真机读数：
+
+```
+translen = 921600 (1280x720 RAW8)   msync_rc = 258   cfg_rc = -999   en_rc = -999
+```
+
+即 `esp_cache_msync(M2C)` 直接返回 `ESP_ERR_INVALID_ARG`：它要求缓冲地址按
+**cache line(64B)** 对齐，而应用交给 V4L2 的缓冲是 `malloc`（8/16B 对齐）。
+
+**修法**：`g_bufs[i].mem = memalign(128, bytes)` → 真机复测 `start_rc = 0`、
+`msync/cfg/en` 全 0。
+
+### 14.2 开摄像头把显示搞死（蓝屏）的真根因：DW-GDMA 控制器级复位
+
+CSI 走 `dw_gdma` 框架，DSI 走裸 LL。框架首次取 group handle 时执行：
+
+```
+dw_gdma_ll_enable_bus_clock();
+dw_gdma_ll_reset_register();   ← 控制器级复位
+dw_gdma_hal_init();            ← 内部还有一次 dw_gdma_ll_reset()
+```
+
+**DSI 用裸 LL 配好的 ch1 就这样被抹掉** → 面板失去同步变纯色。
+
+**修法**（`dw_gdma.c` 的 `dw_gdma_acquire_group_handle`）：先看
+`dw_gdma_ll_is_bus_clock_enabled()`——控制器已在跑时**不再复位**，只
+`group->hal.dev = DW_GDMA_LL_GET_HW()` + 保持控制器/中断使能（与 DSI 自己的判据一致）。
+
+### 14.3 真机验收（22/22）
+
+```
+[dm-check] csi:dsi-coexist   PASS camera=v4l2 frame=ok display distinct=102 grad=3
+[dm-check] snapshot:picture  PASS distinct=102 dominant=54% grad=3 n=12642
+DM-SELFTEST RESULT: PASS (22/22)
+```
+
+即**摄像头出帧的同时，显示仍在正常绘制** —— CSI/DSI 共存达成。
+用户目视确认：面板正常中文界面 + 相机页有画面。
+
+证据：`docs/40_验证与证据/截图与对照日志/应用层_真机快照/selftest_report_22of22_csi_dsi_coexist.txt`

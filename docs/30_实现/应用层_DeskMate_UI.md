@@ -537,3 +537,51 @@ g_dbg_wifi_rssi      = -31 dBm      # netdev 侧同一个值
 ```
 
 即：**选网 + 输密码 + 关联成功 + 拿到 RSSI**，整条链路在真机跑通。
+
+## 十二、ws 阻塞修复（UI 不再被后端拖死）
+
+**症状**：默认 `AGENT_MODE="ws"`、ai_agent 没起来时，应用日志停在
+`[dm] agent: mode ws, endpoint 127.0.0.1:28789` 就没了，UI 根本不出来。
+
+**根因**：`dm_agent_ws_connect()` 里是**阻塞且无超时**的 `connect()`（外加阻塞式 handshake）。
+
+**修法**：
+- connect 改**非阻塞 + poll 1.2s 上限**；收/发各加 2s `SO_SNDTIMEO/SO_RCVTIMEO`；
+- ws 连接挪到 **detached 线程**，`dm_agent_init()` 立即返回；
+- `dm_agent_poll()` 里按 **5s 节流**重连。
+
+**真机验证**（默认 ws、ai_agent 未起）：
+
+```
+[dm] agent: mode ws, endpoint 127.0.0.1:28789
+[dm] net: refresh begin
+[dm] net: refresh step=getifaddrs
+[dm] net: refresh step=summarize
+[dm] net: refresh done
+```
+
+## 十三、摄像头 CSI/DSI 共存：机理进展（未完成）
+
+已确认的三件事（代码 + 实测）：
+
+1. **CSI 与 DSI 共享同一个 DW-GDMA 控制器**（`esp_mipi_dsi.c` 的注释与 `esp_csi.c` 的
+   诊断打印都基于这一点）。DSI 已让出 ch0、用 ch1；摄像头用 ch0。
+2. **DSI 侧的防误复位判据对 CSI 无效**：DSI 用
+   `dw_gdma_ll_is_bus_clock_enabled(0)` 判断"控制器是不是已经被别人占用"，但 **CSI 侧完全
+   不走 `dw_gdma` 框架**（`esp_csi.c` 只读寄存器做诊断，真正的通道配置交给注入的
+   `upper_hal_cam` HAL 里的 `dw_gdma_channel_config_transfer()`），所以摄像头不会去
+   开总线时钟/拿 group handle → DSI 初始化时判定"我是第一个用户"→ **复位整个控制器**
+   → 摄像头的 ch0 配置被抹掉，后续 `esp_cam_ctlr_start` 失败。
+3. `esp_cam_ctlr_start` 的失败路径：HAL 里 `s_ctlr_csi_start()` 先查
+   `csi_fsm == CSI_FSM_ENABLED`（不满足返回 `INVALID_STATE`），再 `esp_cache_msync`、
+   `dw_gdma_channel_config_transfer`、`dw_gdma_channel_enable_ctrl`、`mipi_csi_brg_ll_enable`；
+   258 是 `INVALID_ARG`，最可能来自 `handle == NULL`（`priv->ctlr` 没建起来）或
+   注入 HAL 里上一层的参数检查。**下一步**：把 `CSI: ctlr start rc=%d` 这行日志
+   可靠地取回来（串口丢行时用 `--report`/JTAG 读诊断全局），据此定位到具体那一句。
+
+**修法方向**（待实现）：
+- 让摄像头路径在初始化时**登记自己对共享 GDMA 的占用**（`dw_gdma_acquire_group_handle()`，
+  会打开总线时钟），使 DSI 的判据生效、不再全局复位；
+- 摄像头 start 时**不得**做控制器级复位（只配置自己的通道）；
+- 新增自检判据 `csi:dsi-coexist`：开摄像头后读 DSI 侧 DMA/桥寄存器仍在跑 +
+  屏上画面判据仍成立。

@@ -926,3 +926,35 @@ DM-SELFTEST RESULT: PASS (25/25)
 
 另有 `--cam-fps N`、`--soak N`（每 N 秒切页 + 每 30 秒把指标追加到
 `/tmp/deskmate_soak.txt`）两个长跑/调参入口。
+
+### 17.2 长跑与停顿定位（第 5 轮）
+
+**长跑入口**：`--soak <sec>` —— 每 <sec> 秒自动切页，每 30 秒把关键指标追加到
+`/tmp/deskmate_soak.txt`。配合 JTAG 采样（`g_disp_commits` / `g_dbg_cap_pub` /
+`g_ui_max_busy_ms`，读数不依赖串口）。
+
+**测量（真机，每 5 秒切页 + 相机页，60 秒窗口）**：
+
+| 指标 | 数值 | 判断 |
+|---|---|---|
+| 相机发布 | 810 帧 / 60s = **13.5 fps** | 相机持续出帧，没卡死 |
+| 显示提交 | 480 / 60s = **8.0/s** | 屏幕持续在被喂，没停画面 |
+| 单轮 UI 最大忙时 | **3370 ms** | ❌ 有一次数秒级停顿 |
+
+**定位**：单独跑网络页 → 最大忙时 **3890 ms**，即 `dm_net_refresh()` 里的
+`getifaddrs()`/WAPI ioctl 在 UI 线程里同步阻塞。
+
+**尝试过的修法（已回退）**：把 `dm_net_refresh()` 挪进后台线程。实测**更糟**：
+worker 长时间卡在阻塞 ioctl 里并占着重入标志，快照永远发布不出来
+（自检 `net:eth-static` 的 `if=` 变空）。停顿只从 3890ms 降到 1690ms，
+不值得用"状态不可读"换。已回退为同步刷新（`dm_net_refresh_request()` 保留为同步别名）。
+
+**待办（下一轮）**：真正要解决网络页停顿，需要给 WAPI ioctl 加**超时/取消**
+（或让扫描/状态读取走驱动层的异步事件），而不是简单挪线程。
+
+### 17.3 当前真机状态
+
+- 模拟器 `sim_deskmate.sh`：**29/29 PASS**
+- 真机 `deskmate --agent mock --camera --selftest`：**28/29**（仅
+  `ui:responsive` 报 100ms > 80ms 门槛；网络相关判据在回退后全部恢复 PASS）
+- 相机路径：`cam:fps` 10~13fps、`display:fed` 11/s、相机页 max_busy 40ms

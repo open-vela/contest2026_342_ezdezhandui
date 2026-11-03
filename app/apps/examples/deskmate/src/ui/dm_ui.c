@@ -548,7 +548,7 @@ void dm_ui_tick(void)
     if (s_last_net_ms == 0 || now - s_last_net_ms >= 1000)
       {
         s_last_net_ms = now;
-        dm_net_refresh_request();
+        (void)dm_net_refresh();
       }
   }
 

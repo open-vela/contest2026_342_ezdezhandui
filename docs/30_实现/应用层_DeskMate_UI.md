@@ -1139,3 +1139,28 @@ port 自己的源文件；HAL 组件由 vendored 树自己的机制编译，P4 �
 `cmake_out/.../esp-hal-3rdparty` 的副本，与之前 `upper_hal_dma` 的教训一致）。
 **下一轮**先把这条编译链摸清（用 `ninja -t commands` 找编译某 HAL 源文件时的实际路径与规则），
 再决定 PPA 的加入方式。
+
+### 18.6 P3（PPA）本轮进展：编译链打通，卡在 FreeRTOS 信号量适配
+
+**编译入口找到**（之前几轮没定位到的原因）：HAL 源列表在
+`nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.cmake` 的 **`HAL_SRCS`** 变量里
+（由 `espressif/CMakeLists.txt` 的 `include(${NUTTX_CHIP_ABS_DIR}/hal_${CHIP_SERIES}.cmake)` 引入）。
+已加入 PPA 的 4 个源文件与 3 个 include 路径，受 `CONFIG_ESPRESSIF_PPA` 控制（默认关）。
+
+**真机/构建验证**：打开开关后 CMake 重配置成功、`ppa_core.c.o` **真的开始编译** ✔，
+说明集成方式正确。当前失败点很具体：
+
+```
+ppa_core.c:15: fatal error: freertos/portmacro.h: No such file or directory
+```
+
+- `portMUX_TYPE` / `portENTER_CRITICAL*` **已经**由 port 的 `freertos_compat/freertos/FreeRTOS.h`
+  映射到 `esp_os_*`（不需要新写）——只要补一个 `portmacro.h` 转包含 `FreeRTOS.h` 即可；
+- 真正缺的是 `freertos/semphr.h`：PPA 用到 `xSemaphoreCreateBinaryWithCaps` /
+  `vSemaphoreDeleteWithCaps` / `xSemaphoreTake` / `xSemaphoreGive(FromISR)`，
+  而现有 compat 里**没有**这些适配（`esp_os_*` 层也没有对应的信号量封装）。
+
+**下一轮**：照着现有 `queue.h`/`task.h` 的写法，在
+`esp_hosted/compat/freertos_compat/freertos/` 下补 `portmacro.h` 与 `semphr.h`
+（信号量用 NuttX `sem_t` + `esp_os_*` 风格封装），再打开 `CONFIG_ESPRESSIF_PPA`
+做一次"最小 PPA fill/SRM"验证（注意 cache 一致）。这是 P3 的最后一公里。

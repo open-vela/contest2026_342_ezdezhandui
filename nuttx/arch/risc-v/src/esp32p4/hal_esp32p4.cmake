@@ -62,6 +62,9 @@ set(ESP32P4_INCLUDES
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_cam/${CHIP_SERIES}/include
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_cam/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_ppa/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_ppa/${CHIP_SERIES}/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/csi/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/interface
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_clock/${CHIP_SERIES}/include
@@ -575,6 +578,18 @@ if(CONFIG_ESPRESSIF_MIPI_CSI)
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/esp_cam_ctlr.c
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/csi/src/esp_cam_ctlr_csi.c
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_dma/src/dw_gdma.c)
+endif()
+
+# PPA（Pixel Processing Accelerator）：2D 硬件加速（SRM/blend/fill）。
+
+if(CONFIG_ESPRESSIF_PPA)
+  list(
+    APPEND
+    HAL_SRCS
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_core.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_srm.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_blend.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_fill.c)
 endif()
 
 if(CONFIG_ESPRESSIF_IDF_ENV_FPGA)

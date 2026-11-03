@@ -896,3 +896,33 @@ DM-SELFTEST RESULT: PASS (25/25)
 
 **排查过程**：§16.6–§16.10 记录了 8 组失败的假设（GDMA 复位/释放、LDO、单帧、退出拆解、重拉 DSI…）
 与两组成功的侦察（开机预配 ISP + 恢复连续预览）。教训：**共享外设的初始化时机**比"加开关规避"更根本。
+
+## 十七、官方语义 ↔ openvela 实现对照（性能与稳定性改造）
+
+原则：**openvela/NuttX 是主干**（`/dev/fb0`、`/dev/video0`、`imgdata`/`imgsensor`、
+板级 bringup），ESP-IDF 的 `esp_lcd_mipi_dsi` / `esp_video` / `esp_cam_ctlr`
+只作**语义参考** —— 把它们的做法翻成 openvela 的写法。
+
+| # | 官方（ESP-IDF）语义 | openvela 落地 | 证据 |
+|---|---|---|---|
+| 1 | 共享 MIPI PHY/LDO 由**显示侧**持有，相机只借用 | LDO(CH3) 由 `esp32p4_hmi_power.c` 单一持有；`esp_csi_data_uninit()` **不 release** | §16.6 / 提交 `487893a` |
+| 2 | ISP 输入模块在**显示起来之前**配好，且只做一次 | 板级 `esp32p4_camera_initialize()` 调新公开的 `esp_csi_isp_prepare()`（bringup 顺序 484 < 516），驱动内 `g_esp_csi_isp_ready` 守卫 | §16.11 / 提交 `205fc4c` |
+| 3 | 缓冲按 cache line 对齐；提交前做 cache 回刷 | 应用侧对齐分配（过渡方案）；板级 `board_updatearea()` 按**脏区**做 `esp_mipi_dsi_flush_framebuffer()` | `esp32p4_display.c` |
+| 4 | DMA 控制器**引用计数**：不在半路复位/关时钟/deinit | `dw_gdma` acquire 记 `foreign_owner`，release 时跳过 deinit 与关时钟；`g_dbg_gdma_*` 计数可读 | §16.7 / 提交 `487893a` |
+| 5 | ISP 直接出 RGB565（硬件转换） | ⏳ 待做（当前仍是 CPU Bayer→RGB565，但已移出 UI 线程） | A4 待办 |
+| 6 | 采集与显示**分线程**，UI 不做像素级工作 | 相机独立采集线程 + 双缓冲发布（`g_pixels_pub` + 序号）；`dm_ui_tick()` 内无 O(像素) 循环 | §16.12 / 提交 `9ff8d51`、`3a2d8bd` |
+| 7 | 三个后端都走标准设备节点 | `/dev/video0`（v4l2_cap+imgdata）、`/dev/fb0`、`/dev/input0` | B2 |
+| 8 | 显示"是否在被喂数据"要有**可读指标** | 显示提交计数 + 最近提交时间（LVGL `RENDER_READY`）；刷写面积/耗时（`g_dbg_fb_flush_*`） | §16.12 / 提交 `3a2d8bd` |
+| 9 | 帧缓冲内容 **不能**证明面板在显示 | 自检判据 `display:fed`（提交计数持续增长），替代"看帧缓冲统计" | §16.12 |
+
+### 17.1 应用层量尺（可复现、可量化）
+
+| 判据 | 量什么 | 门槛 | 真机实测 |
+|---|---|---|---|
+| `ui:responsive` | 每轮 `lv_timer_handler()+dm_ui_tick()` 的**最大忙时**（不含 LVGL 的 idle 睡眠） | ≤50ms | 40ms |
+| `cam:fps` | 相机页预览帧率（2 秒窗口） | ≥10fps | 10~11fps |
+| `display:fed` | LVGL 渲染完成提交数（面板真在被喂） | 有相机时 ≥5 次/2s | 24 次/2050ms |
+| `cam:teardown` | 关闭相机再打开是否成功（CSI 能拆干净、能再起） | rc==0 | 见 §18 |
+
+另有 `--cam-fps N`、`--soak N`（每 N 秒切页 + 每 30 秒把指标追加到
+`/tmp/deskmate_soak.txt`）两个长跑/调参入口。

@@ -69,6 +69,7 @@
 static const char *g_usage =
   "Usage: " DM_PROGNAME " [options]\n"
   "  --selftest          run the headless scenario, print the report and exit\n"
+  "  --soak <sec>        cycle pages every <sec> seconds and log metrics (long run)\n"
   "  --tour              walk every page and snapshot it (demo, no assertions)\n"
   "  --snap <path>       snapshot destination (default " DM_SNAP_HOST_DIR "/dm_selftest.bin)\n"
   "  --hostfs <dir>      mount this host directory at /host (simulator)\n"
@@ -218,6 +219,7 @@ int main(int argc, FAR char *argv[])
   bool camera_on = false;
   bool selftest = false;
   bool tour = false;
+  int  soak_sec = 0;
   unsigned int exit_after_ms = (unsigned int)DM_EXIT_AFTER * 1000u;
   unsigned int start_ms;
   int result = 0;
@@ -228,6 +230,10 @@ int main(int argc, FAR char *argv[])
       if (strcmp(argv[i], "--selftest") == 0)
         {
           selftest = true;
+        }
+      else if (strcmp(argv[i], "--soak") == 0 && i + 1 < argc)
+        {
+          soak_sec = atoi(argv[++i]);
         }
       else if (strcmp(argv[i], "--tour") == 0)
         {
@@ -527,6 +533,46 @@ int main(int argc, FAR char *argv[])
       }
 
       unsigned int elapsed = dm_now_ms() - start_ms;
+
+      /* --soak：定时切页 + 定期把关键指标追加到文件。
+       * 长跑验证用：屏幕必须一直有画面（display commits 持续增长）、
+       * 相机不能卡死（published frames 持续增长）、UI 不能被拖出长停顿。
+       */
+
+      if (soak_sec > 0)
+        {
+          static uint32_t page_ms;
+          static uint32_t log_ms;
+          static int      page_idx;
+
+          if (page_ms == 0 || dm_now_ms() - page_ms >= (uint32_t)soak_sec * 1000u)
+            {
+              page_ms = dm_now_ms();
+              page_idx = (page_idx + 1) % dm_ui_page_count();
+              (void)dm_ui_goto(page_idx);
+            }
+
+          if (log_ms == 0 || dm_now_ms() - log_ms >= 30000u)
+            {
+              FILE *fp;
+
+              log_ms = dm_now_ms();
+
+              fp = fopen("/tmp/deskmate_soak.txt", "a");
+              if (fp != NULL)
+                {
+                  fprintf(fp,
+                          "t=%ums page=%d commits=%u cam_frames=%u loops=%u "
+                          "max_busy=%ums\n",
+                          (unsigned)dm_now_ms(), page_idx,
+                          (unsigned)dm_display_commits(),
+                          (unsigned)dm_page_camera_frames(),
+                          (unsigned)dm_ui_loop_count(),
+                          (unsigned)dm_ui_max_busy_ms());
+                  fclose(fp);
+                }
+            }
+        }
 
       if (dm_selftest_active())
         {

@@ -79,6 +79,10 @@ struct dm_net_status_s
 
 int dm_net_refresh(void);
 
+/* 请求后台线程刷新（UI 线程调用，立即返回）。 */
+
+void dm_net_refresh_request(void);
+
 /* Last snapshot; NULL before the first dm_net_refresh(). */
 
 const struct dm_net_status_s *dm_net_status(void);

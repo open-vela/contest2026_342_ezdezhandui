@@ -72,6 +72,16 @@ static int g_scan_err;
 static struct dm_wifi_ap_s g_scan_aps[DM_NET_MAX_APS];
 static bool g_refreshed;
 
+/* 网络刷新工作线程：getifaddrs() 与 WAPI ioctl 都可能阻塞好几秒（真机实测网络页
+ * 单轮 UI 忙时 3.9 秒），所以绝不能放在 UI 线程里。UI 只发请求、只读快照。
+ */
+
+static volatile bool g_net_run;
+static bool          g_net_started;
+static volatile bool g_net_want;
+static pthread_t     g_net_thread;
+static volatile uint32_t g_status_seq;   /* 奇数 = 正在写快照 */
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -292,6 +302,7 @@ int dm_net_refresh(void)
     }
 
   in_refresh = true;
+  g_status_seq++;          /* 变奇数：UI 读到就跳过这一轮 */
 
 #ifdef DM_NET_TRACE
   DM_LOG("net: refresh step=getifaddrs");
@@ -412,14 +423,66 @@ int dm_net_refresh(void)
     }
 
   g_refreshed = true;
+  g_status_seq++;          /* 变偶数：快照可读了 */
   in_refresh = false;
 
   return 0;
 }
 
+static FAR void *dm_net_worker(FAR void *arg)
+{
+  uint32_t last_ms = 0;
+
+  (void)arg;
+
+  while (g_net_run)
+    {
+      uint32_t now_ms = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
+      usleep(200000);
+
+      if (g_net_want || now_ms - last_ms >= 1000u)
+        {
+          g_net_want = false;
+          last_ms    = now_ms;
+          (void)dm_net_refresh();
+        }
+    }
+
+  return NULL;
+}
+
+/* UI 侧只发请求：立刻唤醒工作线程刷一次；线本身每 1 秒也会刷。 */
+
+void dm_net_refresh_request(void)
+{
+  g_net_want = true;
+
+  if (!g_net_started)
+    {
+      g_net_run = true;
+
+      if (pthread_create(&g_net_thread, NULL, dm_net_worker, NULL) == 0)
+        {
+          g_net_started = true;
+          DM_LOG("net: refresh worker started (UI 不再做 ioctl)");
+        }
+      else
+        {
+          g_net_run = false;
+          DM_ERR("net: refresh worker create failed: %d", errno);
+        }
+    }
+}
+
 const struct dm_net_status_s *dm_net_status(void)
 {
-  return g_refreshed ? &g_status : NULL;
+  if (!g_refreshed || (g_status_seq & 1u) != 0)
+    {
+      return NULL;   /* 工作线程正在改快照，这一轮先别读 */
+    }
+
+  return &g_status;
 }
 
 bool dm_net_wifi_associated(void)

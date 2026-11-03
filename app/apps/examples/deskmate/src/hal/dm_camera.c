@@ -422,6 +422,11 @@ int dm_camera_motion(void)
   return g_motion;
 }
 
+uint32_t dm_camera_frames_now(void)
+{
+  return g_dbg_cap_pub;
+}
+
 /* 采集一次：只允许采集线程调用。转换到写缓冲，成功后与发布缓冲对调。
  * 这样 UI 线程拿到的永远是"已完成"的那块，不会看到半张图。
  */

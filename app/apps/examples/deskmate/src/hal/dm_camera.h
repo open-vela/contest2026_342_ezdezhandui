@@ -72,6 +72,10 @@ bool dm_camera_ready(void);
 
 int dm_camera_motion(void);
 
+/* 已采集并发布的帧数（诊断/自检用）。 */
+
+uint32_t dm_camera_frames_now(void);
+
 /* Fetch the newest frame.  Returns 0 when a frame was produced, -EAGAIN when
  * nothing new is available this iteration.
  */

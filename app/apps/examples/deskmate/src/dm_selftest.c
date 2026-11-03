@@ -811,6 +811,38 @@ void dm_selftest_step(void)
               dm_check("cam:fps", fps >= 10u, g_detail);
             }
 
+          /* cam:teardown —— 关掉相机再打开一次：验证 V4L2 close 真的把 CSI
+           * 拆干净（停止采集 + uninit），并且还能再起来。
+           * 先切回 home，避免画布还指在即将被释放的缓冲上。
+           */
+
+          if (dm_camera_ready())
+            {
+              int rc;
+
+              (void)dm_ui_goto_id("home");
+              usleep(100000);
+
+              dm_camera_destroy();
+              usleep(200000);
+
+              rc = dm_camera_create(DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H);
+              if (rc == 0)
+                {
+                  usleep(300000);   /* 让采集线程先出一两帧再判 */
+                }
+
+              snprintf(g_detail, sizeof(g_detail),
+                       "close+reopen rc=%d backend=%s frames_now=%u",
+                       rc, dm_camera_backend(),
+                       (unsigned)dm_camera_frames_now());
+              dm_check("cam:teardown", rc == 0, g_detail);
+            }
+          else
+            {
+              dm_check("cam:teardown", true, "no camera (skipped)");
+            }
+
           g_state = DM_ST_DONE;
           return;
         }

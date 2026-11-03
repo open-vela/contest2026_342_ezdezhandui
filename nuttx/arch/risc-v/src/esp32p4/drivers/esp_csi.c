@@ -51,6 +51,7 @@
 #include "esp_private/esp_cache_private.h"
 
 #include "esp_ldo.h"
+#include "esp_mipi_dsi.h"
 
 /* 相机退出时保留共享 MIPI PHY LDO 的提示（只打一次，免得刷屏）。 */
 
@@ -243,6 +244,15 @@ static struct esp_csi_priv_s g_esp_csi_priv;
 int g_dbg_csi_create_rc = -999;
 int g_dbg_csi_start_rc  = -999;
 int g_dbg_csi_handle    = -1;
+
+/* 相机生命周期里 GDMA 通道使能寄存器(chen0)的快照 + DSI 重启兜底的结果。
+ * bit1 = DSI 的通道；它被清掉面板就不刷新（真机：用过相机后蓝屏）。
+ */
+
+int g_dbg_csi_chen0_disable  = -1;
+int g_dbg_csi_chen0_del      = -1;
+int g_dbg_csi_dsi_restart_rc = -999;
+int g_dbg_csi_chen0_restart  = -1;
 
 /****************************************************************************
  * Private Functions
@@ -658,7 +668,10 @@ static int esp_csi_data_uninit(FAR struct imgdata_s *data)
   if (priv->ctlr_created)
     {
       esp_cam_ctlr_disable(priv->ctlr);
+      g_dbg_csi_chen0_disable = (int)DW_GDMA.chen0.val;
+
       esp_cam_ctlr_del(priv->ctlr);
+      g_dbg_csi_chen0_del = (int)DW_GDMA.chen0.val;
       priv->ctlr = NULL;
       priv->ctlr_created = false;
     }
@@ -683,6 +696,22 @@ static int esp_csi_data_uninit(FAR struct imgdata_s *data)
   priv->next_len   = 0;
   priv->done_buf   = NULL;
   priv->done_valid = false;
+
+  /* 兜底：相机拆完之后，如果 DSI 的 DMA 通道（chen0 的 bit1）不再使能，
+   * 说明这条共享链路上有东西把显示停了 —— 直接把 DSI 视频重新拉起来，
+   * 保证"用过相机之后面板还能显示"。
+   */
+
+  /* 这里**不做** DSI 重拉。
+   *
+   * 实测（2026-11-03）：在共享 DW-GDMA 控制器上，只要另一条通道还在播放/采集，
+   * 调 esp_mipi_dsi_video_start() 重新初始化就会触发 store access fault
+   * （Exception 7）。这个重拉必须在**所有 DMA 都停掉**之后再考虑，不能在相机
+   * 拆解流程里顺手做。当前只留快照，供定位用。
+   */
+
+  _info("CSI: uninit done (chen0 disable=%08x del=%08x)\n",
+        (unsigned)g_dbg_csi_chen0_disable, (unsigned)g_dbg_csi_chen0_del);
 
   return OK;
 }
@@ -917,6 +946,13 @@ static int esp_csi_data_start_capture(FAR struct imgdata_s *data,
 
   esp_err_t csi_start_err = esp_cam_ctlr_start(priv->ctlr);
   g_dbg_csi_start_rc = (int)csi_start_err;
+
+  /* 注意：**不能**在这里重拉 DSI 视频。
+   *
+   * 实测（2026-11-03）：相机流已经在跑的时候调 esp_mipi_dsi_video_start()，
+   * 会立刻触发 store access fault（Exception 7）—— 两条 DMA 同时在共享控制器上
+   * 重新初始化会踩坏总线。DSI 的重拉只能在相机**完全停掉**之后做（见 uninit 里那段）。
+   */
 
   /* Report the controller-start result either way.  s_ctlr_csi_start() runs a
    * fixed sequence -- cache msync(M2C), dw_gdma_channel_config_transfer(),

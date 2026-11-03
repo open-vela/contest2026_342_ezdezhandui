@@ -763,3 +763,20 @@ DM-SELFTEST RESULT: PASS (25/25)
 兜底方案是相机关闭后**重新拉起 DSI 视频**（`esp_mipi_dsi_video_start()`）。
 
 **当前可用状态**：不开相机 = 完全正常（真机 25/25、日志安静）；用过相机后需要复位一次。
+
+### 16.7 相机→蓝屏：第 2 轮取证与结论（仍未修好）
+
+| 观测 | 结论 |
+|---|---|
+| 复位后、应用未跑：`chen0=0` | **`chen0` 不是有效判据**（空闲态本来就是 0），上一版拿它做条件导致重拉代码从未执行 |
+| 相机 `esp_cam_ctlr_disable` 后 `chen0=0x2`、`esp_cam_ctlr_del` 后仍 `0x2` | 相机拆解**没有**清 DSI 的通道使能位 |
+| `g_dbg_csi_dsi_restart_rc = -999`（自检后） | `esp_csi_data_uninit` **压根没被调用**（应用退出不触发 V4L2 uninit） |
+| 共享控制器：`cfg0=0x3`、ch1 `status0=0x0F`（含 CH_ERR） | **DSI 的 DMA 通道报了错并中止** —— 面板因此不再刷新 |
+| 在相机流运行中调 `esp_mipi_dsi_video_start()` | 立刻 **store access fault（Exception 7）** —— 共享控制器上不能在采集/播放并发时重初始化 |
+
+**结论**：蓝屏是共享 DW-GDMA 上"相机通道的错误波及 DSI 通道"，不是释放/复位路径（那些都已排除）。
+重拉的时机必须是"所有 DMA 都停"之后，不能在相机启动或拆解流程里顺手做。
+
+顺带：`eh_hosted_netdev` 的**每帧 rx hex** 日志也门控了（同一 `CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE`）。
+
+**当前可交付状态**：不开相机 → 真机 25/25、日志安静、面板正常可点；用过相机后需复位一次。

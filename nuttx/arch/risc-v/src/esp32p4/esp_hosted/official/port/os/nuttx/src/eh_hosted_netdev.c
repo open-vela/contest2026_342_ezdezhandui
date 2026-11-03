@@ -66,6 +66,16 @@
 
 #define NETDEV_TAG "eh_hosted_netdev"
 
+/* 每个收到的以太网帧都打一行 hex —— 真机上一秒钟几十行，必须门控。
+ * 用 ESPRESSIF_HOSTED_LOG_VERBOSE 统一控制。
+ */
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE
+#  define EH_NETDEV_TRACE(...) syslog(LOG_INFO, __VA_ARGS__)
+#else
+#  define EH_NETDEV_TRACE(...) do { } while (0)
+#endif
+
 /* 扫描链路的诊断寄存器（真机取证用）。
  *
  * 板上 115200 console 会被 SDIO 日志占满（nsh_consolewrite 发不出 buffer），
@@ -277,7 +287,7 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
           }
 
         line[n * 3] = '\0';
-        syslog(LOG_INFO, "%s: rx frame len=%u:%s\n", NETDEV_TAG,
+        EH_NETDEV_TRACE("%s: rx frame len=%u:%s\n", NETDEV_TAG,
                (unsigned)len, line);
       }
   }

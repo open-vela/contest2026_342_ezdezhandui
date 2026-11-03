@@ -1,0 +1,7 @@
+# 真机自检 29/29（忙时归因 + 网络刷新降频之后）
+# JTAG 复核：g_failures=0, g_checks=29
+[dm-check] ui:responsive   PASS loops=37 max_busy=70ms(page=1) in 2020ms
+[dm-check] display:fed     PASS 24 commits in 2020ms (11/s)
+[dm-check] cam:fps         PASS 21 frames in 2020ms (10 fps), cost=0 us/frame
+[dm-check] cam:teardown    PASS close+reopen rc=0 backend=v4l2 frames_now=263
+DM-SELFTEST RESULT: PASS (29/29)

@@ -493,12 +493,14 @@ uint32_t dm_ui_max_gap_ms(void)
  */
 
 static uint32_t g_ui_max_busy_ms;
+static int      g_ui_max_busy_page = -1;
 
 void dm_ui_note_busy(uint32_t ms)
 {
   if (ms > g_ui_max_busy_ms)
     {
-      g_ui_max_busy_ms = ms;
+      g_ui_max_busy_ms  = ms;
+      g_ui_max_busy_page = g_current;   /* 归因：这一轮最大的时候在哪个页面 */
     }
 }
 
@@ -507,12 +509,18 @@ uint32_t dm_ui_max_busy_ms(void)
   return g_ui_max_busy_ms;
 }
 
+int dm_ui_max_busy_page(void)
+{
+  return g_ui_max_busy_page;
+}
+
 void dm_ui_stats_reset(void)
 {
   g_ui_loops      = 0;
   g_ui_last_ms    = 0;
   g_ui_max_gap_ms = 0;
   g_ui_max_busy_ms = 0;
+  g_ui_max_busy_page = -1;
 }
 
 void dm_ui_tick(void)
@@ -544,8 +552,14 @@ void dm_ui_tick(void)
 
   {
     uint32_t now = lv_tick_get();
+    uint32_t period = (dm_ui_page_index("net") == g_current) ? 2000u : 10000u;
 
-    if (s_last_net_ms == 0 || now - s_last_net_ms >= 1000)
+    /* 网络刷新会同步做 getifaddrs/WAPI ioctl，真机上一次可能几百毫秒到几秒
+     * （根因是端口 RPC 没有短超时，见 docs §17.2）。这里**降频**：
+     * 只有站在网络页时才 2 秒刷一次，其它页面 10 秒一次，把对 UI 的影响压到最小。
+     */
+
+    if (s_last_net_ms == 0 || now - s_last_net_ms >= period)
       {
         s_last_net_ms = now;
         (void)dm_net_refresh();

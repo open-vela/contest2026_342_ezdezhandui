@@ -70,6 +70,10 @@ uint32_t dm_ui_max_gap_ms(void);
 void dm_ui_note_busy(uint32_t ms);
 uint32_t dm_ui_max_busy_ms(void);
 
+/* 发生最大忙时时所在的页面索引（-1 未知）——用来归因"谁把 UI 拖住了"。 */
+
+int dm_ui_max_busy_page(void);
+
 /* 清零上面两个统计（测量窗口开始前调用）。 */
 
 void dm_ui_stats_reset(void);

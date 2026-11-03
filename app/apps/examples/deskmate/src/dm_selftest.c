@@ -792,7 +792,8 @@ void dm_selftest_step(void)
            */
 
           snprintf(g_detail, sizeof(g_detail),
-                   "loops=%u max_busy=%ums in %ums", loops, busy, dt);
+                   "loops=%u max_busy=%ums(page=%d) in %ums", loops, busy,
+                   dm_ui_max_busy_page(), dt);
           dm_check("ui:responsive", busy <= 80u && loops >= 10u, g_detail);
 
           /* cam:fps —— 预览帧率；没有相机（模拟器）时如实跳过。 */

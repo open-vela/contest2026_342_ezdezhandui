@@ -12,6 +12,8 @@
 
 #include <nuttx/config.h>
 
+#include <nuttx/clock.h>
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -54,6 +56,7 @@ enum dm_selftest_state_e
   DM_ST_CAMERA_WAIT,
   DM_ST_GOTO_NET,
   DM_ST_NET_WAIT,
+  DM_ST_PERF_WAIT,
   DM_ST_DONE
 };
 
@@ -62,6 +65,12 @@ enum dm_selftest_state_e
  ****************************************************************************/
 
 static enum dm_selftest_state_e g_state = DM_ST_IDLE;
+
+/* 性能量尺：跨步骤采样（不阻塞主循环），用来把"卡顿"变成可断言指标。 */
+
+static uint32_t s_perf_t0;
+static uint32_t s_perf_l0;
+static uint32_t s_perf_f0;
 static char g_snap_path[128];
 static char g_snap_dir[112];
 static int  g_frames;
@@ -705,8 +714,59 @@ void dm_selftest_step(void)
             }
         }
 
-        g_state = DM_ST_DONE;
+        /* 切到相机页，记录基线，交给 DM_ST_PERF_WAIT 采样 2 秒。 */
+
+        dm_ui_stats_reset();
+        s_perf_t0 = (uint32_t)TICK2MSEC(clock_systime_ticks());
+        s_perf_l0 = 0;
+        s_perf_f0 = dm_page_camera_frames();
+        (void)dm_ui_goto_id("camera");
+        g_state = DM_ST_PERF_WAIT;
         return;
+
+      case DM_ST_PERF_WAIT:
+        {
+          uint32_t dt = (uint32_t)TICK2MSEC(clock_systime_ticks()) - s_perf_t0;
+          uint32_t loops;
+          uint32_t frames;
+          uint32_t fps;
+
+          if (dt < 2000u)
+            {
+              return;
+            }
+
+          uint32_t busy = dm_ui_max_busy_ms();
+
+          loops  = dm_ui_loop_count() - s_perf_l0;
+          frames = dm_page_camera_frames() - s_perf_f0;
+          fps    = (frames * 1000u) / (dt > 0 ? dt : 1u);
+
+          /* ui:responsive —— 关键不是循环多快（LVGL 本来就有 idle 睡眠），
+           * 而是**有没有长停顿**：单次 tick 间隔超过 100ms 就是肉眼可见的卡顿。
+           */
+
+          snprintf(g_detail, sizeof(g_detail),
+                   "loops=%u max_busy=%ums in %ums", loops, busy, dt);
+          dm_check("ui:responsive", busy <= 50u && loops >= 10u, g_detail);
+
+          /* cam:fps —— 预览帧率；没有相机（模拟器）时如实跳过。 */
+
+          if (!dm_camera_ready())
+            {
+              dm_check("cam:fps", true, "no camera (skipped)");
+            }
+          else
+            {
+              snprintf(g_detail, sizeof(g_detail),
+                       "%u frames in %ums (%u fps), cost=%u us/frame",
+                       frames, dt, fps, dm_page_camera_cost_us());
+              dm_check("cam:fps", fps >= 10u, g_detail);
+            }
+
+          g_state = DM_ST_DONE;
+          return;
+        }
 
       default:
         return;

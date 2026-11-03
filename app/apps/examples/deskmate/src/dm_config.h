@@ -100,7 +100,7 @@
 
 /* Camera preview geometry (both the page and the self-test use it) */
 
-#define DM_CAMERA_PREVIEW_W 480
+#define DM_CAMERA_PREVIEW_W 320
 /* 相机每次开流抓几帧就停：0 = 连续流（正常预览）。
  *
  * 曾经因为"连续流会打停显示"而设成 3，后来定位到真因是 ISP bypass 在相机打开时
@@ -108,7 +108,14 @@
  */
 
 #define DM_CAMERA_SHOT_FRAMES 0
-#define DM_CAMERA_PREVIEW_H 270
+
+/* 相机预览的目标帧间隔（ms）。主循环每轮都会调当前页的 update()，不节流的话
+ * 相机页会以最高频率做"采集+转换+运动检测+整块重绘"，UI 直接卡死（实测）。
+ * 0 = 不节流。可用 --cam-fps N 覆盖。
+ */
+
+#define DM_CAMERA_PREVIEW_MS 66
+#define DM_CAMERA_PREVIEW_H 180
 
 /* Simulator convenience: write a wifi_sim BSS table before the UI starts, so
  * the wireless page has something to list on a host with no radio.

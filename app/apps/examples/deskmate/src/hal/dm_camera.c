@@ -17,6 +17,7 @@
 #include <poll.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
@@ -74,7 +75,19 @@ static int g_nbufs;
 static bool g_streaming;
 
 static struct dm_camera_frame_s g_frame;
-static uint16_t *g_pixels;
+static uint16_t *g_pixels;      /* 采集线程正在写的缓冲 */
+static uint16_t *g_pixels_pub;  /* 最近一次完成、交给 UI 画的缓冲 */
+static volatile uint32_t g_pub_seq;   /* 已发布的帧序号 */
+
+/* 诊断（JTAG 可读）：采集线程到底在干什么。 */
+
+volatile uint32_t g_dbg_cap_calls;
+volatile uint32_t g_dbg_cap_eagain;
+volatile uint32_t g_dbg_cap_pub;
+static uint32_t g_ui_seq;             /* UI 已取走的帧序号 */
+static volatile bool g_cap_run;
+static pthread_t g_cap_thread;
+static bool g_cap_started;
 static bool g_disabled;
 
 /****************************************************************************
@@ -115,12 +128,32 @@ static int dm_camera_try_fmt(uint32_t pixfmt)
 static void dm_camera_convert_bayer(const uint8_t *src, int sw, int sh,
                                     uint16_t *dst, int dw, int dh)
 {
+  /* x 方向的源偏移预先算好（原来每个像素都要做一次乘法+除法），
+   * 并且不再对两个 G 求平均 —— 少一次跨行读。真机实测：逐像素转换是相机页
+   * 卡顿的主因（PC 采样就落在这个循环里），这里把它压下来。
+   */
+
+  static uint16_t sxmap[DM_CAMERA_PREVIEW_W];
+  static int map_sw = -1;
+  static int map_dw = -1;
+
   int qw = sw / 2;
   int qh = sh / 2;
 
-  if (qw <= 0 || qh <= 0)
+  if (qw <= 0 || qh <= 0 || dw <= 0 || dh <= 0 || dw > DM_CAMERA_PREVIEW_W)
     {
       return;
+    }
+
+  if (map_sw != sw || map_dw != dw)
+    {
+      for (int x = 0; x < dw; x++)
+        {
+          sxmap[x] = (uint16_t)(((x * qw) / dw) * 2);
+        }
+
+      map_sw = sw;
+      map_dw = dw;
     }
 
   for (int y = 0; y < dh; y++)
@@ -132,15 +165,13 @@ static void dm_camera_convert_bayer(const uint8_t *src, int sw, int sh,
 
       for (int x = 0; x < dw; x++)
         {
-          int sx = (x * qw) / dw;
-          const uint8_t *q0 = row0 + sx * 2;
-          const uint8_t *q1 = row1 + sx * 2;
+          int off = sxmap[x];
 
-          /* BGGR: (0,0)=B (0,1)=G / (1,0)=G (1,1)=R */
+          /* BGGR：row0[off]=B、row0[off+1]=G、row1[off+1]=R */
 
-          int b = q0[0];
-          int g = (q0[1] + q1[0]) / 2;
-          int r = q1[1];
+          int b = row0[off];
+          int g = row0[off + 1];
+          int r = row1[off + 1];
 
           out[x] = (uint16_t)(((r & 0xf8) << 8) | ((g & 0xfc) << 3) |
                               ((b & 0xf8) >> 3));
@@ -219,6 +250,9 @@ void dm_camera_set_disabled(bool disabled)
   g_disabled = disabled;
 }
 
+static int  dm_camera_capture_once(void);
+static void dm_camera_capture_start(void);
+
 int dm_camera_create(int preview_w, int preview_h)
 {
   if (g_disabled)
@@ -240,21 +274,23 @@ int dm_camera_create(int preview_w, int preview_h)
   g_width  = preview_w;
   g_height = preview_h;
 
-  g_pixels = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
-  if (g_pixels == NULL)
+  g_pixels     = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
+  g_pixels_pub = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
+  if (g_pixels == NULL || g_pixels_pub == NULL)
     {
       DM_ERR("camera: no memory for a %dx%d preview", preview_w, preview_h);
       return -ENOMEM;
     }
 
   memset(g_pixels, 0, (size_t)preview_w * preview_h * sizeof(uint16_t));
+  memset(g_pixels_pub, 0, (size_t)preview_w * preview_h * sizeof(uint16_t));
 
   /* 先把 frame 描述好：真机首帧没就绪时 poll() 会返回 -EAGAIN，页面仍然要知道
    * 预览缓冲在哪（否则 lv_canvas_set_buffer(NULL) 会直接断言死机）。
    */
 
   memset(&g_frame, 0, sizeof(g_frame));
-  g_frame.pixels = g_pixels;
+  g_frame.pixels = g_pixels_pub;
   g_frame.width  = preview_w;
   g_frame.height = preview_h;
 
@@ -328,6 +364,7 @@ int dm_camera_create(int preview_w, int preview_h)
                       g_streaming  = true;
                       g_synthetic  = false;
                       g_ready      = true;
+                      dm_camera_capture_start();
 
                       DM_LOG("camera: v4l2 %dx%d fmt=0x%08x -> preview %dx%d",
                              g_src_width, g_src_height,
@@ -360,6 +397,7 @@ int dm_camera_create(int preview_w, int preview_h)
 
   g_synthetic = true;
   g_ready = true;
+  dm_camera_capture_start();
 
   DM_LOG("camera: synthetic %dx%d source", g_width, g_height);
   return 0;
@@ -375,8 +413,14 @@ bool dm_camera_ready(void)
   return g_ready;
 }
 
-int dm_camera_poll(struct dm_camera_frame_s *out)
+/* 采集一次：只允许采集线程调用。转换到写缓冲，成功后与发布缓冲对调。
+ * 这样 UI 线程拿到的永远是"已完成"的那块，不会看到半张图。
+ */
+
+static int dm_camera_capture_once(void)
 {
+  g_dbg_cap_calls++;
+
   if (!g_ready)
     {
       return -ENODEV;
@@ -399,10 +443,7 @@ int dm_camera_poll(struct dm_camera_frame_s *out)
       ret = poll(&pfd, 1, 0);
       if (ret <= 0)
         {
-          g_frame.pixels = g_pixels;
-          g_frame.width  = g_width;
-          g_frame.height = g_height;
-          g_frame.synthetic = false;
+          g_dbg_cap_eagain++;
           return -EAGAIN;
         }
 
@@ -452,13 +493,43 @@ int dm_camera_poll(struct dm_camera_frame_s *out)
 #endif
     }
 
+  /* 发布：换缓冲 + 递增序号。UI 看到序号变化时，那块缓冲已经写完了。 */
+
+  {
+    uint16_t *tmp = g_pixels_pub;
+
+    g_pixels_pub = g_pixels;
+    g_pixels     = tmp;
+  }
+
   g_seq++;
 
-  g_frame.pixels    = g_pixels;
+  g_frame.pixels    = g_pixels_pub;
   g_frame.width     = g_width;
   g_frame.height    = g_height;
   g_frame.seq       = g_seq;
   g_frame.synthetic = g_synthetic;
+
+  g_pub_seq = g_seq;
+  g_dbg_cap_pub++;
+  return 0;
+}
+
+/* UI 侧取帧：只在有新帧时返回描述符（无转换、无阻塞）。 */
+
+int dm_camera_poll(struct dm_camera_frame_s *out)
+{
+  if (!g_ready)
+    {
+      return -ENODEV;
+    }
+
+  if (g_pub_seq == g_ui_seq)
+    {
+      return -EAGAIN;
+    }
+
+  g_ui_seq = g_pub_seq;
 
   if (out != NULL)
     {
@@ -468,6 +539,43 @@ int dm_camera_poll(struct dm_camera_frame_s *out)
   return 0;
 }
 
+static FAR void *dm_camera_capture_thread(FAR void *arg)
+{
+  (void)arg;
+
+  while (g_cap_run)
+    {
+      if (dm_camera_capture_once() != 0)
+        {
+          usleep(2000);
+        }
+    }
+
+  return NULL;
+}
+
+static void dm_camera_capture_start(void)
+{
+  if (g_cap_started)
+    {
+      return;
+    }
+
+  g_cap_run     = true;
+  g_cap_started = true;
+
+  if (pthread_create(&g_cap_thread, NULL, dm_camera_capture_thread, NULL) != 0)
+    {
+      DM_ERR("camera: capture thread create failed: %d", errno);
+      g_cap_run     = false;
+      g_cap_started = false;
+    }
+  else
+    {
+      DM_LOG("camera: capture thread started (UI 不再做采集/转换)");
+    }
+}
+
 const struct dm_camera_frame_s *dm_camera_last(void)
 {
   return g_ready ? &g_frame : NULL;
@@ -475,6 +583,15 @@ const struct dm_camera_frame_s *dm_camera_last(void)
 
 void dm_camera_destroy(void)
 {
+  /* 先停采集线程：它可能在 DQBUF/转换中，必须等它退出再动 fd 和缓冲。 */
+
+  if (g_cap_started)
+    {
+      g_cap_run = false;
+      pthread_join(g_cap_thread, NULL);
+      g_cap_started = false;
+    }
+
 #ifdef DM_HAVE_V4L2
   if (g_fd >= 0 && g_streaming)
     {
@@ -503,6 +620,12 @@ void dm_camera_destroy(void)
     {
       free(g_pixels);
       g_pixels = NULL;
+    }
+
+  if (g_pixels_pub != NULL)
+    {
+      free(g_pixels_pub);
+      g_pixels_pub = NULL;
     }
 
   g_ready = false;

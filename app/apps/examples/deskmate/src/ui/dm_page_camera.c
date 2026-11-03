@@ -18,6 +18,8 @@
 
 #include <nuttx/config.h>
 
+#include <nuttx/clock.h>
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +63,36 @@ static bool s_motion_latched;
  ****************************************************************************/
 
 static void dm_page_camera_update(void);
+
+/* 预览节流与计量：主循环每轮都调 update()，不节流就会把 UI 拖死。 */
+
+static uint32_t s_preview_ms = DM_CAMERA_PREVIEW_MS;
+static uint32_t s_last_draw_ms;
+static uint32_t s_cost_us;       /* 累计耗时（us） */
+static uint32_t s_cost_n;
+static uint32_t s_report_ms;
+static uint32_t s_calls;
+
+uint32_t dm_page_camera_calls(void)
+{
+  return s_calls;
+}
+
+uint32_t dm_page_camera_frames(void)
+{
+  return s_frames;
+}
+
+uint32_t dm_page_camera_cost_us(void)
+{
+  return (s_cost_n > 0) ? (s_cost_us / s_cost_n) : 0;
+}
+
+void dm_page_camera_set_fps(int fps)
+{
+  s_preview_ms = (fps > 0) ? (uint32_t)(1000 / fps) : 0;
+  DM_LOG("camera: preview throttled to %d fps (%u ms)", fps, s_preview_ms);
+}
 
 static void dm_page_camera_capture_cb(lv_event_t *event)
 {
@@ -198,10 +230,28 @@ static void dm_page_camera_update(void)
 
   memset(&frame, 0, sizeof(frame));
 
+  s_calls++;
+
   if (s_root == NULL || s_canvas == NULL)
     {
       return;
     }
+
+  /* 节流：没到下一帧时间就什么都不做（采集、转换、检测、重绘都是大头）。 */
+
+  if (s_preview_ms > 0)
+    {
+      uint32_t now0 = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
+      if (s_last_draw_ms != 0 && now0 - s_last_draw_ms < s_preview_ms)
+        {
+          return;
+        }
+
+      s_last_draw_ms = now0;
+    }
+
+  uint32_t cost_begin = (uint32_t)TICK2MSEC(clock_systime_ticks());
 
   if (dm_camera_poll(&frame) == 0 && frame.pixels != NULL)
     {
@@ -239,11 +289,40 @@ static void dm_page_camera_update(void)
             }
         }
 
+      /* 采集线程会换缓冲发布，所以每次都把画布源指到"最近完成"的那块，
+       * 否则 LVGL 会一直画创建时那一块（会看到撕裂/停帧）。
+       */
+
+      lv_canvas_set_buffer(s_canvas, (void *)frame.pixels,
+                           DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H,
+                           LV_COLOR_FORMAT_RGB565);
       lv_obj_invalidate(s_canvas);
     }
 
   source = (frame.pixels != NULL && frame.synthetic) ?
            DM_I18N_CAMERA_SYNTH : DM_I18N_CAMERA_V4L2;
+
+  {
+    uint32_t cost = (uint32_t)TICK2MSEC(clock_systime_ticks()) - cost_begin;
+
+    s_cost_us += cost * 1000u;
+    s_cost_n++;
+
+    if (s_report_ms == 0 ||
+        (uint32_t)TICK2MSEC(clock_systime_ticks()) - s_report_ms >= 5000u)
+      {
+        s_report_ms = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
+        if (s_cost_n > 0)
+          {
+            DM_LOG("camera: frames=%u cost=%u us/frame throttle=%u ms",
+                   s_cost_n, s_cost_us / s_cost_n, s_preview_ms);
+          }
+
+        s_cost_us = 0;
+        s_cost_n  = 0;
+      }
+  }
 
   if (s_info != NULL)
     {

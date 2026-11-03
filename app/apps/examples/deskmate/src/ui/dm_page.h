@@ -49,6 +49,36 @@ extern dm_page_t dm_page_agent;
 
 extern int g_app_agent_qr_ok;
 
+/* 相机预览节流（fps<=0 表示不限速）。 */
+
+void dm_page_camera_set_fps(int fps);
+
+/* 相机页 update() 被调用的次数（诊断用）。 */
+
+uint32_t dm_page_camera_calls(void);
+
+/* 主循环（= dm_ui_tick 调用）累计次数：UI 是否被拖死的直接指标。 */
+
+uint32_t dm_ui_loop_count(void);
+
+/* 两次 dm_ui_tick 之间的最大间隔（ms）——"卡顿/失帧"的直接度量。 */
+
+uint32_t dm_ui_max_gap_ms(void);
+
+/* 每轮忙时（ms）上报与读数：卡顿判据用忙时，而不是含 idle 睡眠的间隔。 */
+
+void dm_ui_note_busy(uint32_t ms);
+uint32_t dm_ui_max_busy_ms(void);
+
+/* 清零上面两个统计（测量窗口开始前调用）。 */
+
+void dm_ui_stats_reset(void);
+
+/* 相机页统计（帧数、平均转换耗时 us）。 */
+
+uint32_t dm_page_camera_frames(void);
+uint32_t dm_page_camera_cost_us(void);
+
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/

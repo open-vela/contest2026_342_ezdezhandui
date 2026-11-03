@@ -15,6 +15,8 @@
 
 #include <nuttx/config.h>
 
+#include <nuttx/clock.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -457,8 +459,64 @@ void dm_ui_toast(const char *text)
   g_toast_ticks = DM_TOAST_TICKS;
 }
 
+static uint32_t g_ui_loops;
+static uint32_t g_ui_last_ms;
+static uint32_t g_ui_max_gap_ms;
+
+uint32_t dm_ui_loop_count(void)
+{
+  return g_ui_loops;
+}
+
+uint32_t dm_ui_max_gap_ms(void)
+{
+  return g_ui_max_gap_ms;
+}
+
+/* 每轮"忙时"（lv_timer_handler + dm_ui_tick 的实际耗时）最大值 —— 这才是
+ * 丢帧/卡顿的度量；主循环按 LVGL 建议 idle 睡眠是正常的，不该算作卡顿。
+ */
+
+static uint32_t g_ui_max_busy_ms;
+
+void dm_ui_note_busy(uint32_t ms)
+{
+  if (ms > g_ui_max_busy_ms)
+    {
+      g_ui_max_busy_ms = ms;
+    }
+}
+
+uint32_t dm_ui_max_busy_ms(void)
+{
+  return g_ui_max_busy_ms;
+}
+
+void dm_ui_stats_reset(void)
+{
+  g_ui_loops      = 0;
+  g_ui_last_ms    = 0;
+  g_ui_max_gap_ms = 0;
+  g_ui_max_busy_ms = 0;
+}
+
 void dm_ui_tick(void)
 {
+  uint32_t now_ms = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
+  if (g_ui_last_ms != 0)
+    {
+      uint32_t gap = now_ms - g_ui_last_ms;
+
+      if (gap > g_ui_max_gap_ms)
+        {
+          g_ui_max_gap_ms = gap;
+        }
+    }
+
+  g_ui_last_ms = now_ms;
+  g_ui_loops++;
+
   char msg[512];
   static uint32_t s_last_net_ms;
 

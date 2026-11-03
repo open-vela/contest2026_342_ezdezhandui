@@ -245,6 +245,10 @@ int main(int argc, FAR char *argv[])
         {
           agent_mode = argv[++i];
         }
+      else if (strcmp(argv[i], "--cam-fps") == 0 && i + 1 < argc)
+        {
+          dm_page_camera_set_fps(atoi(argv[++i]));
+        }
       else if (strcmp(argv[i], "--camera") == 0)
         {
           camera_on = true;
@@ -501,10 +505,28 @@ int main(int argc, FAR char *argv[])
 
   for (; ; )
     {
-      uint32_t idle = lv_timer_handler();
-      unsigned int elapsed = dm_now_ms() - start_ms;
+      static uint32_t hb_ms;
+      static uint32_t hb_loops;
+      uint32_t idle;
 
-      dm_ui_tick();
+      hb_loops++;
+      if (hb_ms == 0 || dm_now_ms() - hb_ms >= 5000u)
+        {
+          hb_ms = dm_now_ms();
+          DM_LOG("heartbeat: loops=%u cam_page_calls=%u",
+                 hb_loops, (unsigned)dm_page_camera_calls());
+          hb_loops = 0;
+        }
+
+      {
+        unsigned int busy0 = dm_now_ms();
+
+        idle = lv_timer_handler();
+        dm_ui_tick();
+        dm_ui_note_busy(dm_now_ms() - busy0);
+      }
+
+      unsigned int elapsed = dm_now_ms() - start_ms;
 
       if (dm_selftest_active())
         {

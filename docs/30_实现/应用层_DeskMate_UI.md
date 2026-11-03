@@ -714,3 +714,29 @@ DM-SELFTEST RESULT: PASS (25/25)      # 真机，--agent mock --camera
 
 模拟器同样 **PASS (25/25)**。调试 SDIO 链路时打开
 `CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE=y` 即可恢复全部 trace。
+
+### 16.5 收口：DM_LOG 限速 + 扫描窗口实测
+
+**DM_LOG 限速**（`src/dm_log.c`）：按来源（`__func__`）每秒最多一行，被丢掉的条数
+附在下一行末尾（`(+N 条同源日志被限速)`）。这样即使以后某条路径真的刷屏，也只会
+变成"每秒一行 + 计数"，不会再把控制台灌满把 UI 拖死；`DM_WARN`/`DM_ERR`/`DM_CHECK`
+不受影响（脚本要匹配，且量小）。
+
+**扫描窗口实测**（真机，10 秒窗口，窗口内确认发生了扫描）：
+
+```
+[dm] wifi: scan found 1 AP(s) on wlan0
+[dm] wifi: scan worker done: found=1 err=0
+
+总行数: 3     eh_host_port_sdio: 0     每事务级(read_reg/read_block/payload/watchdog/transport): 0
+```
+
+对比修前（25 秒窗口 ~38 行每事务日志）：现在是 **0**，总行数 3（目标 ≤60）。
+
+**触摸判据**（同一份自检）：
+
+```
+[dm-check] touch:target                 PASS (133,459)
+[dm-check] touch:delivered              PASS 0 -> 1
+DM-SELFTEST RESULT: PASS (25/25)
+```

@@ -23,6 +23,7 @@ if(CONFIG_EXAMPLES_DESKMATE)
     fonts/dm_font_20.c
     fonts/dm_font_32.c
     src/dm_selftest.c
+    src/dm_log.c
     src/agent/dm_agent.c
     src/hal/dm_camera.c
     src/hal/dm_display.c

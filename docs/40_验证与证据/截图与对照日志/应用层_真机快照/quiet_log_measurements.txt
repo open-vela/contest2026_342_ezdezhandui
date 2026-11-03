@@ -1,0 +1,7 @@
+# 收敛日志后的补充测量（DM_LOG 限速 + 扫描窗口 + 触摸判据）
+# 1) 扫描窗口 10s：总 3 行 / SDIO 0 行 / 每事务 0 行（窗口内含 'scan found 1 AP'）
+# 2) 真机自检：DM-SELFTEST RESULT: PASS (25/25)；touch:target / touch:delivered PASS
+
+[dm-check] touch:delivered              PASS 0 -> 1
+[dm-check] touch:target                 PASS (133,459) ->
+DM-SELFTEST RESULT: PASS (25/25)

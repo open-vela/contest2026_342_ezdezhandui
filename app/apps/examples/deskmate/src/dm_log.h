@@ -23,8 +23,15 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define DM_LOG(fmt, ...) \
-  do { printf("[dm] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while (0)
+/* DM_LOG 按"来源函数"限速：同一 key 每秒最多一行，被丢掉的条数会附在下一行后面。
+ *
+ * 理由：115200 控制台同时跑内核日志，任何一类日志打爆它都会让应用自己的 printf
+ * 阻塞（真机实测会把 UI 冻住）。限速在 dm_log.c 里实现。
+ */
+
+void dm_log_rate(const char *key, const char *fmt, ...);
+
+#define DM_LOG(fmt, ...) dm_log_rate(__func__, fmt, ##__VA_ARGS__)
 
 #define DM_WARN(fmt, ...) \
   do { printf("[dm][warn] " fmt "\n", ##__VA_ARGS__); fflush(stdout); } while (0)

@@ -19,6 +19,7 @@
 #include <lvgl/lvgl.h>
 
 #include "agent/dm_agent.h"
+#include "hal/dm_camera.h"
 #include "dm_config.h"
 #include "dm_log.h"
 #include "dm_selftest.h"
@@ -472,6 +473,72 @@ void dm_selftest_step(void)
                    dm_ui_current_id() != NULL &&
                    strcmp(dm_ui_current_id(), "net") == 0, desc);
           dm_check("net:interfaces", net != NULL && net->count > 0, desc);
+
+          /* 类 PC 的三条判据：地址校验、静态地址能写回、热点如实降级 */
+
+          dm_check("net:ipv4-valid",
+                   dm_net_ipv4_valid("192.168.1.10") &&
+                   dm_net_ipv4_valid("10.0.0.1") &&
+                   !dm_net_ipv4_valid("999.1.1.1") &&
+                   !dm_net_ipv4_valid("1.2.3") &&
+                   !dm_net_ipv4_valid("abc") &&
+                   !dm_net_ipv4_valid(""),
+                   "accepts 3 valid, rejects 4 invalid");
+
+          {
+            /* 静态地址检查挑一个真实存在的接口：真机是 eth0，模拟器只有 wlan0
+             * （模拟器没有 TAP 以太网），所以不能写死名字。
+             */
+
+            const char *ifname = NULL;
+            char ip[20] = "";
+            char mask[20] = "";
+            char gw[20] = "";
+            int  rc = -ENODEV;
+            int  i;
+
+            for (i = 0; net != NULL && i < net->count; i++)
+              {
+                if (strncmp(net->ifs[i].name, "eth", 3) == 0)
+                  {
+                    ifname = net->ifs[i].name;
+                    break;
+                  }
+
+                if (net->ifs[i].wireless)
+                  {
+                    ifname = net->ifs[i].name;
+                  }
+              }
+
+            if (ifname != NULL)
+              {
+                rc = dm_net_if_set_static(ifname, "192.168.77.9",
+                                          "255.255.255.0", "192.168.77.1");
+
+                if (rc == 0)
+                  {
+                    (void)dm_net_if_get_config(ifname, ip, sizeof(ip), mask,
+                                               sizeof(mask), gw, sizeof(gw));
+                  }
+              }
+
+            snprintf(g_detail, sizeof(g_detail), "if=%s rc=%d ip=%s mask=%s",
+                     ifname != NULL ? ifname : "-", rc, ip, mask);
+            dm_check("net:eth-static",
+                     ifname != NULL && rc == 0 &&
+                     strcmp(ip, "192.168.77.9") == 0, g_detail);
+          }
+
+          {
+            int rc = dm_net_ap_start("DeskMate-AP", "deskmate123", 6);
+
+            snprintf(g_detail, sizeof(g_detail),
+                     "supported=%d rc=%d (CP 为 STA 版固件)",
+                     (int)dm_net_ap_supported(), rc);
+            dm_check("net:ap-degraded",
+                     dm_net_ap_supported() == false && rc == -ENOTSUP, g_detail);
+          }
         }
 
         dm_selftest_snapshot("dm_net");

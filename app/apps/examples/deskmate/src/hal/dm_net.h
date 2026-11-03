@@ -89,6 +89,10 @@ const struct dm_net_status_s *dm_net_status(void);
 
 int dm_net_wifi_link(char *ssid, size_t ssid_len, int *rssi);
 
+/* 是否真的关联上了（读已关联 AP 的 BSSID，而不是回读配置的 SSID）。 */
+
+bool dm_net_wifi_associated(void);
+
 /* Trigger a scan and return the access points found.  Returns the number of
  * APs (>= 0) or a negated errno when scanning is unavailable.
  */
@@ -125,6 +129,35 @@ int dm_net_ap_probe(void);
 
 int dm_net_wifi_wait_link(char *ssid, size_t ssid_len, int *rssi,
                           int timeout_ms);
+
+/* ── 类 PC 的接口配置（网口自动/手动 IP）───────────────────────────────── */
+
+int dm_net_if_get_config(const char *ifname, char *ip, size_t ip_len,
+                         char *mask, size_t mask_len, char *gw, size_t gw_len);
+int dm_net_if_set_dhcp(const char *ifname);
+
+/* 异步版：DHCP 要几秒，UI 线程不能等；status 返回 0=空闲 1=进行中 2=成功 -1=失败 */
+
+int dm_net_if_set_dhcp_async(const char *ifname);
+int dm_net_if_dhcp_status(int *err);
+int dm_net_if_set_static(const char *ifname, const char *ip, const char *mask,
+                         const char *gw);
+int dm_net_if_set_up(const char *ifname, bool up);
+
+/* 点分十进制校验（UI 层用，避免把错地址写进去导致失联）。 */
+
+bool dm_net_ipv4_valid(const char *text);
+
+/* ── 热点 ──────────────────────────────────────────────────────────────
+ *
+ * 真机实测（2026-11-03）：从机固件是 STA 版，set_mode(AP)=0 但
+ * set_config(WIFI_IF_AP)=-1，且恢复 STA 也失败（还会卡死从机 RPC）。
+ * 所以这里如实报告"不支持"，UI 显示原因而不是假装能开。
+ */
+
+bool dm_net_ap_supported(void);
+int  dm_net_ap_start(const char *ssid, const char *psk, int channel);
+int  dm_net_ap_stop(void);
 
 /* 连接诊断结果（非 static，串口坏掉时可用 JTAG 读） */
 

@@ -93,6 +93,7 @@ int g_dbg_wifi_enc_rc = DM_DBG_UNSET;      /* SIOCSIWENCODE(EXT) 的返回 */
 int g_dbg_wifi_psk_len = DM_DBG_UNSET;     /* 收到的密码长度 */
 int g_dbg_wifi_setcfg_rc = DM_DBG_UNSET;   /* set_config(STA) 的返回 */
 int g_dbg_wifi_connect_rc = DM_DBG_UNSET;  /* WifiConnect RPC 的返回 */
+int g_dbg_wifi_rssi = DM_DBG_UNSET;        /* 已关联 AP 的 RSSI */
 int g_dbg_ap_setmode_rc = DM_DBG_UNSET;    /* set_mode(WIFI_MODE_AP) 的返回 */
 int g_dbg_ap_setcfg_rc = DM_DBG_UNSET;     /* set_config(WIFI_IF_AP) 的返回 */
 int g_dbg_ap_restore_rc = DM_DBG_UNSET;    /* 实验后恢复 set_mode(STA) 的返回 */
@@ -800,6 +801,57 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
 
           syslog(LOG_INFO, "%s: joining \"%.*s\"\n", NETDEV_TAG,
                  (int)iwr->u.essid.length, (FAR const char *)ssid);
+          return OK;
+        }
+
+      case SIOCGIWAP:
+        {
+          /* 已关联 AP 的 BSSID。
+           *
+           * 应用靠它判断"真的连上了没有"——SIOCGIWESSID 回读的是主机刚写进去的
+           * 配置值，未关联时也非空，会造成假阳性（实测踩过）。
+           */
+
+          wifi_ap_record_t ap;
+
+          memset(&ap, 0, sizeof(ap));
+
+          if (eh_host_wifi_sta_get_ap_info(&ap) != ESP_OK)
+            {
+              return -ENODATA;
+            }
+
+          if (iwr->u.ap_addr.sa_data == NULL)
+            {
+              return -EINVAL;
+            }
+
+          memcpy(iwr->u.ap_addr.sa_data, ap.bssid, 6);
+          iwr->u.ap_addr.sa_family = AF_INET;
+
+          g_dbg_wifi_rssi = (int)ap.rssi;
+          return OK;
+        }
+
+      case SIOCGIWSTATS:
+        {
+          /* 信号强度（dBm）。UI 上要显示 dBm，标准读法就是这条。 */
+
+          wifi_ap_record_t ap;
+
+          memset(&ap, 0, sizeof(ap));
+
+          if (eh_host_wifi_sta_get_ap_info(&ap) != ESP_OK)
+            {
+              return -ENODATA;
+            }
+
+          iwr->u.qual.level   = (uint8_t)(int8_t)ap.rssi;
+          iwr->u.qual.qual    = 0;
+          iwr->u.qual.noise   = 0;
+          iwr->u.qual.updated = IW_QUAL_LEVEL_UPDATED | IW_QUAL_DBM;
+
+          g_dbg_wifi_rssi = (int)ap.rssi;
           return OK;
         }
 

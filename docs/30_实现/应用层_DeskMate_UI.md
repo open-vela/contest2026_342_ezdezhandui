@@ -503,3 +503,37 @@ DM-SELFTEST RESULT: PASS (21/21)
 
 截图：`docs/40_验证与证据/截图与对照日志/应用层_模拟器快照/net_pc_like_1024x600.png`
 （浅色卡片 81% 亮像素、113 色、强调蓝 9988 采样点）。
+
+### 11.5 密码连接：真机验收通过（并纠正上一轮的两个误判）
+
+**纠正 1**：上一轮说"从机被 AP 实验卡死、应用连 `dm_net_refresh()` 都过不去"——**是错的**。
+真正卡住的是 `dm_agent_init()` 的 **ws 连接**（默认 `AGENT_MODE="ws"`，ai_agent 没起来时
+`connect()` 阻塞）。用 `--agent mock` 跑，一切都正常（`eth0 ip=192.168.1.110`、扫描 1 个 AP）。
+→ 这是真实的产品缺陷：**后端服务没起来不该让整个 UI 起不来**，Agent 页实现时要把 ws 连接
+改成带超时的非阻塞（本轮先记录）。
+
+**纠正 2**：`SIOCGIWESSID` 回读的是主机**刚写进去的配置值**，未关联时也非空 —— 用它判"是否
+连上"会**假阳性**（上一轮 `link_ok=1` 因此不可信）。已改为读 **`SIOCGIWAP`（已关联 AP 的
+BSSID）**，未关联时驱动返回错误。
+
+**密码发不出去的真 bug**：NuttX 的 `struct iw_encode_ext` 里 `key[]` 是**零长数组**，
+应用里 `if (ext.key_len > sizeof(ext.key)) ext.key_len = 0;` 把密码长度**清成了 0**。
+改成"结构体 + 尾部缓冲"整体，长度按 `sizeof(ext) + key_len` 传。
+
+真机验收（`--agent mock --wifi-connect Hello_World_2.4G <psk>`）：
+
+```
+eh_hosted_netdev: passphrase stored (9 bytes)
+eh_hosted_netdev: joining "Hello_World_2.4G"
+DM-WIFI-CONNECT ssid='Hello_World_2.4G' rc=0
+```
+
+JTAG 读 RAM（串口丢行时的可靠证据）：
+
+```
+g_app_wifi_link_ok   = 1
+g_app_wifi_link_rssi = -31 dBm      # 走 SIOCGIWSTATS
+g_dbg_wifi_rssi      = -31 dBm      # netdev 侧同一个值
+```
+
+即：**选网 + 输密码 + 关联成功 + 拿到 RSSI**，整条链路在真机跑通。

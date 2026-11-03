@@ -16,6 +16,8 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <netutils/netlib.h>
+#include <netutils/dhcpc.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -265,6 +267,7 @@ static void dm_net_wifi_ensure_infra(const char *ifname)
 
 int dm_net_refresh(void)
 {
+  DM_LOG("net: refresh step=getifaddrs");
   memset(&g_status, 0, sizeof(g_status));
 
 #if defined(CONFIG_NET) && defined(CONFIG_LIBC_NETDB)
@@ -337,6 +340,7 @@ int dm_net_refresh(void)
   }
 #endif
 
+  DM_LOG("net: refresh step=summarize");
   for (int i = 0; i < g_status.count; i++)
     {
       if (g_status.ifs[i].wireless)
@@ -385,57 +389,95 @@ const struct dm_net_status_s *dm_net_status(void)
   return g_refreshed ? &g_status : NULL;
 }
 
+bool dm_net_wifi_associated(void)
+{
+#ifdef DM_HAVE_WAPI
+  const char *ifname = dm_net_wifi_ifname();
+  struct iwreq iwr;
+
+  if (ifname == NULL || dm_net_socket() < 0)
+    {
+      return false;
+    }
+
+  memset(&iwr, 0, sizeof(iwr));
+  strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
+
+  /* 驱动在"已关联"时才会给出 BSSID；未关联返回错误。
+   * 这比回读 SIOCGIWESSID（那是我们刚写下去的配置值）可靠得多。
+   */
+
+  return ioctl(g_sock, SIOCGIWAP, (unsigned long)&iwr) == 0;
+#else
+  return false;
+#endif
+}
+
 int dm_net_wifi_link(char *ssid, size_t ssid_len, int *rssi)
 {
-  if (ssid != NULL && ssid_len > 0)
-    {
-      ssid[0] = '\0';
-    }
+#ifdef DM_HAVE_WAPI
+  const char *ifname = dm_net_wifi_ifname();
+  struct iwreq iwr;
+  static char buf[DM_NET_SSID_LEN];
 
   if (rssi != NULL)
     {
       *rssi = 0;
     }
 
-#ifdef DM_HAVE_WAPI
-  {
-    const char *ifname = dm_net_wifi_ifname();
-    struct iwreq iwr;
-    char buf[DM_NET_SSID_LEN];
+  if (ifname == NULL || dm_net_socket() < 0)
+    {
+      return -ENODEV;
+    }
 
-    if (ifname == NULL || dm_net_socket() < 0)
-      {
-        return -ENODEV;
-      }
+  /* 只有真的关联上了才算"已连接"（驱动在未关联时不回 BSSID）。 */
 
-    memset(buf, 0, sizeof(buf));
-    memset(&iwr, 0, sizeof(iwr));
-    strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
-    iwr.u.essid.pointer = buf;
-    iwr.u.essid.length  = sizeof(buf);
-    iwr.u.essid.flags   = 1;
+  if (!dm_net_wifi_associated())
+    {
+      return -ENODATA;
+    }
 
-    if (ioctl(g_sock, SIOCGIWESSID, (unsigned long)&iwr) < 0)
-      {
-        return -errno;
-      }
+  memset(&iwr, 0, sizeof(iwr));
+  strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
+  iwr.u.essid.pointer = buf;
+  iwr.u.essid.length  = sizeof(buf);
 
-    if (ssid != NULL && ssid_len > 0 && iwr.u.essid.length > 0)
-      {
-        size_t len = iwr.u.essid.length;
+  if (ioctl(g_sock, SIOCGIWESSID, (unsigned long)&iwr) < 0)
+    {
+      return -errno;
+    }
 
-        if (len >= ssid_len)
-          {
-            len = ssid_len - 1;
-          }
+  if (ssid != NULL && ssid_len > 0 && iwr.u.essid.length > 0)
+    {
+      size_t len = iwr.u.essid.length;
 
-        memcpy(ssid, buf, len);
-        ssid[len] = '\0';
-      }
+      if (len >= ssid_len)
+        {
+          len = ssid_len - 1;
+        }
 
-    return 0;
-  }
+      memcpy(ssid, buf, len);
+      ssid[len] = '\0';
+    }
+
+  /* 信号强度：标准读法是 SIOCGIWSTATS。 */
+
+  if (rssi != NULL)
+    {
+      memset(&iwr, 0, sizeof(iwr));
+      strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
+
+      if (ioctl(g_sock, SIOCGIWSTATS, (unsigned long)&iwr) == 0)
+        {
+          *rssi = (int)(int8_t)iwr.u.qual.level;
+        }
+    }
+
+  return 0;
 #else
+  (void)ssid;
+  (void)ssid_len;
+  (void)rssi;
   return -ENODEV;
 #endif
 }
@@ -719,23 +761,33 @@ int dm_net_wifi_connect(const char *ssid, const char *psk)
 
   if (psk != NULL && psk[0] != '\0')
     {
-      static struct iw_encode_ext ext;
+      /* 注意：NuttX 的 struct iw_encode_ext 里 key[] 是**零长数组**，
+       * 所以绝不能拿 sizeof(ext.key) 去 clamp（那是 0，会把密码长度清成 0，
+       * 密码根本发不出去 —— 实测真机 psk_len=0 就是这么来的）。
+       * 这里用一个"结构体 + 尾部缓冲"的整体，长度按 结构体+密钥 计算。
+       */
 
-      memset(&ext, 0, sizeof(ext));
-      ext.alg     = IW_ENCODE_ALG_CCMP;
-      ext.key_len = strlen(psk);
+      static struct
+      {
+        struct iw_encode_ext ext;
+        char                 key[128];
+      } enc;
 
-      if (ext.key_len > sizeof(ext.key))
+      memset(&enc, 0, sizeof(enc));
+      enc.ext.alg     = IW_ENCODE_ALG_CCMP;
+      enc.ext.key_len = strlen(psk);
+
+      if (enc.ext.key_len > sizeof(enc.key))
         {
-          ext.key_len = sizeof(ext.key);
+          enc.ext.key_len = sizeof(enc.key);
         }
 
-      memcpy(ext.key, psk, ext.key_len);
+      memcpy(enc.key, psk, enc.ext.key_len);
 
       memset(&iwr, 0, sizeof(iwr));
       strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
-      iwr.u.encoding.pointer = &ext;
-      iwr.u.encoding.length  = sizeof(ext);
+      iwr.u.encoding.pointer = &enc.ext;
+      iwr.u.encoding.length  = sizeof(enc.ext) + enc.ext.key_len;
       iwr.u.encoding.flags   = IW_ENCODE_INDEX;
 
       ret = ioctl(g_sock, SIOCSIWENCODEEXT, (unsigned long)&iwr);
@@ -1058,6 +1110,305 @@ int dm_net_ap_probe(void)
 #endif
 }
 
+bool dm_net_ipv4_valid(const char *text)
+{
+  int part = 0;
+  int digits = 0;
+  int value = 0;
+
+  if (text == NULL)
+    {
+      return false;
+    }
+
+  for (const char *p = text; ; p++)
+    {
+      if (*p >= '0' && *p <= '9')
+        {
+          value = value * 10 + (*p - '0');
+          digits++;
+
+          if (digits > 3 || value > 255)
+            {
+              return false;
+            }
+        }
+      else if (*p == '.' || *p == '\0')
+        {
+          if (digits == 0)
+            {
+              return false;
+            }
+
+          part++;
+          digits = 0;
+          value  = 0;
+
+          if (*p == '\0')
+            {
+              break;
+            }
+        }
+      else
+        {
+          return false;
+        }
+    }
+
+  return part == 4;
+}
+
+int dm_net_if_get_config(const char *ifname, char *ip, size_t ip_len,
+                         char *mask, size_t mask_len, char *gw, size_t gw_len)
+{
+  struct in_addr addr;
+  struct in_addr maskaddr;
+  struct in_addr gwaddr;
+
+  if (ifname == NULL || ifname[0] == '\0')
+    {
+      return -EINVAL;
+    }
+
+  if (ip != NULL && netlib_get_ipv4addr(ifname, &addr) == OK)
+    {
+      snprintf(ip, ip_len, "%s", inet_ntoa(addr));
+    }
+
+  if (mask != NULL && netlib_get_ipv4netmask(ifname, &maskaddr) == OK)
+    {
+      snprintf(mask, mask_len, "%s", inet_ntoa(maskaddr));
+    }
+
+  if (gw != NULL && netlib_get_dripv4addr(ifname, &gwaddr) == OK)
+    {
+      snprintf(gw, gw_len, "%s", inet_ntoa(gwaddr));
+    }
+
+  return 0;
+}
+
+int dm_net_if_set_up(const char *ifname, bool up)
+{
+  if (ifname == NULL)
+    {
+      return -EINVAL;
+    }
+
+  return up ? netlib_ifup(ifname) : netlib_ifdown(ifname);
+}
+
+int dm_net_if_set_static(const char *ifname, const char *ip, const char *mask,
+                         const char *gw)
+{
+  struct in_addr addr;
+
+  if (ifname == NULL || !dm_net_ipv4_valid(ip) || !dm_net_ipv4_valid(mask))
+    {
+      return -EINVAL;
+    }
+
+  /* 每一步单独记 errno：模拟器里能几秒内定位，真机上也能靠日志/诊断区分。 */
+
+  {
+    int rc = netlib_ifdown(ifname);
+
+    DM_LOG("net: ifdown(%s) rc=%d errno=%d", ifname, rc, errno);
+  }
+
+  if (inet_aton(ip, &addr) == 0)
+    {
+      return -EINVAL;
+    }
+
+  if (netlib_set_ipv4addr(ifname, &addr) != OK)
+    {
+      DM_ERR("net: set_ipv4addr(%s,%s) failed errno=%d", ifname, ip, errno);
+      return -errno;
+    }
+
+  if (inet_aton(mask, &addr) == 0)
+    {
+      return -EINVAL;
+    }
+
+  if (netlib_set_ipv4netmask(ifname, &addr) != OK)
+    {
+      DM_ERR("net: set_ipv4netmask(%s,%s) failed errno=%d", ifname, mask, errno);
+      return -errno;
+    }
+
+  if (gw != NULL && gw[0] != '\0')
+    {
+      if (!dm_net_ipv4_valid(gw) || inet_aton(gw, &addr) == 0)
+        {
+          return -EINVAL;
+        }
+
+      if (netlib_set_dripv4addr(ifname, &addr) != OK)
+        {
+          DM_ERR("net: set_dripv4addr(%s,%s) failed errno=%d", ifname, gw, errno);
+          return -errno;
+        }
+    }
+
+  if (netlib_ifup(ifname) != OK)
+    {
+      DM_ERR("net: ifup(%s) failed errno=%d", ifname, errno);
+      return -errno;
+    }
+
+  DM_LOG("net: %s static %s/%s gw=%s", ifname, ip, mask,
+         gw != NULL ? gw : "-");
+  return 0;
+}
+
+int dm_net_if_set_dhcp(const char *ifname)
+{
+#ifdef CONFIG_NETUTILS_DHCPC
+  struct dhcpc_state ds;
+  struct ether_addr mac;
+  void *handle;
+  int ret = -EIO;
+  size_t maclen;
+
+  if (ifname == NULL)
+    {
+      return -EINVAL;
+    }
+
+  memset(&ds, 0, sizeof(ds));
+  memset(&mac, 0, sizeof(mac));
+  maclen = sizeof(mac);
+
+  handle = dhcpc_open(ifname, &mac, maclen);
+  if (handle == NULL)
+    {
+      DM_WARN("net: dhcpc_open(%s) failed", ifname);
+      return -EIO;
+    }
+
+  if (dhcpc_request(handle, &ds) == OK)
+    {
+      (void)netlib_set_ipv4addr(ifname, &ds.ipaddr);
+
+      if (ds.netmask.s_addr != 0)
+        {
+          (void)netlib_set_ipv4netmask(ifname, &ds.netmask);
+        }
+
+      if (ds.default_router.s_addr != 0)
+        {
+          (void)netlib_set_dripv4addr(ifname, &ds.default_router);
+        }
+
+      if (ds.dnsaddr.s_addr != 0)
+        {
+          (void)netlib_set_ipv4dnsaddr(&ds.dnsaddr);
+        }
+
+      (void)netlib_ifup(ifname);
+      DM_LOG("net: %s got %s from DHCP", ifname, inet_ntoa(ds.ipaddr));
+      ret = 0;
+    }
+  else
+    {
+      DM_WARN("net: DHCP on %s failed", ifname);
+    }
+
+  dhcpc_close(handle);
+  return ret;
+#else
+  (void)ifname;
+  return -ENOSYS;
+#endif
+}
+
+static volatile int g_dhcp_state;
+static int          g_dhcp_err;
+
+static void *dm_dhcp_worker(void *arg)
+{
+  const char *ifname = (const char *)arg;
+  int rc;
+
+  rc = dm_net_if_set_dhcp(ifname);
+
+  g_dhcp_err   = rc;
+  g_dhcp_state = rc == 0 ? 2 : -1;
+
+  DM_LOG("net: dhcp worker on %s rc=%d", ifname, rc);
+  return NULL;
+}
+
+int dm_net_if_set_dhcp_async(const char *ifname)
+{
+  static const char *s_name;
+  pthread_t tid;
+  pthread_attr_t attr;
+  int ret;
+
+  if (ifname == NULL)
+    {
+      return -EINVAL;
+    }
+
+  if (g_dhcp_state == 1)
+    {
+      return 0;
+    }
+
+  s_name       = ifname;
+  g_dhcp_state = 1;
+  g_dhcp_err   = 0;
+
+  pthread_attr_init(&attr);
+  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+  pthread_attr_setstacksize(&attr, 8192);
+
+  ret = pthread_create(&tid, &attr, dm_dhcp_worker, (void *)s_name);
+  pthread_attr_destroy(&attr);
+
+  if (ret != 0)
+    {
+      g_dhcp_state = -1;
+      g_dhcp_err   = ret;
+      return -ret;
+    }
+
+  return 0;
+}
+
+int dm_net_if_dhcp_status(int *err)
+{
+  if (err != NULL)
+    {
+      *err = g_dhcp_err;
+    }
+
+  return g_dhcp_state;
+}
+
+bool dm_net_ap_supported(void)
+{
+  /* 见 dm_net.h 的说明：从机是 STA 版固件，AP 配置被拒且会卡死从机 RPC。 */
+
+  return false;
+}
+
+int dm_net_ap_start(const char *ssid, const char *psk, int channel)
+{
+  (void)ssid;
+  (void)psk;
+  (void)channel;
+  return -ENOTSUP;
+}
+
+int dm_net_ap_stop(void)
+{
+  return -ENOTSUP;
+}
+
 int dm_net_wifi_wait_link(char *ssid, size_t ssid_len, int *rssi,
                           int timeout_ms)
 {
@@ -1071,7 +1422,8 @@ int dm_net_wifi_wait_link(char *ssid, size_t ssid_len, int *rssi,
       char    name[DM_NET_SSID_LEN];
       int     level = 0;
 
-      if (dm_net_wifi_link(name, sizeof(name), &level) == 0 &&
+      if (dm_net_wifi_associated() &&
+          dm_net_wifi_link(name, sizeof(name), &level) == 0 &&
           name[0] != '\0')
         {
           g_app_wifi_link_ok   = 1;

@@ -323,7 +323,12 @@ int main(int argc, FAR char *argv[])
     }
 
   (void)dm_agent_init(agent_mode);
+
+  printf("[dm] net: refresh begin\n");
+  fflush(stdout);
   (void)dm_net_refresh();
+  printf("[dm] net: refresh done\n");
+  fflush(stdout);
 
   if (ap_probe)
     {
@@ -349,7 +354,24 @@ int main(int argc, FAR char *argv[])
 
       if (dm_net_wifi_wait_link(linked, sizeof(linked), &rssi, 20000) == 0)
         {
+          char ip[20] = "";
+
           printf("DM-WIFI-LINK ok ssid='%s' rssi=%d\n", linked, rssi);
+
+          /* 关联成功后直接在 wlan0 上取地址（DHCP），这样"连上并拿到 IP"
+           * 是一条命令就能验收的事。
+           */
+
+          if (dm_net_if_set_dhcp("wlan0") == 0)
+            {
+              (void)dm_net_if_get_config("wlan0", ip, sizeof(ip), NULL, 0,
+                                         NULL, 0);
+              printf("DM-WIFI-IP %s\n", ip[0] != '\0' ? ip : "0.0.0.0");
+            }
+          else
+            {
+              printf("DM-WIFI-IP dhcp-failed\n");
+            }
         }
       else
         {

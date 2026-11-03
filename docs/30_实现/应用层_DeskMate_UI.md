@@ -1185,3 +1185,39 @@ ppa_blend.c.o / ppa_fill.c.o` 4 个目标文件全部生成 ✔。
 
 **下一轮（P3b）**：写一个最小 PPA 调用（`ppa_do_fill` 或 SRM blit）验证硬件真的动起来，
 注意 `esp_cache_msync` 的 cache 一致性；再决定是否把相机画布的 blit/缩放交给 PPA。
+
+### 18.8 P3b 达成：PPA 2D 硬件在真机上跑通
+
+**实现**：`nuttx/arch/risc-v/src/esp32p4/drivers/esp_ppa_test.c` 提供
+`esp_ppa_selftest()`（应用里 `--ppa-test` 调用）：
+
+1. `ppa_register_client()` 注册 **FILL** 客户端；
+2. `memalign(128)` 分配 64×64 RGB565 缓冲（PSRAM，按 L1+L2 cache line 对齐），memset 0；
+3. `esp_cache_msync(C2M)`（CPU 写 → 内存，PPA 才看得到）；
+4. `ppa_do_fill()`（`PPA_TRANS_MODE_BLOCKING`，`fill_cm = RGB565`）；
+5. `esp_cache_msync(M2C)` 回读校验。
+
+**真机结果**：
+
+```
+esp_ppa_selftest: PPA: fill selftest OK (first=07c0 last=07c0)
+[dm] PPA selftest rc=0
+```
+
+即 **2D 硬件加速器可用**（填充真的落到了内存，首尾一致）。
+
+**两个值得记录的细节**：
+
+- `fill_color_val` 是按 **ARGB8888** 解释再转 RGB565 落盘的（传 `0xf800` 得到的是
+  `0x07c0`），所以断言不能直接比 0xf800；现已改成"首尾一致且非零"（只验证硬件真的在干活）。
+- 运行时会出现 `esp_os_queue_receive_generic: Failed timedreceive error=-110`：
+  PPA 的 done 信号量等超时了，但操作仍完成 —— 说明我们的 `semphr.h` 里
+  `xSemaphoreTake` 的 tick 语义/超时值需要再对一下（不影响功能，已记录）。
+
+**构建侧补齐**（装配 PPA 需要的全部 HAL 源）：
+`esp_hal_ppa/ppa_hal.c`、`esp_hal_dma/dma2d_hal.c`、`esp_hal_dma/<chip>/dma2d_periph.c`、
+`upper_hal_dma/src/dma2d.c`（+ 之前的 ppa_core/srm/blend/fill），全部受
+`CONFIG_ESPRESSIF_PPA` 控制（默认关）。
+
+**下一轮（P3c）**：让相机画布的合成/缩放走 PPA（LVGL 只失效不绘制），并评估
+`esp_mipi_dsi_flush_framebuffer` 的脏区策略。

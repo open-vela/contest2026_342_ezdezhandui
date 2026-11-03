@@ -102,6 +102,10 @@ if(CONFIG_ESPRESSIF_MIPI_DSI)
   target_sources(arch PRIVATE drivers/esp_mipi_dsi.c)
 endif()
 
+if(CONFIG_ESPRESSIF_PPA)
+  target_sources(arch PRIVATE drivers/esp_ppa_test.c)
+endif()
+
 if(CONFIG_ESPRESSIF_EMAC)
   target_sources(arch PRIVATE drivers/esp_emac.c)
 endif()

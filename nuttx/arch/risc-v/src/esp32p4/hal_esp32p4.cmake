@@ -586,6 +586,10 @@ if(CONFIG_ESPRESSIF_PPA)
   list(
     APPEND
     HAL_SRCS
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_ppa/ppa_hal.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_dma/dma2d_hal.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_dma/${CHIP_SERIES}/dma2d_periph.c
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_dma/src/dma2d.c
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_core.c
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_srm.c
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_blend.c

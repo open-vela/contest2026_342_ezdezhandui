@@ -69,6 +69,7 @@
 static const char *g_usage =
   "Usage: " DM_PROGNAME " [options]\n"
   "  --selftest          run the headless scenario, print the report and exit\n"
+  "  --ppa-test          run the PPA (2D accelerator) fill selftest and exit\n"
   "  --freeze-preview    stop re-pointing the canvas at new frames (diagnostic)\n"
   "  --soak <sec>        cycle pages every <sec> seconds and log metrics (long run)\n"
   "  --tour              walk every page and snapshot it (demo, no assertions)\n"
@@ -231,6 +232,15 @@ int main(int argc, FAR char *argv[])
       if (strcmp(argv[i], "--selftest") == 0)
         {
           selftest = true;
+        }
+      else if (strcmp(argv[i], "--ppa-test") == 0)
+        {
+          extern int esp_ppa_selftest(void);
+
+          int rc = esp_ppa_selftest();
+
+          DM_LOG("PPA selftest rc=%d", rc);
+          return rc == 0 ? 0 : 1;
         }
       else if (strcmp(argv[i], "--freeze-preview") == 0)
         {

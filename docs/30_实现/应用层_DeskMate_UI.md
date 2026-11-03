@@ -452,3 +452,54 @@ wifi:scan PASS 1 AP first='Hello_World_2.4G' bssid=88:00:33:77:ba:69 rssi=0 ch=0
 **复盘**：这一路真正卡住的不是射频、不是 RPC 超时、也不是驱动不支持，而是**主机侧两个
 "结构体没填全"的协议细节**。诊断全局（`g_dbg_wifi_*`）是把"到底是射频没收到还是我们没
 解析对"一刀切开的关键手段；串口不可用时，JTAG 读 RAM 比任何日志都可靠。
+
+## 十一、网络页重做（类 PC 设置）与热点结论
+
+### 11.1 页面结构（1024×600，内容区 1024×456）
+
+| 区块 | 内容 |
+|---|---|
+| 左：网络接口 | eth0 / wlan0 的状态、地址、掩码（1s 节流刷新） |
+| 右上：以太网 | **自动 (DHCP)** / **手动** 切换；手动时三个字段（地址/掩码/网关）点击弹**数字键盘**输入；`应用` 按钮；状态行 |
+| 右下：无线 | 状态行（已连接 SSID + dBm）；`扫描` / `断开` / `热点`；扫描结果列表（SSID + dBm + 加密标记），点 `连接` 弹**密码键盘** |
+
+**5 秒未确认自动回滚**（类 PC）：应用静态地址后弹确认框，5 秒内没点 `保留设置` 就回到应用前的配置。
+所有地址输入先过 `dm_net_ipv4_valid()`（四段、每段 ≤255），格式不对直接拒绝，不会把错地址写进去。
+
+### 11.2 平台侧补了什么
+
+- netdev 新增 `SIOCSIWENCODE / SIOCSIWENCODEEXT`：把密码暂存，`SIOCSIWESSID` 时一起
+  `set_config(STA, {ssid,password}) + connect`。NuttX 对 **legacy** netdev 会把
+  `_WLIOCVALID` 命令直接转给 `d_ioctl`，所以落点在驱动的 ioctl 里（不是 `iw_ops->passwd`，
+  那只对 lowerhalf 驱动生效）。
+- 应用新增异步 API：`dm_net_if_set_dhcp_async()`（DHCP 几秒，走后台线程）、
+  `dm_net_if_set_static()`、`dm_net_if_get_config()`、`dm_net_ap_supported()`/`ap_start()`。
+
+### 11.3 热点：**平台不支持**（有证据）
+
+最小实验（`SIOCSIWAP` → 直接调官方栈）：
+
+```
+g_dbg_ap_setmode_rc = 0     # set_mode(WIFI_MODE_AP) 被接受
+g_dbg_ap_setcfg_rc  = -1    # set_config(WIFI_IF_AP) 被从机拒绝
+g_dbg_ap_restore_rc = -1    # 连"恢复 STA 模式"也失败
+```
+
+原因：镜像里的从机固件是 **STA 专用版**（`tools/build_flash/c6_hosted/eh_cp_wifi_sta_esp32c6_sdio.bin`）。
+换固件需要 **C6 的 UART**，而板上只引出 `/dev/ttyACM0`、`/dev/ttyUSB0`（没有 C6 串口），
+所以是硬件级动作。**更重要的是**：这个失败实验会把从机留在坏状态——之后所有 RPC 超时、
+应用连 `dm_net_refresh()` 都过不去（要**断电重启**从机才能恢复）。
+因此该实验已用 `CONFIG_ESPRESSIF_HOSTED_AP_PROBE` **默认关闭**，未开启时 `SIOCSIWAP` 直接返回
+`-ENOTSUP`；UI 上热点按钮显示原因而不是假装能开。
+
+### 11.4 模拟器验证（本轮证据）
+
+```
+[dm-check] net:ipv4-valid    PASS accepts 3 valid, rejects 4 invalid
+[dm-check] net:eth-static    PASS if=wlan0 rc=0 ip=192.168.77.9 mask=255.255.255.0
+[dm-check] net:ap-degraded   PASS supported=0 rc=-138 (CP 为 STA 版固件)
+DM-SELFTEST RESULT: PASS (21/21)
+```
+
+截图：`docs/40_验证与证据/截图与对照日志/应用层_模拟器快照/net_pc_like_1024x600.png`
+（浅色卡片 81% 亮像素、113 色、强调蓝 9988 采样点）。

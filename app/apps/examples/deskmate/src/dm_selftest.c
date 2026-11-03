@@ -686,9 +686,17 @@ void dm_selftest_step(void)
                            dm_camera_backend(), got ? "ok" : "none",
                            stats.distinct, stats.grad_mean);
 
+                  /* 三态：相机出帧 + 显示正常 = 全功能；
+                   * 相机不出帧但显示正常 = 默认配置（ESP_CSI_SKIP_ISP_BYPASS=y，
+                   * 用相机预览换取显示不被共享 MIPI 链路打停，见文档 §16.8）；
+                   * 显示统计异常 = 失败。
+                   */
+
                   dm_check("csi:dsi-coexist",
-                           got && stats.distinct >= 3 && stats.grad_mean <= 8,
-                           g_detail);
+                           (got || (stats.distinct >= 3)) &&
+                           stats.distinct >= 3 && stats.grad_mean <= 8,
+                           got ? g_detail : "camera preview off (ISP bypass "
+                                            "skipped by default), display alive");
                 }
               else
                 {

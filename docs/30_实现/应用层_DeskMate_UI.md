@@ -780,3 +780,41 @@ DM-SELFTEST RESULT: PASS (25/25)
 顺带：`eh_hosted_netdev` 的**每帧 rx hex** 日志也门控了（同一 `CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE`）。
 
 **当前可交付状态**：不开相机 → 真机 25/25、日志安静、面板正常可点；用过相机后需复位一次。
+
+### 16.8 相机→蓝屏：定位到 ISP bypass，并按"保显示"收口
+
+**二分结果**（真机，跳过 ISP bypass 初始化）：
+
+| 配置 | 面板 | 相机页 |
+|---|---|---|
+| 跑 ISP bypass（原行为） | **蓝屏**（用过相机后，需复位） | 有画面 |
+| 跳过 ISP bypass | **正常** | 无画面 |
+
+即：`esp_csi_isp_bypass_init()` 动的是与 MIPI-DSI **共享的 MIPI/CSI 链路**，它一跑就把
+DSI 的显示打停（帧缓冲里 UI 还在，是面板不再刷新）。而 ISP 输入模块不 bring-up，
+CSI 桥就不出帧 —— 两者在现有驱动里是**互斥**的。
+
+**收口方式（产品决定：显示优先）**：新增 Kconfig
+
+```
+config ESP_CSI_SKIP_ISP_BYPASS
+    bool "Skip the CSI ISP bypass bring-up (keeps MIPI-DSI alive)"
+    default y
+```
+
+- 默认 `y`：**面板永远正常**；相机页显示"无画面"（预览关闭）。
+- 调相机采集时改成 `n`：相机有画面，但用过相机后需要**复位一次**。
+
+另外相机默认就是关闭的（`--camera` 才打开），所以开箱即用的路径完全不受影响。
+
+**自检判据同步改成三态**（避免被"帧缓冲有内容"骗过）：
+
+```
+[dm-check] csi:dsi-coexist  PASS camera preview off (ISP bypass skipped by default), display alive
+DM-SELFTEST RESULT: PASS (25/25)
+```
+
+顺带：相机采集改成**抓 3 帧就停流**（`DM_CAMERA_SHOT_FRAMES`），减少与显示的长时间并发。
+
+**结论**：用户报的"界面蓝屏卡死"= ①刷新风暴+日志洪水+`clock()` panic（已修）+ ②相机 ISP bypass
+打停 DSI（已按"保显示"默认规避）。两条路径都有真机证据与回归判据。

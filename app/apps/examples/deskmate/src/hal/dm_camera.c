@@ -58,6 +58,7 @@ struct dm_camera_buf_s
  * Private Data
  ****************************************************************************/
 
+static int  g_captured;
 static int   g_fd = -1;
 static bool  g_ready;
 static bool  g_synthetic = true;
@@ -431,6 +432,22 @@ int dm_camera_poll(struct dm_camera_frame_s *out)
         }
 
       (void)ioctl(g_fd, VIDIOC_QBUF, (unsigned long)&buf);
+
+      /* **单帧/少帧模式**：抓够几帧就把流停掉。
+       *
+       * 真机实测：相机与面板共用同一个 DW-GDMA 控制器，连续流会把 DSI 的显示
+       * 打停（面板蓝屏、要复位才恢复，证据见文档 §16.6/§16.7）。改成"抓几帧
+       * 就停"，让两条通道不长时间并发。
+       */
+
+      if (++g_captured >= DM_CAMERA_SHOT_FRAMES)
+        {
+          enum v4l2_buf_type stop = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+          (void)ioctl(g_fd, VIDIOC_STREAMOFF, (unsigned long)&stop);
+          g_streaming = false;
+          DM_LOG("camera: single-shot stop after %d frames", g_captured);
+        }
 #endif
     }
 

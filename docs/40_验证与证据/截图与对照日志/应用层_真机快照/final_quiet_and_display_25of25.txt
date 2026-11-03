@@ -1,0 +1,6 @@
+# 最终状态：蓝屏卡死已修（刷新风暴+日志+panic），相机路径按「保显示」默认规避
+# 真机：DM-SELFTEST RESULT: PASS (25/25)
+#   csi:dsi-coexist PASS camera preview off (ISP bypass skipped by default), display alive
+
+[dm-check] csi:dsi-coexist              PASS camera preview off (ISP bypass skipped by default), display alive
+DM-SELFTEST RESULT: PASS (25/25)

@@ -636,9 +636,15 @@ static int esp_csi_ctlr_create(FAR struct esp_csi_priv_s *priv)
    * CSI bridge before the CSI DMA is started.
    */
 
+  /* 二分实验（2026-11-03）：ISP bypass 动的可能是与 DSI 共享的 MIPI/CSI 桥，
+   * 先用 CONFIG_ESP_CSI_SKIP_ISP_BYPASS 试着跳过，看面板是否还被相机弄停。
+   */
+
+#ifndef CONFIG_ESP_CSI_SKIP_ISP_BYPASS
   esp_csi_isp_bypass_init(priv->config.h_res, priv->config.v_res,
                           priv->config.input_color == CAM_CTLR_COLOR_RAW10 ? 10u :
                           priv->config.input_color == CAM_CTLR_COLOR_RAW12 ? 12u : 8u);
+#endif
 
   return OK;
 

@@ -101,6 +101,9 @@
 /* Camera preview geometry (both the page and the self-test use it) */
 
 #define DM_CAMERA_PREVIEW_W 480
+/* 相机每次开流抓几帧就停：与 DSI 共用 DW-GDMA，连续流会打停显示（见文档 §16.7）。 */
+
+#define DM_CAMERA_SHOT_FRAMES 3
 #define DM_CAMERA_PREVIEW_H 270
 
 /* Simulator convenience: write a wifi_sim BSS table before the UI starts, so

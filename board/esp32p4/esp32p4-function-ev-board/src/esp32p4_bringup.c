@@ -32,6 +32,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include <nuttx/fs/fs.h>
@@ -205,6 +206,57 @@
  *   any failure.
  *
  ****************************************************************************/
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_SDIO
+/* 伴生芯片（ESP32-C6）的 ESP-Hosted 启动放到**独立线程**里执行。
+ *
+ * 为什么必须这样：esp_bringup() 属于 **init 任务、在 NSH 之前**执行，而下面这套
+ * 启动是**同步**的（握手 + 等伴生芯片回应）。一旦对方不回应（实测：RPC
+ * wifi_set_mode 返回 ESP_ERR_WIFI_NOT_INIT=12289 之后卡住），整机就**永远到不了
+ * nsh>**。原注释写着 "the boot must not wait for that"，这里让它真正成立：
+ * 启动流程立刻继续，WiFi 在后台自己就绪。
+ */
+
+static void *esp32p4_hosted_bringup(void *arg)
+{
+  int ret;
+
+  (void)arg;
+
+  ret = esp_hosted_sdio_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_WARNING,
+             "Companion-radio SDIO transport not available (%d); "
+             "WiFi is unavailable, ethernet is unaffected\n", ret);
+      return NULL;
+    }
+
+#ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
+  ret = esp_hosted_official_start();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "Official esp-hosted stack did not start (%d)\n", ret);
+    }
+#endif
+
+  return NULL;
+}
+
+static int esp32p4_hosted_start_async(void)
+{
+  pthread_t tid;
+
+  if (pthread_create(&tid, NULL, esp32p4_hosted_bringup, NULL) != 0)
+    {
+      syslog(LOG_ERR, "Companion-radio bring-up thread could not start\n");
+      return -1;
+    }
+
+  pthread_detach(tid);
+  return 0;
+}
+#endif
 
 int esp_bringup(void)
 {
@@ -400,9 +452,12 @@ int esp_bringup(void)
    * the WiFi path -- the ESP-Hosted protocol above it is separate -- so a
    * failure here is reported and does not stop the boot.  Ethernet remains
    * the working network path either way.
+   *
+   * 注意：这一步现在是**异步**的 —— 见 esp32p4_hosted_start_async()，它起一个
+   * detached 线程去做握手，避免伴生芯片不回应时把整机启动卡在 nsh> 之前。
    */
 
-  ret = esp_hosted_sdio_initialize();
+  ret = esp32p4_hosted_start_async();
   if (ret < 0)
     {
       syslog(LOG_WARNING,
@@ -416,7 +471,7 @@ int esp_bringup(void)
    * with the companion, and the boot must not wait for that.
    */
 
-  if (ret >= 0)
+  if (0 && ret >= 0)   /* 已搬到线程里执行，见 esp32p4_hosted_bringup() */
     {
       ret = esp_hosted_official_start();
       if (ret < 0)

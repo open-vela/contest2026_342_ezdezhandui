@@ -73,6 +73,7 @@ static const char *g_usage =
   "  --disp-stall <sec>  freeze the UI loop for <sec> (watchdog test)\n"
   "  --touch-fake x y     synthesize a hardware-press through the touch snapshot\n"
   "  --touch-wr x y       write a real press into the GT911 registers (end-to-end test)\n"
+  "  --wifi-scan          scan wlan0 through the app's WAPI path and print the APs\n"
   "  --ppa-test          run the PPA (2D accelerator) fill selftest and exit\n"
   "  --freeze-preview    stop re-pointing the canvas at new frames (diagnostic)\n"
   "  --soak <sec>        cycle pages every <sec> seconds and log metrics (long run)\n"
@@ -249,6 +250,31 @@ int main(int argc, FAR char *argv[])
 
           dm_touch_fake_hw(atoi(argv[i + 1]), atoi(argv[i + 2]));
           i += 2;
+        }
+      else if (strcmp(argv[i], "--wifi-scan") == 0)
+        {
+          /* wlan0 扫描测试：直接用应用自己的 WAPI 通道（hosted netdev 实现了
+           * SIOCGIWSCAN），不依赖镜像里有没有 wapi 命令行工具。
+           */
+
+          struct dm_wifi_ap_s aps[16];
+          int n = dm_net_wifi_scan(aps, (int)(sizeof(aps) / sizeof(aps[0])));
+
+          if (n < 0)
+            {
+              printf("DM-SCAN err=%d\n", dm_net_wifi_last_error());
+              return 1;
+            }
+
+          printf("DM-SCAN count=%d\n", n);
+          for (int k = 0; k < n; k++)
+            {
+              printf("DM-SCAN ap%d ssid=%s rssi=%d freq=%d secure=%d\n",
+                     k, aps[k].ssid, aps[k].rssi, aps[k].freq,
+                     (int)aps[k].secure);
+            }
+
+          return 0;
         }
       else if (strcmp(argv[i], "--touch-wr") == 0 && i + 2 < argc)
         {

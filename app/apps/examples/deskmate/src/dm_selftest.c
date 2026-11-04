@@ -507,20 +507,7 @@ void dm_selftest_step(void)
                    dm_ui_current_id() != NULL &&
                    strcmp(dm_ui_current_id(), "net") == 0, desc);
 
-          /* Agent 页：真实数据通道 + 二维码（复用 LVGL 的 qrcodegen） */
-
-          {
-            int rc = dm_ui_goto_id("agent");
-            const char *id = dm_ui_current_id();
-
-            snprintf(g_detail, sizeof(g_detail), "page=%s rc=%d",
-                     id != NULL ? id : "?", rc);
-            dm_check("agent:page",
-                     id != NULL && strcmp(id, "agent") == 0, g_detail);
-          }
-
-          snprintf(g_detail, sizeof(g_detail), "qr=%d", g_app_agent_qr_ok);
-          dm_check("agent:qr", g_app_agent_qr_ok == 1, g_detail);
+          /* 智能体页已删除（对话页承担在线 AI 交互），不再有 agent 页判据 */
 
           {
             const char *st = dm_agent_state();

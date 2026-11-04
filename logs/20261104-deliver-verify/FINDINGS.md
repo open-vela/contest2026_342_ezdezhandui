@@ -74,3 +74,30 @@ ra     = 0x40030b5a
 3. 已知限制（重启后不重启板子直接再跑 UI 会崩在 LVGL 悬垂对象、`&` 不可用、
    wlan0 不可用、`/mnt/spif` 未挂载、OpenOCD reset 不可靠）见
    `docs/50_排障经验/11_ECALL换出风暴与异常被丢弃.md` 末节。
+
+## WiFi 连接实测（2026-11-04 21:30，AP = Hello_World_2.4G / 851285812）
+
+命令：`deskmate --wifi-connect Hello_World_2.4G 851285812`（全新启动后）
+
+```
+[dm] agent: mode ws, endpoint 127.0.0.1:28789
+eh_hosted_netdev: connect failed: 12289
+[dm] wifi: SIOCSIWESSID(Hello_World_2.4G) failed: 5
+DM-WIFI-CONNECT ssid='Hello_World_2.4G' rc=-5
+[dm] agent: connect(127.0.0.1:28789) timed out or refused
+riscv_exception: EXCEPTION: Breakpoint. MCAUSE: 00000003, EPC: 4007701a   ← dm_agent_ws_worker 断言
+```
+
+判读：主机侧凭据链路是通的，但**从机（C6）以 `12289 = ESP_ERR_WIFI_STATE` 拒绝 connect**。
+C6 跑的是 station 示例固件（射频自持），且固件内**没有 AP 凭据**
+（`strings eh_cp_wifi_sta_esp32c6_sdio.bin` 无 `Hello_World`；`sdkconfig.esp32c6.sdio` 无
+`CONFIG_EXAMPLE_WIFI_SSID`）。⇒ **与密码无关，是"谁拥有射频"的配对问题，当前组合下 Wi-Fi 连不上。**
+
+可达的修复路径（都需要额外工作，本轮未做）：
+1. 用带 `CONFIG_EXAMPLE_WIFI_SSID/PASSWORD` 的 esp-hosted station 固件重建 C6 固件，
+   让从机自己连 AP（需要 esp-hosted 源码；本机目前没有，clone 受网络影响）。
+2. 换"纯网络适配器"从机固件 + 修主机初始化（docs/30_实现/连接_WiFi_SDIO.md §5；§31 记录过
+   该组合下主机会卡在启动）。
+
+另外记录一个 app 缺陷：WS agent 连不上时 `dm_agent_ws_worker` 直接 `DEBUGASSERT`（ebreak），
+应当降级重试而不是 panic。

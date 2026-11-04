@@ -120,7 +120,22 @@
  * 默认关：RAW8 + CPU 转换是当前验证过的路径。
  */
 
-/* #define DM_CSI_ISP_RGB565 1 */
+#define DM_CSI_ISP_RGB565 1
+
+/* 相机的"让路"占空比：每采 N 帧、歇 M 毫秒，把带宽让回给 DSI 扫描。
+ *
+ * 为什么需要：ISP 路径每帧 DMA 流量翻倍（RGB565 1,843,200B vs RAW8 921,600B），
+ * 连续流会把面板的 DW-GDMA/PSRAM 带宽抢死（§20.1 的卡死根因）。
+ * RAW8 路径不需要限流（0 = 关闭）。
+ */
+
+#ifdef DM_CSI_ISP_RGB565
+#  define DM_CAMERA_BURST_FRAMES   12
+#  define DM_CAMERA_BURST_PAUSE_MS 80
+#else
+#  define DM_CAMERA_BURST_FRAMES   0
+#  define DM_CAMERA_BURST_PAUSE_MS 0
+#endif
 #define DM_CAMERA_MOTION_PCT  6
 
 /* 相机预览的目标帧间隔（ms）。主循环每轮都会调当前页的 update()，不节流的话

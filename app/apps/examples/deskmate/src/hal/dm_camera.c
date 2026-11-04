@@ -87,6 +87,7 @@ volatile uint32_t g_dbg_cap_calls;
 volatile uint32_t g_dbg_cap_eagain;
 volatile uint32_t g_dbg_cap_pub;
 static uint32_t g_ui_seq;             /* UI 已取走的帧序号 */
+static int g_burst_frames;            /* 让路限流：本突发已采帧数 */
 
 /* 诊断（JTAG 可读）：单帧"格式转换 + 缩放"耗时（微秒，累计 / 单次最大） */
 
@@ -527,6 +528,17 @@ static int dm_camera_capture_once(void)
         }
 
       (void)ioctl(g_fd, VIDIOC_QBUF, (unsigned long)&buf);
+
+      /* 让路：每采 DM_CAMERA_BURST_FRAMES 帧歇 DM_CAMERA_BURST_PAUSE_MS，
+       * 把 PSRAM/DW-GDMA 带宽让回给显示扫描（ISP 路径必须，见 §20.1）。
+       */
+
+      if (DM_CAMERA_BURST_FRAMES > 0 &&
+          ++g_burst_frames >= DM_CAMERA_BURST_FRAMES)
+        {
+          g_burst_frames = 0;
+          usleep(DM_CAMERA_BURST_PAUSE_MS * 1000);
+        }
 
       /* **单帧/少帧模式**：抓够几帧就把流停掉。
        *

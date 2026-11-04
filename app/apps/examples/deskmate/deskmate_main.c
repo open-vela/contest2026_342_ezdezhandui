@@ -219,6 +219,7 @@ static void dm_write_wifi_bss(void)
 
 volatile int g_dbg_wifi_start_rc = -999;    /* -999=还没返回 */
 
+#ifdef CONFIG_ARCH_CHIP_ESP32P4
 static void *dm_wifi_start_thread(void *arg)
 {
   extern int eh_host_wifi_start(void);
@@ -227,6 +228,7 @@ static void *dm_wifi_start_thread(void *arg)
   g_dbg_wifi_start_rc = eh_host_wifi_start();
   return NULL;
 }
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -271,6 +273,7 @@ int main(int argc, FAR char *argv[])
           dm_touch_fake_hw(atoi(argv[i + 1]), atoi(argv[i + 2]));
           i += 2;
         }
+#ifdef CONFIG_ARCH_CHIP_ESP32P4
       else if (strcmp(argv[i], "--wifi-start") == 0)
         {
           pthread_t tid;
@@ -312,6 +315,7 @@ int main(int argc, FAR char *argv[])
 
           return 0;
         }
+#endif
       else if (strcmp(argv[i], "--wifi-scan") == 0)
         {
           /* wlan0 扫描测试：直接用应用自己的 WAPI 通道（hosted netdev 实现了

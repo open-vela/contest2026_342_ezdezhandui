@@ -112,7 +112,7 @@ config EXAMPLES_DESKMATE_FONT_SIMSUN
 
 config EXAMPLES_DESKMATE_AGENT_MODE
 	string "Agent bridge backend (mock | ws | off)"
-	default "mock"
+	default "ws"
 	---help---
 		mock : offline responder, answers from the device state.  Makes the
 		       conversation and the proactive engine testable without a

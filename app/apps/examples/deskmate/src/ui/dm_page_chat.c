@@ -135,6 +135,29 @@ static void dm_chat_input_cb(lv_event_t *event)
     }
 }
 
+/* 常用语上屏：把点中的短语追加到输入框（中文输入法的兜底形态）。
+ * 本机没有可用的拼音词库（无 pypinyin / fcitx 库为空），见 docs §23。
+ */
+
+static void dm_chat_phrase_cb(lv_event_t *event)
+{
+  const char *phrase = (const char *)lv_event_get_user_data(event);
+
+  if (s_input == NULL || phrase == NULL)
+    {
+      return;
+    }
+
+  {
+    const char *cur = lv_textarea_get_text(s_input);
+    char buf[192];
+
+    snprintf(buf, sizeof(buf), "%s%s", cur != NULL ? cur : "", phrase);
+    lv_textarea_set_text(s_input, buf);
+    lv_textarea_set_cursor_pos(s_input, LV_TEXTAREA_CURSOR_LAST);
+  }
+}
+
 static void dm_chat_send_cb(lv_event_t *event)
 {
   if (lv_event_get_code(event) != LV_EVENT_CLICKED || s_input == NULL)
@@ -251,6 +274,31 @@ static int dm_page_chat_create(lv_obj_t *parent, int w, int h)
     lv_obj_align(send, LV_ALIGN_BOTTOM_RIGHT, -110, 0);
 
     (void)dm_button(card, DM_I18N_CHAT_CLEAR, 100, 44, dm_chat_clear_cb, NULL);
+  }
+
+  /* 常用语面板：一排 6 个，点一下追加到输入框（中文字体已覆盖 3755 字） */
+
+  {
+    static const char *phrases[] =
+    {
+      "你好", "今天天气怎么样", "打开相机",
+      "记一下明早九点开会", "现在几点", "谢谢"
+    };
+
+    lv_obj_t *row = lv_obj_create(card);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, w - 2 * DM_MARGIN, 40);
+    lv_obj_align(row, LV_ALIGN_BOTTOM_LEFT, 0, -56);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(row, 8, 0);
+
+    for (unsigned k = 0; k < sizeof(phrases) / sizeof(phrases[0]); k++)
+      {
+        lv_obj_t *b = dm_button(row, phrases[k], 150, 40,
+                                dm_chat_phrase_cb, (void *)phrases[k]);
+
+        lv_obj_set_style_text_font(b, DM_FONT_SMALL, 0);
+      }
   }
 
   s_keyboard = lv_keyboard_create(s_root);

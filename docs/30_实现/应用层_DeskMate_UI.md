@@ -2058,3 +2058,40 @@ P4    ：rc=0；nuttx.bin = 1.746 MB（槽 1.75MB）
 
 **需要用户做的一步**：把板子的 USB 线**拔下再插上**（或按复位键），
 串口恢复后可以复核一次 `deskmate --agent mock --camera --selftest`。
+
+### 28. §5 解锁路径：仓库里已有"纯网络适配器"C6 固件
+
+**发现**：`tools/build_flash/` 下有两套 C6 固件，第二套正是移植层注释所说的那种：
+
+| 目录 | 固件 | 含义 |
+|---|---|---|
+| `c6_hosted/` | `eh_cp_wifi_sta_esp32c6_sdio.bin` / `..._debug.bin` | **WiFi station 示例**（从机自己启动射频） |
+| `c6_hosted_new/` | **`eh_cp_network_split_station.bin`** | **纯网络适配器（network_split_station）** |
+
+移植层 `eh_hosted_nuttx_entry.c:360` 的注释写得很明确：
+> "…when this board gets the pure-RPC (network adapter) slave firmware,
+> this call (`eh_host_wifi_start`) belongs back here."
+
+而我们实测：当前固件下扫描返回 `ESP_ERR_WIFI_STATE`（电台**没**启动），
+主机侧再调 `wifi_start` 会把 hosted 栈拖死（附录 BY.17，本会话复现过）。
+⇒ **要打通 §5(b)/(c)，应当把 C6 刷成 `c6_hosted_new` 的纯网络适配器固件**，
+之后主机侧的 `wifi_start` + 扫描/关联才成立。
+
+**烧录前置（脚本已写明，必须人工）**：
+- C6 走 **CP2102 → /dev/ttyUSB1**；但该 CP2102 的 **DTR/RTS 没接到 C6 的 EN/BOOT**，
+  esptool 无法自动进下载模式，必须**人工**：
+  **按住板上 BOOT(GPIO9) → 按一下 RESET → 松开 BOOT**，然后立刻运行
+  `tools/build_flash/c6_hosted_new/flash.sh`。
+- 偏移：`0x0 bootloader` / `0x8000 partition` / `0xd000 ota_data` / **`0x10000 app`**（不是 0x0）。
+
+**当前主机侧状态（实测）**：
+
+| 端口 | 设备 | 说明 |
+|---|---|---|
+| `/dev/ttyUSB0` | CP210x UART (10c4:ea60) | P4 控制台 |
+| `/dev/ttyACM0` | Espressif USB JTAG/serial (303a:1001) | OpenOCD 调试口 |
+| `/dev/ttyUSB1` | **不存在** ✗ | 脚本指定的 C6 烧录口未枚举 |
+
+⇒ **需要用户**：① 确认/接上 C6 的 USB 串口使 `/dev/ttyUSB1` 出现（并做上面的 BOOT+RESET 动作）；
+② 顺手把板子 USB 拔插一次（P4 控制台目前失去响应，见 §27）。之后我可以立即
+烧 `c6_hosted_new` 固件并跑 §5(b)/(c) 的扫描与关联。

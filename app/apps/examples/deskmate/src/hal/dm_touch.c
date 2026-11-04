@@ -13,7 +13,10 @@
 #include <nuttx/config.h>
 
 #include <fcntl.h>
+#include <errno.h>
 #include <poll.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -69,17 +72,23 @@ static volatile int g_hw_y;
 static volatile int g_hw_pressed;
 static volatile int g_hw_have;
 static volatile int g_hw_seq;
+static volatile uint32_t g_hw_hold_until;   /* 按下锁存到期时刻（ms） */
 
 /* 诊断（JTAG 可读）：硬件读次数与耗时（微秒，累计/单次最大） */
 
-volatile uint32_t g_dbg_touch_hw_reads;
+volatile uint32_t g_dbg_touch_hw_reads;    /* 发起的 read 次数 */
+volatile uint32_t g_dbg_touch_hw_ok;       /* read 返回完整样本的次数 */
+volatile uint32_t g_dbg_touch_hw_hits;     /* npoints>0（真的有人按） */
+volatile uint32_t g_dbg_touch_hw_err;      /* 返回长度不符的次数 */
 volatile uint32_t g_dbg_touch_hw_us;
 volatile uint32_t g_dbg_touch_hw_us_max;
 
 static void *dm_touch_hw_thread(void *arg)
 {
-  struct touch_sample_s sample;
+  FAR struct touch_sample_s *sample;
   struct pollfd pfd;
+  uint8_t maxpoint = 1;
+  size_t  ssize;
   int fd;
 
   (void)arg;
@@ -87,50 +96,99 @@ static void *dm_touch_hw_thread(void *arg)
   fd = open(DM_INPUT_PATH, O_RDONLY | O_NONBLOCK);
   if (fd < 0)
     {
-      DM_ERR("touch: cannot open %s for the poller", DM_INPUT_PATH);
+      DM_ERR("touch: cannot open %s for the poller (errno=%d)", DM_INPUT_PATH,
+             errno);
       return NULL;
     }
+
+  /* 与 LVGL 的 nuttx 触摸驱动一致：先问"最多几个点"，再据此定缓冲长度。
+   * 之前直接用 sizeof(struct touch_sample_s) 并要求 read 恰好返回该长度，
+   * 一旦与驱动的长度判定不一致，read 会被判失败 ⇒ 硬件样本一个都进不来。
+   */
+
+  if (ioctl(fd, TSIOC_GETMAXPOINTS, &maxpoint) < 0 || maxpoint == 0)
+    {
+      DM_ERR("touch: TSIOC_GETMAXPOINTS failed (errno=%d), assume 1 point",
+             errno);
+      maxpoint = 1;
+    }
+
+  ssize  = SIZEOF_TOUCH_SAMPLE_S(maxpoint);
+  sample = malloc(ssize);
+  if (sample == NULL)
+    {
+      close(fd);
+      return NULL;
+    }
+
+  DM_LOG("touch: hardware poller ready (%s, maxpoint=%u, %zu bytes)",
+         DM_INPUT_PATH, (unsigned)maxpoint, ssize);
 
   pfd.fd     = fd;
   pfd.events = POLLIN;
 
   for (;;)
     {
-      /* 每个周期都读一次（GT911 是轮询型：没触摸时 read 会返回 npoints==0），
-       * 这样触摸状态最多滞后 50ms；也是旧 LVGL 设备 indev 的行为。
-       */
-
       (void)poll(&pfd, 1, 50);
 
       {
-          uint32_t t0 = (uint32_t)TICK2USEC(clock_systime_ticks());
-          ssize_t n   = read(fd, &sample, sizeof(sample));
-          uint32_t dt = (uint32_t)TICK2USEC(clock_systime_ticks()) - t0;
+        uint32_t t0 = (uint32_t)TICK2USEC(clock_systime_ticks());
+        ssize_t  n  = read(fd, sample, ssize);
+        uint32_t dt = (uint32_t)TICK2USEC(clock_systime_ticks()) - t0;
 
-          g_dbg_touch_hw_reads++;
-          g_dbg_touch_hw_us += dt;
-          if (dt > g_dbg_touch_hw_us_max)
-            {
-              g_dbg_touch_hw_us_max = dt;
-            }
+        g_dbg_touch_hw_reads++;
+        g_dbg_touch_hw_us += dt;
+        if (dt > g_dbg_touch_hw_us_max)
+          {
+            g_dbg_touch_hw_us_max = dt;
+          }
 
-          if (n == (ssize_t)sizeof(sample))
-            {
-              if (sample.npoints > 0)
-                {
-                  g_hw_x       = sample.point[0].x;
-                  g_hw_y       = sample.point[0].y;
-                  g_hw_pressed = (sample.point[0].flags & TOUCH_DOWN) ? 1 : 0;
-                }
-              else
-                {
-                  g_hw_pressed = 0;
-                }
+        if (n == (ssize_t)ssize)
+          {
+            g_dbg_touch_hw_ok++;
 
-              g_hw_have = 1;
-              g_hw_seq++;
-            }
-        }
+            if (sample->npoints > 0)
+              {
+                g_hw_x       = sample->point[0].x;
+                g_hw_y       = sample->point[0].y;
+                g_hw_pressed = (sample->point[0].flags & TOUCH_DOWN) ? 1 : 0;
+
+                /* 锁存：GT911 是轮询型，按下那一帧可能只报一次 npoints>0。
+                 * 命中后把"按下"维持 120ms，UI 侧（30~50ms 采样）一定能看到。
+                 */
+
+                if (g_hw_pressed)
+                  {
+                    g_hw_hold_until = TICK2MSEC(clock_systime_ticks()) + 120u;
+                  }
+
+                g_dbg_touch_hw_hits++;
+
+                if (g_dbg_touch_hw_hits <= 3)
+                  {
+                    DM_LOG("touch: hw sample #%u x=%d y=%d flags=0x%02x",
+                           (unsigned)g_dbg_touch_hw_hits, (int)g_hw_x,
+                           (int)g_hw_y, (unsigned)sample->point[0].flags);
+                  }
+              }
+            else
+              {
+                g_hw_pressed = 0;
+              }
+
+            g_hw_have = 1;
+            g_hw_seq++;
+          }
+        else
+          {
+            g_dbg_touch_hw_err++;
+            if (g_dbg_touch_hw_err <= 3)
+              {
+                DM_ERR("touch: read -> %d (want %zu, errno=%d)",
+                       (int)n, ssize, errno);
+              }
+          }
+      }
     }
 
   return NULL;
@@ -167,7 +225,9 @@ static void dm_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
       g_tail = (g_tail + 1) % DM_TOUCH_QUEUE_LEN;
     }
-  else if (g_hw_have && g_hw_pressed)
+  else if (g_hw_have &&
+           (g_hw_pressed ||
+            TICK2MSEC(clock_systime_ticks()) < g_hw_hold_until))
     {
       /* 硬件最新样本（由 dm_touch_hw_thread 在别的线程里读进来的） */
 
@@ -290,4 +350,25 @@ int dm_touch_create(void)
 
   DM_LOG("touch: script indev ready");
   return 0;
+}
+
+/****************************************************************************
+ * Name: dm_touch_fake_hw
+ *
+ * Description:
+ *   把一次"合成按下"直接写进硬件快照（等价于轮询线程刚读到一次按下）。
+ *   用途：不依赖手指，验证"快照 → indev 回调 → UI"这一段是通的。
+ *
+ ****************************************************************************/
+
+void dm_touch_fake_hw(int x, int y)
+{
+  g_hw_x          = x;
+  g_hw_y          = y;
+  g_hw_pressed    = 1;
+  g_hw_have       = 1;
+  g_hw_hold_until = TICK2MSEC(clock_systime_ticks()) + 120u;
+  g_hw_seq++;
+
+  DM_LOG("touch: fake hw press at (%d,%d)", x, y);
 }

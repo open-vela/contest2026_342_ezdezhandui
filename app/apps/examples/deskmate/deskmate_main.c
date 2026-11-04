@@ -71,6 +71,7 @@ static const char *g_usage =
   "  --selftest          run the headless scenario, print the report and exit\n"
   "  --disp-reinit       re-run the panel/DSI bring-up once (display recovery test)\n"
   "  --disp-stall <sec>  freeze the UI loop for <sec> (watchdog test)\n"
+  "  --touch-fake x y     synthesize a hardware-press through the touch snapshot\n"
   "  --ppa-test          run the PPA (2D accelerator) fill selftest and exit\n"
   "  --freeze-preview    stop re-pointing the canvas at new frames (diagnostic)\n"
   "  --soak <sec>        cycle pages every <sec> seconds and log metrics (long run)\n"
@@ -240,6 +241,13 @@ int main(int argc, FAR char *argv[])
       else if (strcmp(argv[i], "--disp-reinit") == 0)
         {
           disp_reinit_once = true;   /* 显示起来之后再执行，见下面 */
+        }
+      else if (strcmp(argv[i], "--touch-fake") == 0 && i + 2 < argc)
+        {
+          extern void dm_touch_fake_hw(int x, int y);
+
+          dm_touch_fake_hw(atoi(argv[i + 1]), atoi(argv[i + 2]));
+          i += 2;
         }
       else if (strcmp(argv[i], "--disp-stall") == 0 && i + 1 < argc)
         {

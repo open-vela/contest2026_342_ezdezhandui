@@ -72,6 +72,8 @@
 
 #define ESP_CSI_CAPTURE_DIAG 0
 
+#include "hal/efuse_hal.h"
+#include "driver/isp_core.h"
 #include "hal/mipi_csi_host_ll.h"
 #include "hal/mipi_csi_brg_ll.h"
 #include "soc/dw_gdma_struct.h"
@@ -443,6 +445,28 @@ static int esp_csi_data_init(FAR struct imgdata_s *data)
             (priv->config.output_color == CAM_CTLR_COLOR_RAW12) ? 12 :
             (priv->config.output_color == CAM_CTLR_COLOR_RAW8)  ? 8  : 16;
 
+#ifdef CONFIG_ESP_CSI_ISP_RGB565
+  /* ISP 把 RAW8 在线转成 RGB565：控制器配置仍是 RAW8，但**落到内存的数据**
+   * 每像素 2 字节，所以 framebuffer_size / set_buf 校验都要按 16bpp 算。
+   */
+
+  out_bpp = 16;
+#endif
+
+  /* P4 芯片版本决定能不能用 CSI 桥内置的颜色转换：
+   * esp_cam_ctlr_csi.c 的 s_csi_ctlr_format_conversion() 里
+   * ESP_CHIP_REV_ABOVE(chip_version, 300) 不满足就直接返回 NOT_SUPPORTED(262)。
+   * 这里打一次日志，避免每次都要靠错误码反推。
+   */
+
+  {
+    unsigned _chip_rev = efuse_hal_chip_revision();
+
+    _info("CSI: P4 芯片版本 = %u (v%u.%u)，桥内颜色转换%s\n",
+          _chip_rev, _chip_rev / 100u, (_chip_rev % 100u) / 10u,
+          _chip_rev > 300u ? "可用" : "不可用（需走 ISP）");
+  }
+
   priv->framebuffer_size =
     ((size_t)priv->config.h_res * priv->config.v_res * out_bpp + 7) / 8;
 
@@ -590,76 +614,44 @@ void esp_csi_isp_prepare(uint32_t h_res, uint32_t v_res, uint32_t bpp)
 
 static void esp_csi_isp_rgb565_init(uint32_t h_res, uint32_t v_res)
 {
-  FAR isp_dev_t *isp = ISP_LL_GET_HW(0);
-  hal_utils_clk_div_t div = { 0 };
-  hal_utils_clk_info_t info;
-  uint32_t src_hz = 0;
-  int brg_id = 0;
-  int ret;
+  static isp_proc_handle_t s_isp_proc;
+
+  esp_isp_processor_cfg_t cfg;
+  esp_err_t ret;
 
   if (g_esp_csi_isp_ready)
     {
       return;
     }
 
-  ret = mipi_csi_brg_claim(MIPI_CSI_BRG_USER_SHARE, &brg_id);
-  if (ret != 0)
+  /* 官方语义：用 esp_isp_new_processor() 建"ISP 处理器"——
+   * 它自己负责模块时钟/分频/claim CSI 桥，我们只描述数据通路。
+   * 这里让 ISP 做**硬件去马赛克**并输出 RGB565（demosaic_en=1）。
+   */
+
+  memset(&cfg, 0, sizeof(cfg));
+  cfg.clk_src                 = ISP_CLK_SRC_DEFAULT;
+  cfg.clk_hz                  = 80000000;
+  cfg.input_data_source       = ISP_INPUT_DATA_SOURCE_CSI;
+  cfg.input_data_color_type   = ISP_COLOR_RAW8;
+  cfg.output_data_color_type  = ISP_COLOR_RGB565;
+  cfg.has_line_start_packet   = false;
+  cfg.has_line_end_packet     = false;
+  cfg.h_res                   = h_res;
+  cfg.v_res                   = v_res;
+  cfg.bayer_order             = COLOR_RAW_ELEMENT_ORDER_BGGR;
+  cfg.intr_priority           = 0;
+  cfg.flags.bypass_isp        = 0;
+
+  ret = esp_isp_new_processor(&cfg, &s_isp_proc);
+  if (ret != ESP_OK)
     {
-      _err("ERROR: ISP rgb565: csi bridge claim failed: %d\n", ret);
+      _err("ERROR: CSI: esp_isp_new_processor failed: %d\n", ret);
       return;
     }
 
-  (void)esp_clk_tree_src_get_freq_hz((soc_module_clk_t)ISP_CLK_SRC_DEFAULT,
-                                     ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED,
-                                     &src_hz);
-  if (src_hz == 0)
-    {
-      src_hz = 160000000;
-    }
-
-  info.src_freq_hz = src_hz;
-  info.exp_freq_hz = 80000000;
-  info.max_integ    = ISP_LL_TX_MAX_CLK_INT_DIV;
-  info.min_integ    = 1;
-  info.round_opt    = HAL_DIV_ROUND;
-  (void)hal_utils_calc_clk_div_integer(&info, &div.integer);
-  if (div.integer == 0)
-    {
-      div.integer = 1;
-    }
-
-  PERIPH_RCC_ATOMIC()
-    {
-      isp_ll_enable_module_clock(isp, true);
-      isp_ll_reset_module_clock(isp);
-      isp_ll_select_clk_source(isp, ISP_CLK_SRC_DEFAULT);
-      isp_ll_set_clock_div(isp, &div);
-    }
-
-  (void)esp_clk_tree_enable_src((soc_module_clk_t)ISP_CLK_SRC_DEFAULT, true);
-
-  isp_ll_init(isp);
-  isp_ll_clk_enable(isp, true);
-  isp_ll_set_input_data_source(isp, ISP_INPUT_DATA_SOURCE_CSI);
-  isp_ll_enable_line_start_packet_exist(isp, false);
-  isp_ll_enable_line_end_packet_exist(isp, false);
-  isp_ll_set_intput_data_h_pixel_num(isp, h_res);
-  isp_ll_set_intput_data_v_row_num(isp, v_res);
-  isp_ll_set_bayer_mode(isp, COLOR_RAW_ELEMENT_ORDER_BGGR);
-  isp_ll_set_output_data_color_format(isp, ISP_COLOR_RGB565);
-  isp_ll_color_enable(isp, true);
-
-  /* 管道打开：ISP 自己做去马赛克并输出 RGB565 */
-
-  isp->cntl.isp_en        = 1;
-  isp->frame_cfg.hadr_num = h_res - 1;
-  isp->frame_cfg.vadr_num = v_res - 1;
-
   g_esp_csi_isp_ready = true;
-
-  _info("CSI: ISP RGB565 init: src=%" PRIu32 " Hz div=%" PRIu32
-        " %" PRIu32 "x%" PRIu32 " (硬件去马赛克)\n",
-        src_hz, (uint32_t)div.integer, h_res, v_res);
+  _info("CSI: ISP RGB565 处理器已建立（%ux%u，硬件去马赛克）\n", h_res, v_res);
 }
 
 /****************************************************************************
@@ -1228,11 +1220,13 @@ void esp_csi_get_default_config(FAR struct esp_csi_config_s *config)
    */
 
   config->input_color         = CAM_CTLR_COLOR_RAW8;
-#ifdef CONFIG_ESP_CSI_ISP_RGB565
-  config->output_color        = CAM_CTLR_COLOR_RGB565;
-#else
+
+  /* 控制器两侧都保持 RAW8：CSI 桥的颜色模块只支持 RGB/YUV 之间的转换，
+   * 任何含 RAW 的格式对都会让 s_csi_ctlr_format_conversion() 返回
+   * ESP_ERR_NOT_SUPPORTED(262)。Bayer → RGB565 由 ISP 在线完成（见下）。
+   */
+
   config->output_color        = CAM_CTLR_COLOR_RAW8;
-#endif
 
   config->byte_swap_en        = false;
   config->input_8bit_swap_en  = false;

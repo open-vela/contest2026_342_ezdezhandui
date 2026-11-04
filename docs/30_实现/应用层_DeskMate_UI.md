@@ -1405,3 +1405,34 @@ return (color_format == CAM_CTLR_COLOR_RGB888 ||
 
 这也解释了我们上一轮看到的 `buffer too small: 921600 < 1843200`：驱动按 RGB565
 算了 1.84MB，而应用按 RAW8 只给了 921,600 —— 两边要按同一套"有效输出色"对齐。
+
+### 19.3 A1 实施：官方 ISP 处理器 + 控制器 RAW8→RAW8（构建通过；出帧待确认）
+
+按 §19.2 改完三处：
+
+| 改动 | 内容 |
+|---|---|
+| 控制器颜色 | **永远 RAW8 → RAW8**（去掉之前"开关打开就设 RGB565"的写法）——含 RAW 的格式对会让 `s_csi_ctlr_format_conversion()` 返回 262 |
+| ISP 初始化 | `esp_csi_isp_rgb565_init()` 改成**官方 API**：`esp_isp_new_processor()`（`input_data_source=CSI`、`input_data_color_type=RAW8`、`output_data_color_type=ISP_COLOR_RGB565`、`bayer_order=BGGR`、`bypass_isp=0`），由它自己管时钟/分频与 CSI 桥 claim |
+| 有效输出 | `#ifdef CONFIG_ESP_CSI_ISP_RGB565` 时 `out_bpp = 16` ⇒ `framebuffer_size = 1280×720×2 = 1,843,200 B` |
+
+**构建侧**：ISP 组件此前**完全没编**（只用了 LL 头），本轮加入
+`upper_hal_isp/src/*.c` + `esp_hal_cam/isp_hal.c`，并补上 `upper_hal_isp/include`、
+`include/driver` 两个头目录；受 `CONFIG_ESP_CSI_ISP_RGB565` 控制（默认关）。
+
+**真机现象（开关打开）**：
+
+```
+CSI: 1280x720, 2 lane(s) @ 336 Mbps, fb=1843200 bytes (align 64), color 945242450->945242450
+CSI: ctlr start rc=0 (DMA+bridge enabled)
+CSIDMA: gcfg=00000003 chen0=00000003 sar=50104000 dar=48164480 ts=0001c1ff ctl0=00221b14
+```
+
+即：**262 错误消失、缓冲大小正确（1,843,200 = RGB565）**、控制器与 DMA 都起来了。
+
+**但"是否真的出帧"本轮没有确认**：应用日志里那行 `frames=1` 只是**第一条**计量
+（每 5 秒一条），不能作为"没出帧"的证据。下一轮先用自检的 `cam:fps` 判定，
+必要时直接读 `g_dbg_cap_pub`。
+
+**开关已恢复默认关**（RAW8 + CPU 转换是已验证路径），并已重新构建烧录，
+保证板子处于可用状态。

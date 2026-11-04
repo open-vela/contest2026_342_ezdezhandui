@@ -65,6 +65,8 @@ set(ESP32P4_INCLUDES
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_ppa/include
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_ppa/${CHIP_SERIES}/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_isp/include
+    ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_isp/include/driver
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/csi/include
     ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_cam/interface
     ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_clock/${CHIP_SERIES}/include
@@ -604,6 +606,17 @@ if(CONFIG_ESPRESSIF_PPA)
       ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_ppa/src/ppa_fill.c)
   target_compile_options(arch PRIVATE
       "-include${CMAKE_CURRENT_LIST_DIR}/esp_hosted/compat/ppa_compat.h")
+endif()
+
+# ISP（图像信号处理器）官方组件：Bayer 去马赛克 + RGB565 输出。
+# 之前只用 ISP 的 LL 头（寄存器直写、bypass），启用正式处理器时才会用到这些源。
+
+if(CONFIG_ESP_CSI_ISP_RGB565)
+  file(GLOB _isp_srcs
+       ${ESP_HAL_3RDPARTY_REPO}/components/upper_hal_isp/src/*.c)
+  list(APPEND HAL_SRCS
+       ${ESP_HAL_3RDPARTY_REPO}/components/esp_hal_cam/isp_hal.c
+       ${_isp_srcs})
 endif()
 
 if(CONFIG_ESPRESSIF_IDF_ENV_FPGA)

@@ -1,5 +1,19 @@
 # 项目状态（STATUS）
 
+> 最后更新：**2026-11-04** · **修掉"进不去 NSH / 整机失聪"的平台级缺陷（P0）**：
+> 根因是 `up_exit()` 的换出 ECALL 被通用层 `riscv_doirq()` 的"无当前任务就丢弃"守卫吃掉
+> ——`g_running_task == NULL` 在退出路径上是**合法状态**，那条 ECALL 被丢弃后换出永不发生，
+> ECALL 被无限重放（真机实测 **~9e5–1.6e6 次/秒**），tick/网络/控制台全部饿死。
+> 修复在**芯片层** `arch/risc-v/src/esp32p4/espressif/esp_irq.c`（进通用层前把当前任务补回
+> 就绪队首；通用层零写入）。**真机验证**：PC 采样 trap 比例 8/8 → **0/8**；`NuttShell (NSH)`
+> 正常；`deskmate --agent mock --camera --selftest` **PASS (27/27)**；5 分钟存活探测全通过。
+> 诊断链与可复用方法论见 `docs/50_排障经验/11_ECALL换出风暴与异常被丢弃.md`，
+> 现场与前后对照见 `logs/20261104-deliver-verify/`。
+>
+> 同轮附带：`esp_sdmmc.c` 的 HLE（电平型控制器错误）改为 ISR 内屏蔽 + 下个传输重新武装，
+> 避免控制器级中断重入；`esp_irq.c` 增加 `ESP_WEDGE_DIAG` 的"风暴期冻结异常现场"
+> （`g_dbg_exc_frozen_*`，默认关闭）。
+
 > 最后更新：**2026-11-02** · **应用层中文化 + 真机移植**：DeskMate 中控 UI 已全中文
 > （自绘 CJK 子集字体 `dm_font_16/24`，字形数据 15.4 KB + 29.2 KB，P4 镜像余量 491 KB；
 > 新增确定性断言 `font:cjk-body/title` 逐字查轮廓，模拟器 **PASS 18/18**）。

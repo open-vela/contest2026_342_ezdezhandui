@@ -139,6 +139,18 @@ volatile uint32_t g_dbg_exc_sp;                  /* 最后一次异常时 x2 */
 volatile uint32_t g_dbg_exc_a0;                  /* 最后一次异常时 a0 */
 volatile uint32_t g_dbg_dis_ring[16];            /* {irq, ra, 0, 0} × 4 条环形记录 */
 volatile uint32_t g_dbg_dis_idx;                 /* 环形写指针 */
+
+/* 2026-11-04：异常死循环现场存档。
+ *
+ * "最后一次异常"那几个全局会被 JTAG halt 注入的 ECALL（mcause 低 8 位 = 11）
+ * 覆盖，所以这里把**前 4 次非 ECALL 异常**冻结存档：读它们就能拿到真正在风暴的
+ * 那条指令地址（mepc），不被调试动作污染。
+ */
+
+volatile uint32_t g_dbg_exc_frozen;              /* 已存档条数 */
+volatile uint32_t g_dbg_exc_frozen_mcause[4];
+volatile uint32_t g_dbg_exc_frozen_mepc[4];      /* 出错 PC（regs[0] = 帧里的 epc） */
+volatile uint32_t g_dbg_exc_frozen_ra[4];        /* x1（调用者） */
 #endif
 
 /****************************************************************************
@@ -740,6 +752,26 @@ IRAM_ATTR void *riscv_dispatch_irq(uintreg_t mcause, uintreg_t *regs)
       g_dbg_exc_ra   = (uint32_t)regs[1];   /* x1 = 该函数的返回地址（调用者） */
       g_dbg_exc_sp   = (uint32_t)regs[2];   /* x2 = 栈指针 */
       g_dbg_exc_a0   = (uint32_t)regs[10];  /* a0 = 第一个参数 */
+
+      /* 冻结存档前 4 次"风暴期"异常现场。
+       *
+       * 上一版按"非 ECALL"过滤，结果一条都没存下：实测风暴里 **每一次异常都是
+       * ECALL**（mcause 低 8 位 = 11），也就是 §26 记录过的那条
+       * up_exit()/SYS_restore_context ECALL 被无限重放的路径（~9e5/s）。
+       * 所以改成：越过 1000 次之后（启动期的正常上下文切换远达不到）再冻结前 4 次，
+       * 拿到的就是循环里那条 ECALL 的 mepc（ECALL 指令地址）与 ra（调用者）。
+       * JTAG halt 注入的 ECALL 也会被记，但它们发生在计数器已远超阈值之后——
+       * 前 4 个槽位在风暴刚开始时就已填满，不再被覆盖。
+       */
+
+      if (g_dbg_exc_frozen < 4u && g_dbg_exc_cnt > 1000u)
+        {
+          uint32_t slot = g_dbg_exc_frozen++;
+
+          g_dbg_exc_frozen_mcause[slot] = (uint32_t)mcause;
+          g_dbg_exc_frozen_mepc[slot]   = (uint32_t)regs[0];
+          g_dbg_exc_frozen_ra[slot]     = (uint32_t)regs[1];
+        }
 #endif
 
       irq = mcause &
@@ -772,6 +804,31 @@ IRAM_ATTR void *riscv_dispatch_irq(uintreg_t mcause, uintreg_t *regs)
   if (g_running_task == NULL && irq > RISCV_MAX_EXCEPTION)
     {
       return regs;
+    }
+
+  /* 通用层的 riscv_doirq() 里还有一条早期启动守卫："g_running_task == NULL 就
+   * 直接丢弃"。而 up_exit() 的正常退出流程正是**故意**先把 g_running_task 清空、
+   * 再发 SYS_restore_context 的换出 ECALL（换到就绪队列里的下一个任务）——
+   * 那条 ECALL 进到通用层就被守卫丢掉，换出永不发生，ECALL 被无限重发：
+   *
+   *   2026-11-04 实测：mcause 恒为 ECALL(11)、mepc=up_exit 的 ecall 指令，
+   *   异常速率 ~9e5/s，外设中断零派发（g_dbg_demux_cnt 冻结），控制台静默、
+   *   NSH 起不来。根因是"异常被丢弃"而非"不能切换"。
+   *
+   * 修法（保持在芯片层，通用层零写入）：进入通用层之前，把"当前任务"补回成
+   * 就绪队列首任务 —— 这正是非 SMP 构建里 this_task() 的取值语义，也是
+   * up_exit() 期望换入的那个任务。若队列真的为空，则保持 NULL，由 up_exit()
+   * 末尾的 PANIC() 把失败显式暴露出来，而不是退化成 9e5/s 的静默风暴。
+   */
+
+  if (!is_irq && g_running_task == NULL)
+    {
+      FAR struct tcb_s *next = (FAR struct tcb_s *)g_readytorun.head;
+
+      if (next != NULL)
+        {
+          g_running_task = next;
+        }
     }
 
   regs = riscv_doirq(irq, regs);

@@ -1779,3 +1779,34 @@ display: reinit OK (video restarted)
 |---|---|---|
 | ①屏幕卡死 | 根因定位（ISP 流量翻倍抢 DW-GDMA）→ 让路限流（12帧/80ms）→ 显示看门狗（6s 判定）+ 板级重建入口 | ISP 连续 3.2/s ❌ vs ISP+让路 11.4/s ✅；人为停摆 stalls=6/reinits=3；`reinit OK` 后提交继续增长 |
 | ②触摸停顿 | LVGL 不再建设备 indev（`input_path=NULL`）+ 独立轮询线程 + 无锁快照 | `ui:responsive` max_busy **1540ms → 20~30ms**；触摸判据 PASS；两个否证（tick/超时都无效，500ms 是抢占墙钟） |
+
+### 20.7 触摸"没反应"的排查与闭环（无手指端到端自证）
+
+**排查矩阵（每条都有证据）**：
+
+| 假说 | 结果 |
+|---|---|
+| 应用 indev 没建/没接上 | ❌ 否证：`dm_touch_create()` 被调用；注入点击 `touch:target PASS` |
+| 轮询线程没起来 | ❌ 否证：日志 `hardware poller started`，`reads` 持续增长 |
+| read 被拒（长度/缓冲不匹配，-EINVAL） | ❌ 否证：**ok=1195 / err=0**（全部成功） |
+| 坐标轴交换 | ❌ 否证：LVGL 原驱动只做 `LV_CLAMP`；驱动里另有 `xmirror/ymirror` 180° 补偿 |
+| 按下帧太短导致 UI 没采到 | ✅ **已修**：加 **120ms 按下锁存**（GT911 轮询型，按下可能只报一帧） |
+| 硬件链路本身不通 | ❌ **否证**：见下 |
+
+**决定性自证（不需要手指）**：新增 `--touch-wr x y`，**直接往 GT911 的寄存器写一次按下**
+（0x814E=0x81、0x8150 写坐标），让驱动下一次 `read()` 真的报出一帧 touch down：
+
+```
+[dm] touch: GT911 fake press write rc=0
+reads/ok/hits = 200 / 200 / 2      ← 轮询线程读到了按下！
+```
+
+⇒ **整条链路（面板寄存器 → 驱动 read → 触摸线程 → 无锁快照 → indev 回调 → UI）是通的。**
+
+**顺带把读法对齐到 LVGL 的验证实现**：`ioctl(TSIOC_GETMAXPOINTS)` 拿 maxpoint，
+按 `SIZEOF_TOUCH_SAMPLE_S(maxpoint)` 分配缓冲与判定长度（支持多点）。
+
+**结论**：触摸硬件链路完好；用户遇到的"按了没反应"最可能是**当时屏幕已被相机抢带宽冻住**
+（§20.1，已修），以及**按下帧太短丢了点击**（§20.7 的锁存已修）。
+回归验证：真机 `DM-SELFTEST PASS (29/29)`、`ui:responsive max_busy=40ms`、
+`touch:target`/`touch:delivered` PASS ⇒ **解耦收益未回退**。

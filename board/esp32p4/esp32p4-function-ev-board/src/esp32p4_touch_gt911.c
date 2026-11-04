@@ -368,6 +368,67 @@ static bool board_gt911_probe_retry(FAR struct i2c_master_s *i2c,
  *
  ****************************************************************************/
 
+static uint8_t g_gt911_addr = BOARD_GT911_I2C_ADDR;
+
+/****************************************************************************
+ * Name: board_touch_fake_press
+ *
+ * Description:
+ *   **测试用**：直接往 GT911 的寄存器里写一次"按下"，让驱动下一次 read()
+ *   真的报出一帧 touch down。用于在没有手指的情况下，端到端验证
+ *   "面板寄存器 → 驱动 read → 触摸线程 → UI" 这条链路。
+ *
+ *   寄存器：0x814E = 0x81（buffer ready + 1 点）；0x8150 = x lo/hi, y lo/hi,
+ *   size lo/hi。驱动读完会把 0x814E 清零（一次按下只报一帧）。
+ *
+ ****************************************************************************/
+
+int board_touch_fake_press(int x, int y)
+{
+  FAR struct i2c_master_s *i2c;
+  struct i2c_msg_s msg;
+  uint8_t status[3];
+  uint8_t point[8];
+  int ret;
+
+  i2c = esp_i2cbus_initialize(ESPRESSIF_I2C0);
+  if (i2c == NULL)
+    {
+      return -ENODEV;
+    }
+
+  status[0] = (uint8_t)(0x814e >> 8);   /* reg hi */
+  status[1] = (uint8_t)(0x814e & 0xff); /* reg lo */
+  status[2] = 0x81;                     /* ready + 1 point */
+
+  msg.frequency = BOARD_GT911_I2C_FREQUENCY;
+  msg.addr      = g_gt911_addr;
+  msg.flags     = 0;
+  msg.buffer    = status;
+  msg.length    = sizeof(status);
+
+  ret = I2C_TRANSFER(i2c, &msg, 1);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  point[0] = (uint8_t)(0x8150 >> 8);
+  point[1] = (uint8_t)(0x8150 & 0xff);
+  point[2] = (uint8_t)(x & 0xff);
+  point[3] = (uint8_t)((x >> 8) & 0xff);
+  point[4] = (uint8_t)(y & 0xff);
+  point[5] = (uint8_t)((y >> 8) & 0xff);
+  point[6] = 0x10;                      /* size lo（驱动不解析，填个合理值） */
+  point[7] = 0x00;                      /* size hi */
+
+  msg.flags  = 0;
+  msg.buffer = point;
+  msg.length = sizeof(point);
+
+  return I2C_TRANSFER(i2c, &msg, 1);
+}
+
 int board_touchscreen_init(void)
 {
   FAR struct i2c_master_s *i2c;
@@ -396,10 +457,12 @@ int board_touchscreen_init(void)
   if (board_gt911_probe_retry(i2c, BOARD_GT911_I2C_ADDR))
     {
       addr = BOARD_GT911_I2C_ADDR;
+      g_gt911_addr = BOARD_GT911_I2C_ADDR;
     }
   else if (board_gt911_probe_retry(i2c, BOARD_GT911_I2C_ADDR_ALT))
     {
       addr = BOARD_GT911_I2C_ADDR_ALT;
+      g_gt911_addr = BOARD_GT911_I2C_ADDR_ALT;
     }
   else
     {

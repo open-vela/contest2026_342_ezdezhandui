@@ -2033,3 +2033,28 @@ P4 构建：rc=0；nuttx.bin = 1.746 MB（槽 1.75MB）
 "the base branch policy prohibits the merge"——官方仓库的分支保护要求评审通过；
 本账号无该仓库 admin/写权限，且仓库未开启 auto-merge（`enablePullRequestAutoMerge` 关闭）。
 ⇒ **PR 已就绪，等待官方维护者 approve 后合入。**
+
+### 27. §4 收尾：恢复后构建双绿；板子串口需物理拔插
+
+**同步/回填后的构建验证（本机）**：
+
+```
+模拟器：0 error；DM-SELFTEST RESULT: PASS (27/27)
+P4    ：rc=0；nuttx.bin = 1.746 MB（槽 1.75MB）
+保护区：✅ 逐字节未变（apps/examples/deskmate 等三处，脚本自检）
+```
+
+**板子状态（如实）**：本轮反复烧录/复位 + 之前的 `--wifi-start` 实验之后，
+**USB 串口控制台失去响应**（`board.py` 报
+`SerialException: device reports readiness to read but returned no data`；
+`esptool chip_id` 也无输出；`echo` 只回显命令；日志里出现
+`eh_host_port_sdio: no card interrupt within 2000 ms, polling the companion`）。
+这属于**主机 USB / 板卡串口需要物理拔插一次**才能恢复的情况，远程做不到。
+
+**最后一次成功的真机验证**（与本 PR 代码相同，15:20）：
+`DM-SELFTEST RESULT: PASS (27/27)`，`font:cjk-body/title` 均 0 字缺、
+`ui:responsive` 20ms。此后只做了 §4 的同步/回填（保护区逐字节未变）与文档改动，
+**未修改任何应用/驱动代码** ⇒ 真机行为等价。
+
+**需要用户做的一步**：把板子的 USB 线**拔下再插上**（或按复位键），
+串口恢复后可以复核一次 `deskmate --agent mock --camera --selftest`。

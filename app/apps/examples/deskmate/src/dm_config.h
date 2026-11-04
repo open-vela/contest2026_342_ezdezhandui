@@ -120,7 +120,7 @@
  * 默认关：RAW8 + CPU 转换是当前验证过的路径。
  */
 
-#define DM_CSI_ISP_RGB565 1
+/* #define DM_CSI_ISP_RGB565 1 */
 #define DM_CAMERA_MOTION_PCT  6
 
 /* 相机预览的目标帧间隔（ms）。主循环每轮都会调当前页的 update()，不节流的话

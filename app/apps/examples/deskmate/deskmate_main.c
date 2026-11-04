@@ -233,8 +233,11 @@ int main(int argc, FAR char *argv[])
         {
           selftest = true;
         }
+#ifdef CONFIG_ESPRESSIF_PPA
       else if (strcmp(argv[i], "--ppa-test") == 0)
         {
+          /* PPA 是 ESP32-P4 的 arch 侧 helper，模拟器上没有 */
+
           extern int esp_ppa_selftest(void);
 
           int rc = esp_ppa_selftest();
@@ -242,6 +245,7 @@ int main(int argc, FAR char *argv[])
           DM_LOG("PPA selftest rc=%d", rc);
           return rc == 0 ? 0 : 1;
         }
+#endif
       else if (strcmp(argv[i], "--freeze-preview") == 0)
         {
           extern int g_freeze_preview;

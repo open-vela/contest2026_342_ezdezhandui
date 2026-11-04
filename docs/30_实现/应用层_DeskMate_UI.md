@@ -1630,3 +1630,32 @@ T1 [commits cap_pub]: 0xea 0x214
   boardctl/fb ioctl 的重初始化），让停摆可自愈而不是只能复位；
 - **P1-b**：若要在相机页启用 ISP 路径，必须同时加"让路"保护（突发/单发采集或占空比限流）；
 - **P1-d**：ISP 连续流 vs RAW8 各读一次 `g_disp_commits`，把"停增"与路径对上（取证）。
+
+### 20.2 ✅ P2-a 达成：触摸读搬出 UI 线程，`ui:responsive` 从 130~1540ms → **30ms**
+
+**改法（两处）**：
+
+1. **不让 LVGL 碰触摸设备**：`dm_display.c` 里 `info.input_path = NULL`
+   —— `lv_nuttx` 就不会再建"设备 indev"，那个会阻塞的
+   `read(/dev/input0)` 也就**不再出现在 `lv_timer_handler` 里**。
+2. **新增独立触摸轮询线程**（`dm_touch.c`）：低优先级线程
+   `open(DM_INPUT_PATH, O_RDONLY|O_NONBLOCK)` + `poll(50ms)` 读
+   `struct touch_sample_s`，把最新 `(x, y, pressed)` 写进**无锁 seq 快照**；
+   LVGL 的 indev 回调（应用自有的 script indev）**只读该快照**（零阻塞），
+   注入优先、其次硬件样本，UI 层完全不用改。
+   新增诊断：`g_dbg_touch_hw_reads/_us/_us_max`（硬件读次数与耗时）。
+
+**真机实测（同一次自检）**：
+
+| 指标 | 改前 | 改后 |
+|---|---|---|
+| `ui:responsive` 的 `max_busy` | 130 / 180 / 250 / **1540 ms** | **30 ms** ✅ |
+| 触摸判据 | PASS | **PASS**（`touch:target` / `touch:delivered`） |
+| 完整自检 | 29/29 | **29/29 PASS** |
+| 模拟器 | 29/29 | **29/29 PASS** |
+
+⇒ **UI 停顿与 I2C 抖动彻底解耦**：I2C 再慢也只影响"触摸样本的新鲜度"，
+不再影响出帧（`g_dbg_touch_i2c_us_max` 依旧可以很大，但 UI 不再被它拖住）。
+
+**顺带**：`--ppa-test` 加了 `CONFIG_ESPRESSIF_PPA` 守卫，修掉模拟器链接缺
+`esp_ppa_selftest` 的问题（PPA 是 P4 的 arch 侧 helper）。

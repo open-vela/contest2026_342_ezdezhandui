@@ -182,7 +182,14 @@ int dm_display_create(void)
     g_metrics.backend     = "fbdev";
 
     info.fb_path    = DM_FB_PATH;
-    info.input_path = DM_INPUT_PATH;
+
+    /* **不要把设备路径交给 LVGL**：lv_nuttx 会为它建一个"设备 indev"，
+     * 而那个 read(/dev/input0) 是在 lv_timer_handler（UI 线程）里执行的。
+     * 真机实测：I2C0 与相机 SCCB/ES8311 共用，单次读最坏 230~800ms ⇒ UI 一起卡。
+     * 改由 dm_touch.c 的**独立线程**轮询，UI 只读"最新样本"（零阻塞）。
+     */
+
+    info.input_path = NULL;
 #if defined(CONFIG_UINPUT_TOUCH)
     info.utouch_path = NULL;
 #endif

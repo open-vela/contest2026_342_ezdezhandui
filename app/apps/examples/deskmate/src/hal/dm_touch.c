@@ -12,10 +12,18 @@
 
 #include <nuttx/config.h>
 
+#include <fcntl.h>
+#include <poll.h>
 #include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+
+#include <nuttx/clock.h>
+#include <nuttx/input/touchscreen.h>
 
 #include <lvgl/lvgl.h>
 
+#include "dm_config.h"
 #include "dm_log.h"
 #include "hal/dm_touch.h"
 
@@ -48,6 +56,81 @@ static unsigned int g_taps;
 static int g_last_x;
 static int g_last_y;
 
+/* ── 硬件触摸：独立线程轮询 /dev/input0，UI 侧只读"最新样本" ──────────────
+ *
+ * 为什么这么做：LVGL 的设备 indev 会把 read(/dev/input0) 放在
+ * lv_timer_handler（UI 线程）里；而这条 I2C0 与相机 SCCB/ES8311 共用，
+ * 单次读最坏实测 230~800ms ⇒ 整屏一起卡。搬到本线程后，
+ * **I2C 抖动再大也只影响触摸的新鲜度，不影响 UI 出帧**。
+ */
+
+static volatile int g_hw_x;
+static volatile int g_hw_y;
+static volatile int g_hw_pressed;
+static volatile int g_hw_have;
+static volatile int g_hw_seq;
+
+/* 诊断（JTAG 可读）：硬件读次数与耗时（微秒，累计/单次最大） */
+
+volatile uint32_t g_dbg_touch_hw_reads;
+volatile uint32_t g_dbg_touch_hw_us;
+volatile uint32_t g_dbg_touch_hw_us_max;
+
+static void *dm_touch_hw_thread(void *arg)
+{
+  struct touch_sample_s sample;
+  struct pollfd pfd;
+  int fd;
+
+  (void)arg;
+
+  fd = open(DM_INPUT_PATH, O_RDONLY | O_NONBLOCK);
+  if (fd < 0)
+    {
+      DM_ERR("touch: cannot open %s for the poller", DM_INPUT_PATH);
+      return NULL;
+    }
+
+  pfd.fd     = fd;
+  pfd.events = POLLIN;
+
+  for (;;)
+    {
+      if (poll(&pfd, 1, 50) > 0 && (pfd.revents & POLLIN) != 0)
+        {
+          uint32_t t0 = (uint32_t)TICK2USEC(clock_systime_ticks());
+          ssize_t n   = read(fd, &sample, sizeof(sample));
+          uint32_t dt = (uint32_t)TICK2USEC(clock_systime_ticks()) - t0;
+
+          g_dbg_touch_hw_reads++;
+          g_dbg_touch_hw_us += dt;
+          if (dt > g_dbg_touch_hw_us_max)
+            {
+              g_dbg_touch_hw_us_max = dt;
+            }
+
+          if (n == (ssize_t)sizeof(sample))
+            {
+              if (sample.npoints > 0)
+                {
+                  g_hw_x       = sample.point[0].x;
+                  g_hw_y       = sample.point[0].y;
+                  g_hw_pressed = (sample.point[0].flags & TOUCH_DOWN) ? 1 : 0;
+                }
+              else
+                {
+                  g_hw_pressed = 0;
+                }
+
+              g_hw_have = 1;
+              g_hw_seq++;
+            }
+        }
+    }
+
+  return NULL;
+}
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -78,6 +161,16 @@ static void dm_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
                                  : LV_INDEV_STATE_RELEASED;
 
       g_tail = (g_tail + 1) % DM_TOUCH_QUEUE_LEN;
+    }
+  else if (g_hw_have && g_hw_pressed)
+    {
+      /* 硬件最新样本（由 dm_touch_hw_thread 在别的线程里读进来的） */
+
+      g_last_x      = g_hw_x;
+      g_last_y      = g_hw_y;
+      data->point.x = g_hw_x;
+      data->point.y = g_hw_y;
+      data->state   = LV_INDEV_STATE_PRESSED;
     }
   else
     {
@@ -167,6 +260,28 @@ int dm_touch_create(void)
 
   lv_indev_set_type(g_indev, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(g_indev, dm_touch_read_cb);
+
+  /* 起一个**低优先级**线程做硬件轮询：UI 线程从此不碰 I2C */
+
+  {
+    pthread_t tid;
+    pthread_attr_t attr;
+
+    pthread_attr_init(&attr);
+    (void)pthread_attr_setstacksize(&attr, 2048);
+
+    if (pthread_create(&tid, &attr, dm_touch_hw_thread, NULL) != 0)
+      {
+        DM_ERR("touch: hardware poller thread not started");
+      }
+    else
+      {
+        (void)pthread_setname_np(tid, "dm-touch");
+        DM_LOG("touch: hardware poller started (UI 不再直接读 I2C)");
+      }
+
+    pthread_attr_destroy(&attr);
+  }
 
   DM_LOG("touch: script indev ready");
   return 0;

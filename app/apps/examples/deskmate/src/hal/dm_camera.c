@@ -87,6 +87,11 @@ volatile uint32_t g_dbg_cap_calls;
 volatile uint32_t g_dbg_cap_eagain;
 volatile uint32_t g_dbg_cap_pub;
 static uint32_t g_ui_seq;             /* UI 已取走的帧序号 */
+
+/* 诊断（JTAG 可读）：单帧"格式转换 + 缩放"耗时（微秒，累计 / 单次最大） */
+
+volatile uint32_t g_dbg_conv_us;
+volatile uint32_t g_dbg_conv_us_max;
 static volatile bool g_cap_run;
 static pthread_t g_cap_thread;
 static bool g_cap_started;
@@ -130,53 +135,50 @@ static int dm_camera_try_fmt(uint32_t pixfmt)
 static void dm_camera_convert_bayer(const uint8_t *src, int sw, int sh,
                                     uint16_t *dst, int dw, int dh)
 {
-  /* x 方向的源偏移预先算好（原来每个像素都要做一次乘法+除法），
-   * 并且不再对两个 G 求平均 —— 少一次跨行读。真机实测：逐像素转换是相机页
-   * 卡顿的主因（PC 采样就落在这个循环里），这里把它压下来。
+  /* 顺序推进指针的 BGGR -> RGB565 + 降采样。
+   *
+   * 旧实现给每个输出像素算一个源偏移（sxmap），在 1280 宽的帧上按 320 个散点读，
+   * cache 极不友好；而且每帧只用到 921KB 里的一小部分却按行触发了大量 cache miss。
+   *
+   * 新实现：每个输出行只取源的两行，指针在行内**顺序前进**（步长 = qw/dw），
+   * 每像素只读 3 个字节且都在同一 cache line 附近。真机实测见 docs §19.5。
    */
 
-  static uint16_t sxmap[DM_CAMERA_PREVIEW_W];
-  static int map_sw = -1;
-  static int map_dw = -1;
+  int qw = sw / 2;              /* 2x2 quad 的列数 */
+  int qh = sh / 2;              /* 2x2 quad 的行数 */
+  int step;
 
-  int qw = sw / 2;
-  int qh = sh / 2;
-
-  if (qw <= 0 || qh <= 0 || dw <= 0 || dh <= 0 || dw > DM_CAMERA_PREVIEW_W)
+  if (qw <= 0 || qh <= 0 || dw <= 0 || dh <= 0)
     {
       return;
     }
 
-  if (map_sw != sw || map_dw != dw)
+  step = qw / dw;
+  if (step < 1)
     {
-      for (int x = 0; x < dw; x++)
-        {
-          sxmap[x] = (uint16_t)(((x * qw) / dw) * 2);
-        }
-
-      map_sw = sw;
-      map_dw = dw;
+      step = 1;
     }
 
   for (int y = 0; y < dh; y++)
     {
       int sy = (y * qh) / dh;
-      const uint8_t *row0 = src + (size_t)(sy * 2) * sw;
-      const uint8_t *row1 = row0 + sw;
+      const uint8_t *p0 = src + (size_t)(sy * 2) * sw;   /* 偶行：B G B G ... */
+      const uint8_t *p1 = p0 + sw;                       /* 奇行：G R G R ... */
       uint16_t *out = dst + (size_t)y * dw;
 
       for (int x = 0; x < dw; x++)
         {
-          int off = sxmap[x];
+          /* BGGR：p0[0]=B、p0[1]=G、p1[1]=R */
 
-          /* BGGR：row0[off]=B、row0[off+1]=G、row1[off+1]=R */
-
-          int b = row0[off];
-          int g = row0[off + 1];
-          int r = row1[off + 1];
+          int b = p0[0];
+          int g = p0[1];
+          int r = p1[1];
 
           out[x] = (uint16_t)(((r & 0xf8) << 8) | ((g & 0xfc) << 3) |
                               ((b & 0xf8) >> 3));
+
+          p0 += step;
+          p1 += step;
         }
     }
 }
@@ -490,16 +492,31 @@ static int dm_camera_capture_once(void)
         {
           const uint8_t *src = g_bufs[buf.index].mem;
 
-          if (g_src_format == V4L2_PIX_FMT_SBGGR8)
-            {
-              dm_camera_convert_bayer(src, g_src_width, g_src_height,
+          {
+            uint32_t dbg_t0 = (uint32_t)TICK2USEC(clock_systime_ticks());
+
+            if (g_src_format == V4L2_PIX_FMT_SBGGR8)
+              {
+                dm_camera_convert_bayer(src, g_src_width, g_src_height,
+                                        g_pixels, g_width, g_height);
+              }
+            else
+              {
+                dm_camera_convert_rgb(src, g_src_width, g_src_height,
                                       g_pixels, g_width, g_height);
-            }
-          else
+              }
+
             {
-              dm_camera_convert_rgb(src, g_src_width, g_src_height,
-                                    g_pixels, g_width, g_height);
+              uint32_t dbg_dt = (uint32_t)TICK2USEC(clock_systime_ticks()) -
+                                dbg_t0;
+
+              g_dbg_conv_us += dbg_dt;
+              if (dbg_dt > g_dbg_conv_us_max)
+                {
+                  g_dbg_conv_us_max = dbg_dt;
+                }
             }
+          }
         }
 
       (void)ioctl(g_fd, VIDIOC_QBUF, (unsigned long)&buf);

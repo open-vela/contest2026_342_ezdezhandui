@@ -49,6 +49,25 @@ static lv_display_t *g_disp;
  */
 
 volatile uint32_t g_disp_commits;
+
+/* 失帧度量（JTAG 可读）：
+ *   disp_gap_max_ms   相邻两次提交的最大间隔（ms）
+ *   disp_gap_over_100 间隔 >100ms 的次数（明显卡顿/掉帧）
+ *   disp_gap_over_33  间隔 >33ms 的次数（低于 ~30fps 的帧期）
+ *   disp_slice_*      最近 16 帧的"切片"：哈希 + 时刻，用于按序列判断
+ *                     是否有重复帧（静止/冻结）或大间隔（丢帧）
+ */
+
+volatile uint32_t g_dbg_disp_gap_max_ms;
+volatile uint32_t g_dbg_disp_gap_over_100;
+volatile uint32_t g_dbg_disp_gap_over_33;
+volatile uint32_t g_dbg_disp_last_commit_ms;
+
+#define DM_DISP_SLICE_N 16
+volatile uint32_t g_dbg_disp_slice_hash[DM_DISP_SLICE_N];
+volatile uint32_t g_dbg_disp_slice_ms[DM_DISP_SLICE_N];
+volatile uint32_t g_dbg_disp_slice_idx;
+volatile uint32_t g_dbg_disp_slice_frames;
 volatile uint32_t g_disp_px;
 volatile uint32_t g_disp_last_ms;
 
@@ -56,8 +75,44 @@ static void dm_display_render_ready_cb(lv_event_t *e)
 {
   (void)e;
 
+  uint32_t now = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
   g_disp_commits++;
-  g_disp_last_ms = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
+  if (g_dbg_disp_last_commit_ms != 0)
+    {
+      uint32_t gap = now - g_dbg_disp_last_commit_ms;
+
+      if (gap > g_dbg_disp_gap_max_ms)
+        {
+          g_dbg_disp_gap_max_ms = gap;
+        }
+
+      if (gap > 100u)
+        {
+          g_dbg_disp_gap_over_100++;
+        }
+      else if (gap > 33u)
+        {
+          g_dbg_disp_gap_over_33++;
+        }
+    }
+
+  g_dbg_disp_last_commit_ms = now;
+
+  /* 切片：每 4 帧取一次哈希（读 1.2MB 帧缓冲，不能每帧都算） */
+
+  if ((g_disp_commits & 3u) == 0)
+    {
+      uint32_t idx = g_dbg_disp_slice_idx % DM_DISP_SLICE_N;
+
+      g_dbg_disp_slice_hash[idx] = dm_display_frame_hash();
+      g_dbg_disp_slice_ms[idx]   = now;
+      g_dbg_disp_slice_idx++;
+      g_dbg_disp_slice_frames++;
+    }
+
+  g_disp_last_ms = now;
 }
 
 uint32_t dm_display_commits(void)

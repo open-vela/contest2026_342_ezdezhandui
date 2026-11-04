@@ -91,6 +91,10 @@ static int g_burst_frames;            /* 让路限流：本突发已采帧数 */
 
 /* 诊断（JTAG 可读）：单帧"格式转换 + 缩放"耗时（微秒，累计 / 单次最大） */
 
+volatile uint32_t g_dbg_cap_gap_max_ms;
+volatile uint32_t g_dbg_cap_gap_over_100;
+volatile uint32_t g_dbg_cap_last_ms;
+
 volatile uint32_t g_dbg_conv_us;
 volatile uint32_t g_dbg_conv_us_max;
 static volatile bool g_cap_run;
@@ -610,6 +614,29 @@ static int dm_camera_capture_once(void)
 
   g_pub_seq = g_seq;
   g_dbg_cap_pub++;
+
+  /* 失帧度量（相机侧）：相邻发布帧的间隔 */
+
+  {
+    uint32_t now = (uint32_t)TICK2MSEC(clock_systime_ticks());
+
+    if (g_dbg_cap_last_ms != 0)
+      {
+        uint32_t gap = now - g_dbg_cap_last_ms;
+
+        if (gap > g_dbg_cap_gap_max_ms)
+          {
+            g_dbg_cap_gap_max_ms = gap;
+          }
+
+        if (gap > 100u)
+          {
+            g_dbg_cap_gap_over_100++;
+          }
+      }
+
+    g_dbg_cap_last_ms = now;
+  }
   return 0;
 }
 

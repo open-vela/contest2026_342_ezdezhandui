@@ -72,13 +72,26 @@ static volatile int g_hw_y;
 static volatile int g_hw_pressed;
 static volatile int g_hw_have;
 static volatile int g_hw_seq;
-static volatile uint32_t g_hw_hold_until;   /* 按下锁存到期时刻（ms） */
+static volatile uint32_t g_hw_hold_until;   /* 按下锁存到期时刻（ms，留作诊断） */
+static volatile int g_cb_hold;              /* 回调侧锁存剩余次数 */
+
+/* 诊断（JTAG 可读）：LVGL 回调侧 —— 证明"快照 -> 回调 -> UI"这一段。
+ *   cb_calls   ：回调被 LVGL 调用的次数
+ *   cb_pressed ：其中"按硬件快照报 PRESSED"的次数（手指按下时应增长）
+ *   cb_x/cb_y  ：最近一次上报的坐标
+ */
+
+volatile uint32_t g_dbg_touch_cb_calls;
+volatile uint32_t g_dbg_touch_cb_pressed;
+volatile uint32_t g_dbg_touch_cb_x;
+volatile uint32_t g_dbg_touch_cb_y;
 
 /* 诊断（JTAG 可读）：硬件读次数与耗时（微秒，累计/单次最大） */
 
 volatile uint32_t g_dbg_touch_hw_reads;    /* 发起的 read 次数 */
 volatile uint32_t g_dbg_touch_hw_ok;       /* read 返回完整样本的次数 */
-volatile uint32_t g_dbg_touch_hw_hits;     /* npoints>0（真的有人按） */
+volatile uint32_t g_dbg_touch_hw_hits;     /* npoints>0（含松手；驱动把 UP 也报成 1 点） */
+volatile uint32_t g_dbg_touch_hw_downs;    /* 其中 flags & TOUCH_DOWN 的**真正按下** */
 volatile uint32_t g_dbg_touch_hw_err;      /* 返回长度不符的次数 */
 volatile uint32_t g_dbg_touch_hw_us;
 volatile uint32_t g_dbg_touch_hw_us_max;
@@ -163,6 +176,10 @@ static void *dm_touch_hw_thread(void *arg)
                   }
 
                 g_dbg_touch_hw_hits++;
+                if (g_hw_pressed)
+                  {
+                    g_dbg_touch_hw_downs++;
+                  }
 
                 if (g_dbg_touch_hw_hits <= 3)
                   {
@@ -214,6 +231,8 @@ static void dm_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
   (void)indev;
 
+  g_dbg_touch_cb_calls++;
+
   if (dm_touch_count() > 0)
     {
       struct dm_touch_sample_s *s = &g_queue[g_tail];
@@ -226,8 +245,7 @@ static void dm_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
       g_tail = (g_tail + 1) % DM_TOUCH_QUEUE_LEN;
     }
   else if (g_hw_have &&
-           (g_hw_pressed ||
-            TICK2MSEC(clock_systime_ticks()) < g_hw_hold_until))
+           (g_hw_pressed || g_cb_hold > 0))
     {
       /* 硬件最新样本（由 dm_touch_hw_thread 在别的线程里读进来的） */
 
@@ -236,6 +254,16 @@ static void dm_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
       data->point.x = g_hw_x;
       data->point.y = g_hw_y;
       data->state   = LV_INDEV_STATE_PRESSED;
+
+      g_dbg_touch_cb_pressed++;
+      g_dbg_touch_cb_x = (uint32_t)g_hw_x;
+      g_dbg_touch_cb_y = (uint32_t)g_hw_y;
+
+      /* 按**回调次数**锁存（4 次 ≈ 200ms），不依赖时钟单位/截断：
+       * 手指按下的那一两次回调之后，仍继续报几拍 PRESSED 让 LVGL 确认点击。
+       */
+
+      g_cb_hold = (g_hw_pressed != 0) ? 4 : (g_cb_hold - 1);
     }
   else
     {

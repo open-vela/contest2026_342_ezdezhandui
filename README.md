@@ -46,8 +46,8 @@ logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提�
 ## 四、运行方式
 
 交付形态是**文件树 + repo manifest 自动映射**，评审侧**零手工步骤**：
-仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **53 条 `<copyfile>` + 5 条 `<linkfile>`**
-在 `repo sync` 时把它们自动覆盖到工作区对应位置 ——
+仓根下 4 棵文件树保存全部改动，`contest2026_342_ezdezhandui.xml` 用 **68 条 `<copyfile>` + 7 条 `<linkfile>`**
+（共覆盖 **773 个文件**）在 `repo sync` 时把它们自动覆盖到工作区对应位置 ——
 
 | 作品仓 | 工作区 |
 |---|---|
@@ -56,10 +56,15 @@ logs/                      # AI Coding 日志（29 会话 / 37,968 事件，提�
 | `app/apps/**` | `apps/**` |
 | `app/ai_agent/**` | `packages/ai_agent/**` |
 
-`nuttx/arch/risc-v/src/esp32p4/`（528 文件，含搬入的 `espressif/` 整层）、**整棵
-`board/esp32p4/`（135 文件 → `vendor/espressif/boards/esp32p4`）**、`apps/examples/audiotest`
-与 `apps/system/v4l2ctl`、`nuttx/arch/risc-v/include/esp32p4` 属于"整棵子树都归本项目"，
-用 **5 条 `<linkfile>`** 一条顶掉 675 条逐文件条目；其余走 `<copyfile>`。
+**整棵子树都归本项目**（基线无同路径文件）的目录用 **7 条 `<linkfile>`** 一条顶掉
+**705 条**逐文件条目：`esp32p4/esp_hosted`（383）、**`board/esp32p4`（135 →
+`vendor/espressif/boards/esp32p4`）**、`esp32p4/espressif`（121，搬入的共享层整层）、
+`apps/examples/deskmate`（37）、`esp32p4/drivers`（20）、`apps/examples/audiotest`（5）、
+`apps/system/v4l2ctl`（4）；其余 **68 条 `<copyfile>`** 逐文件交付，其中 12 条是
+`esp32p4/` 顶层的**上游已有文件的本项目版本**（`CMakeLists.txt`/`Kconfig`/`Make.defs`/
+`hal_esp32p4.{cmake,mk}`/`esp32p4_atomic.c`/`esp_chip_rev.c`/`patches/*`，以及
+`include/esp32p4/{chip.h,gpio_sig_map.h,irq.h}`）—— 这些不能并进整树 linkfile，
+否则符号链接会把上游同路径文件遮住。
 **通用层 `arch/risc-v/src/common/` 只剩 1 个交付文件**（`CMakeLists.txt`，riscv_mtimer
 条件编译），详见 `docs/60_交付与提交/上游改动审计.md`。
 
@@ -94,7 +99,8 @@ python3 contest2026_342_ezdezhandui/tools/engineering/gen_manifest_copyfiles.py 
 cd <openvela 工作区根>
 #   ⚠️ 参数必须是「配置目录的路径」，**不能**用 `esp32p4-function-ev-board:nsh` 这种短名：
 #   短名要求板级目录位于 nuttx/boards/*/*/ 之下，而本移植按 openvela vendor 风格把板级
-#   放在 vendor/espressif/boards/esp32p4/ 下（manifest 不含 <linkfile>，repo sync 不会生成软链）；
+#   放在 vendor/espressif/boards/esp32p4/ 下（该处是 manifest 的 <linkfile> 目标，
+#   不是 nuttx/boards/ 下的板级目录）；
 #   用短名会停在 `CMake Error: No config file found at`（2026-09-17 干净树实测）。
 ./build.sh vendor/espressif/boards/esp32p4/esp32p4-function-ev-board/configs/nsh --cmake -j8
 #   cmake_out/esp32p4-function-ev-board_nsh/nuttx.bin  ← 应用（MCUboot 签名，1,835,008 B）
@@ -152,7 +158,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 
 ## 七、状态（2026-09-18 提交前 复验更新）
 
-- ✅ **移植与引导**：`repo sync` 即得完整工作树（329 条 `<copyfile>` 自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
+- ✅ **移植与引导**：`repo sync` 即得完整工作树（68 条 `<copyfile>` + 7 条 `<linkfile>`，773 个文件自动落位，**无部署步骤**）；一次 `build.sh` 产出**双镜像**（应用 1,835,008 B + MCUboot 24,672 B，命令见 §四）
 - ✅ **真机闭环**：`tools/build_flash/usb_stable.sh` 两镜像烧录 → MCUboot → `Mapped IROM` XIP 映射 → NSH → `ai_agent` P0→P6 全 rc=0
 - ✅ **联网**：eth0 DHCP `192.168.1.105` RUNNING（主机同网段，ICMP 通）；DNS 可用
 - ✅ **显示 + 触摸 + LVGL**：`/dev/fb0 1024x600 RGB565`（EK79007）、`/dev/input0`（GT911）；`lvgldemo` 真机渲染并 JTAG 帧缓冲导出核实（色数 1265/1266、梯度 <4）→ `docs/40_验证与证据/截图与对照日志/验证截图_LVGL界面_1024x600.png`
@@ -166,7 +172,7 @@ tools/test/camera_diag.sh                                      # 摄像头链路
 
 | 交付项 | 位置 | 说明 |
 |---|---|---|
-| 作品代码 | 4 棵文件树 + manifest **329 条 copyfile** | 评审零手工步骤复现（§四） |
+| 作品代码 | 4 棵文件树 + manifest **68 条 copyfile + 7 条 linkfile（773 文件）** | 评审零手工步骤复现（§四） |
 | 演示视频 | `提交材料/6360b48f….mp4` | **27.7s · HEVC(H.265) · 720×1280 竖屏 · 含音轨**，板端真机演示录像（启动 / 对话 / 显示触控等实机画面） |
 | 真机证据日志 ×5 | `提交材料/*.log` | `boot_nsh` / `aiagent_milestones` / `aiagent_live` / `lvgldemo` / `ws_llm_endtoend` |
 | AI Coding 日志 | `logs/ez-xu/` | 29 会话 / 37,968 事件（claude-code + dsh） |

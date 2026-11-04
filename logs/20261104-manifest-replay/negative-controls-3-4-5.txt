@@ -1,0 +1,32 @@
+=== [3] 过宽 linkfile（遮蔽 .gitignore）===
+== 工作区 ↔ 作品仓 一致性对账 ==
+  manifest 条目: 782
+  通用层(common/) 交付条目: 1 (上限 1)
+  1) 作品仓缺文件（manifest 指向但仓里没有）: 0
+  2) 工作区缺文件（部署后会创建）: 0
+  3) 内容不一致（交付的是旧版本）: 0
+  ✅ 一致
+exit=0
+[restore] OK
+=== [4] 交付内容与工作区不一致 ===
+== 工作区 ↔ 作品仓 一致性对账 ==
+  3) 内容不一致（交付的是旧版本）: 1
+     - nuttx/arch/risc-v/src/esp32p4/Make.defs
+  ❌ 有差异（见上）
+exit=1
+[restore] Make.defs OK(作品仓侧未动)
+[restore] OK
+=== [5] linkfile 遮住真实基线文件 ===
+  6) linkfile 遮蔽（基线有、交付树没有 → 评审端会消失）: 1
+     - apps/examples: 会被遮住 1462 个
+        · Make.defs
+        · abntcodi/CMakeLists.txt
+        · abntcodi/Kconfig
+        · abntcodi/Make.defs
+        · abntcodi/Makefile
+        · abntcodi/abntcodi_main.c
+
+  ❌ 有差异（见上）
+exit=1
+[restore] OK
+[restore] OK

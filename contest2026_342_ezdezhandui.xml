@@ -13,12 +13,13 @@
        按 default(dev-ai-contest-2026) 退回无 copyfile 旧版。更新: rev-parse fix-clic-interrupt -->
   <project path="contest2026_342_ezdezhandui" name="contest2026_342_ezdezhandui"
          revision="dev-ai-contest-2026">
-    <linkfile src="nuttx/arch/risc-v/src/esp32p4" dest="nuttx/arch/risc-v/src/esp32p4"/>
+    <linkfile src="nuttx/arch/risc-v/src/esp32p4/esp_hosted" dest="nuttx/arch/risc-v/src/esp32p4/esp_hosted"/>
     <linkfile src="board/esp32p4" dest="vendor/espressif/boards/esp32p4"/>
+    <linkfile src="nuttx/arch/risc-v/src/esp32p4/espressif" dest="nuttx/arch/risc-v/src/esp32p4/espressif"/>
     <linkfile src="app/apps/examples/deskmate" dest="apps/examples/deskmate"/>
+    <linkfile src="nuttx/arch/risc-v/src/esp32p4/drivers" dest="nuttx/arch/risc-v/src/esp32p4/drivers"/>
     <linkfile src="app/apps/examples/audiotest" dest="apps/examples/audiotest"/>
     <linkfile src="app/apps/system/v4l2ctl" dest="apps/system/v4l2ctl"/>
-    <linkfile src="nuttx/arch/risc-v/include/esp32p4" dest="nuttx/arch/risc-v/include/esp32p4"/>
     <copyfile src="app/apps/crypto/mbedtls/CMakeLists.txt" dest="apps/crypto/mbedtls/CMakeLists.txt"/>
     <copyfile src="app/apps/crypto/mbedtls/Kconfig" dest="apps/crypto/mbedtls/Kconfig"/>
     <copyfile src="app/apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h" dest="apps/crypto/mbedtls/include/mbedtls/mbedtls_config.h"/>
@@ -29,8 +30,20 @@
     <copyfile src="app/apps/system/nxrecorder/nxrecorder_main.c" dest="apps/system/nxrecorder/nxrecorder_main.c"/>
     <copyfile src="nuttx/CMakeLists.txt" dest="nuttx/CMakeLists.txt"/>
     <copyfile src="nuttx/arch/risc-v/Kconfig" dest="nuttx/arch/risc-v/Kconfig"/>
+    <copyfile src="nuttx/arch/risc-v/include/esp32p4/chip.h" dest="nuttx/arch/risc-v/include/esp32p4/chip.h"/>
+    <copyfile src="nuttx/arch/risc-v/include/esp32p4/gpio_sig_map.h" dest="nuttx/arch/risc-v/include/esp32p4/gpio_sig_map.h"/>
+    <copyfile src="nuttx/arch/risc-v/include/esp32p4/irq.h" dest="nuttx/arch/risc-v/include/esp32p4/irq.h"/>
     <copyfile src="nuttx/arch/risc-v/src/cmake/Toolchain.cmake" dest="nuttx/arch/risc-v/src/cmake/Toolchain.cmake"/>
     <copyfile src="nuttx/arch/risc-v/src/common/CMakeLists.txt" dest="nuttx/arch/risc-v/src/common/CMakeLists.txt"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/CMakeLists.txt" dest="nuttx/arch/risc-v/src/esp32p4/CMakeLists.txt"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/Kconfig" dest="nuttx/arch/risc-v/src/esp32p4/Kconfig"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/Make.defs" dest="nuttx/arch/risc-v/src/esp32p4/Make.defs"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp32p4_atomic.c" dest="nuttx/arch/risc-v/src/esp32p4/esp32p4_atomic.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/esp_chip_rev.c" dest="nuttx/arch/risc-v/src/esp32p4/esp_chip_rev.c"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.cmake" dest="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.cmake"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.mk" dest="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.mk"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch"/>
     <copyfile src="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig" dest="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig"/>
     <copyfile src="nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
     <copyfile src="nuttx/drivers/audio/es8311.c" dest="nuttx/drivers/audio/es8311.c"/>

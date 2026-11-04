@@ -13,7 +13,15 @@
       2. 未交付改动：各仓 `git status` 里相对基线的改动，是否都在 manifest 覆盖范围内
          （不在 → 部署后不会生效）；
       3. 保护路径：默认把 `apps/examples/deskmate`（另一个对话在开发的模拟器 UI）
-         列为只读保护区，只报告它的状态、绝不建议触碰。
+         列为只读保护区，只报告它的状态、绝不建议触碰；
+      4. linkfile 遮蔽（2026-11-04 补）：<linkfile> 把工作区目录变成指向作品仓目录的
+         符号链接，基线在该目录下、但作品仓没有的文件会**被遮住而在评审端消失**。
+         这类缺陷前三条都看不见（实测：把 3 条窄 linkfile 换成 1 条过宽 linkfile，
+         旧版脚本给 ✅），所以单独判：对每条 linkfile 取该仓 git 基线的文件清单
+         （`git ls-tree -r HEAD`），凡不在 src 目录里的即为会被遮蔽的文件。
+         构建噪声按 is_noise 过滤，其中 `.gitignore` 计入噪声；生成器
+         `gen_manifest_copyfiles.py` 的口径更严（不把 .gitignore 当噪声），差异见
+         `docs/20_架构与工程/工作区与仓库_manifest.md`。
 
 退出码：0 = 一致；1 = 有差异（差异即需要人看的东西）。
 
@@ -204,6 +212,55 @@ def touches_protected(proj, rel):
     return under_protected(full)
 
 
+# dest（工作区相对路径）前缀 -> 该路径所属的工作区仓（与生成器的映射一致）
+DEST_PROJECTS = (
+    ("nuttx/", "nuttx"),
+    ("apps/", "apps"),
+    ("packages/ai_agent/", "packages/ai_agent"),
+    ("vendor/espressif/", "vendor/espressif"),
+    ("vendor/openvela/", "vendor/openvela"),
+)
+
+
+def dest_project(dest):
+    """dest（工作区相对路径）-> (仓目录名, 仓内相对路径)；不属于已知仓则 (None, None)。"""
+    for pre, proj in DEST_PROJECTS:
+        if dest.startswith(pre):
+            return proj, dest[len(pre):]
+    return None, None
+
+
+def check_linkfile_shadowing():
+    """linkfile 会遮住的基线文件：[(dest, [被遮蔽的相对路径, ...]), ...]。"""
+    problems = []
+    for el in ET.parse(XML).getroot().iter("linkfile"):
+        src, dest = el.get("src"), el.get("dest")
+        if not src or not dest:
+            continue
+        src_dir = os.path.join(REPO, src.rstrip("/"))
+        if not os.path.isdir(src_dir):
+            continue                      # 不属于本仓的 linkfile（如 AI skills 仓）
+        proj, rel = dest_project(dest.rstrip("/") + "/")
+        if not proj:
+            continue
+        gitdir = os.path.join(WS, proj)
+        if not os.path.isdir(os.path.join(gitdir, ".git")):
+            continue
+        r = subprocess.run(["git", "-C", gitdir, "ls-tree", "-r", "--name-only",
+                            "HEAD", "--", rel.rstrip("/")],
+                           capture_output=True, text=True)
+        hidden = []
+        for p in r.stdout.split():
+            inner = p[len(rel):].lstrip("/")
+            if not inner or is_noise(inner):
+                continue
+            if not os.path.exists(os.path.join(src_dir, inner)):
+                hidden.append(inner)
+        if hidden:
+            problems.append((dest, sorted(hidden)))
+    return problems
+
+
 def check_undelivered(pairs):
     """各仓改动里，哪些没有对应的 copyfile（部署后不会生效）。"""
     # dest（工作区路径）-> 是否在 manifest 覆盖内
@@ -281,11 +338,13 @@ def main():
                             if s.startswith(SHARED_COMMON_PREFIX))
     undelivered = check_undelivered(pairs)
     protected = check_protected()
+    shadowed = check_linkfile_shadowing()
 
     shared_ok = (len(shared_entries) <= 1
                  and all(s in SHARED_COMMON_KEEP for s in shared_entries))
     ok = not (missing_repo or missing_ws or differ) and \
-        not any(v["uncovered"] for v in undelivered.values()) and shared_ok
+        not any(v["uncovered"] for v in undelivered.values()) and shared_ok and \
+        not shadowed
 
     if args.json:
         print(json.dumps({
@@ -295,6 +354,7 @@ def main():
             "content_differs": differ,
             "repos": undelivered,
             "protected": protected,
+            "linkfile_shadowed": {d: h for d, h in shadowed},
             "ok": ok,
         }, ensure_ascii=False, indent=2))
         return 0 if ok else 1
@@ -335,6 +395,12 @@ def main():
             print(f"     {p}: {v['files']} 个文件, 指纹 {v['digest']}")
         else:
             print(f"     {p}: 不存在")
+    print()
+    print(f"  6) linkfile 遮蔽（基线有、交付树没有 → 评审端会消失）: {len(shadowed)}")
+    for d, hidden in shadowed:
+        print(f"     - {d}: 会被遮住 {len(hidden)} 个")
+        for h in hidden[:6]:
+            print("        ·", h)
     print()
     print("  ✅ 一致" if ok else "  ❌ 有差异（见上）")
     return 0 if ok else 1

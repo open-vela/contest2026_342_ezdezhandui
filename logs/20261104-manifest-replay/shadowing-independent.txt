@@ -1,0 +1,8 @@
+nuttx/arch/risc-v/src/esp32p4/esp_hosted     upstream_tracked=   0 delivered= 383 shadowed=0
+vendor/espressif/boards/esp32p4              upstream_tracked=   0 delivered= 135 shadowed=0
+nuttx/arch/risc-v/src/esp32p4/espressif      upstream_tracked=   0 delivered= 121 shadowed=0
+apps/examples/deskmate                       upstream_tracked=   0 delivered=  37 shadowed=0
+nuttx/arch/risc-v/src/esp32p4/drivers        upstream_tracked=   0 delivered=  20 shadowed=0
+apps/examples/audiotest                      upstream_tracked=   0 delivered=   5 shadowed=0
+apps/system/v4l2ctl                          upstream_tracked=   0 delivered=   4 shadowed=0
+遮蔽总数: 0

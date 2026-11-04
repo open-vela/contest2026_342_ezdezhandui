@@ -1,0 +1,29 @@
+== 工作区 ↔ 作品仓 一致性对账 ==
+  工作区: /home/ez/share/openvela
+  作品仓: /home/ez/share/openvela/contest2026_342_ezdezhandui
+  manifest 条目: 773
+  通用层(common/) 交付条目: 1 (上限 1)
+     · nuttx/arch/risc-v/src/common/CMakeLists.txt
+
+  1) 作品仓缺文件（manifest 指向但仓里没有）: 0
+  2) 工作区缺文件（部署后会创建）: 0
+  3) 内容不一致（交付的是旧版本）: 0
+
+  4) 各仓改动的交付覆盖情况（已过滤构建噪声）:
+     nuttx: 改动 547（噪声 527）, 删除 0, OK
+        🔒 其中 2 个属于只读保护区（不交付也不得同步覆盖）:
+            drivers/net/wifi_sim.c
+            boards/sim/sim/sim/configs/deskmate/defconfig
+     vendor/espressif: 改动 225（噪声 225）, 删除 0, OK
+     apps: 改动 55（噪声 47）, 删除 0, OK
+     packages/ai_agent: 改动 16（噪声 0）, 删除 2, OK
+
+  5) 只读保护区（不得被同步/部署触碰）:
+     apps/examples/deskmate: 37 个文件, 指纹 150dd2d53466126f
+     nuttx/drivers/net/wifi_sim.c: 1 个文件, 指纹 9c8d0ae5cc528a24
+     nuttx/boards/sim/sim/sim/configs/deskmate: 1 个文件, 指纹 ecc43f4e97878104
+     vendor/openvela: 2904 个文件, 指纹 a0e3ae3813671bc6
+
+  6) linkfile 遮蔽（基线有、交付树没有 → 评审端会消失）: 0
+
+  ✅ 一致

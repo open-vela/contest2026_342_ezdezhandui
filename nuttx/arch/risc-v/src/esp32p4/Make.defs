@@ -78,6 +78,11 @@ ifeq ($(CONFIG_ESPRESSIF_MIPI_DSI),y)
 CHIP_CSRCS += drivers/esp_mipi_dsi.c
 endif
 
+ifeq ($(CONFIG_ESPRESSIF_PPA),y)
+CHIP_CSRCS += drivers/esp_ppa_scale.c
+CHIP_CSRCS += drivers/esp_ppa_test.c
+endif
+
 ifeq ($(CONFIG_ESPRESSIF_EMAC),y)
 CHIP_CSRCS += drivers/esp_emac.c
 endif

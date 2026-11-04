@@ -25,16 +25,27 @@ openvela 是 `repo` 多仓工作区：`nuttx`、`apps`、`vendor/espressif`、`p
   `src`/`dest` 去前缀后逐文件一致 → 用**一条 `<linkfile>`**（symlink）代替逐文件条目；
 - 其余仍用 `<copyfile>` 逐文件声明。
 
-当前结果（2026-11-02 第二次收拢后）：**5 条 linkfile 替代 675 条 copyfile**，
-清单为 **53 条 copyfile + 5 条 linkfile**：
+当前结果（**2026-11-04 第三次收拢**）：**7 条 linkfile 替代 705 条 copyfile**，
+清单为 **68 条 copyfile + 7 条 linkfile**（覆盖 773 个文件）：
 
 | linkfile | 文件数 | 说明 |
 |---|---|---|
-| `nuttx/arch/risc-v/src/esp32p4` → 同名 | 528 | 芯片目录（含 `espressif/` 整层） |
+| `nuttx/arch/risc-v/src/esp32p4/esp_hosted` → 同名 | 383 | esp-hosted 主机栈整层 |
 | `board/esp32p4` → `vendor/espressif/boards/esp32p4` | 135 | **整棵 P4 板树**（function-ev-board + tab5 + pico + common）；该目录在上游 `vendor/espressif` 里 tracked=0，本来就全归本项目 |
+| `nuttx/arch/risc-v/src/esp32p4/espressif` → 同名 | 121 | 2026-11-02 从 `common/espressif/` 搬入的共享层整层 |
+| `app/apps/examples/deskmate` → `apps/examples/deskmate` | 37 | 应用层中控 UI |
+| `nuttx/arch/risc-v/src/esp32p4/drivers` → 同名 | 20 | P4 驱动 |
 | `app/apps/examples/audiotest` → `apps/examples/audiotest` | 5 | 音频自检应用 |
 | `app/apps/system/v4l2ctl` → `apps/system/v4l2ctl` | 4 | 摄像头枚举/抓帧工具 |
-| `nuttx/arch/risc-v/include/esp32p4` → 同名 | 3 | 芯片 include（chip.h / gpio_sig_map.h / irq.h） |
+
+> **2026-11-04 第三次收拢的原因**：11-04 当天曾改用**两条过宽** linkfile（整个
+> `nuttx/arch/risc-v/src/esp32p4` 与整个 `nuttx/arch/risc-v/include/esp32p4`）。
+> 它们会遮住上游同路径的 tracked `.gitignore`（评审端 `git status` 平白多两条
+> deleted），且 `esp32p4/` 顶层那批**上游已有文件的本项目版本**（`CMakeLists.txt`/
+> `Kconfig`/`Make.defs`/`hal_esp32p4.{cmake,mk}`/`esp32p4_atomic.c`/`esp_chip_rev.c`/
+> `patches/*`）与 `include/esp32p4/{chip.h,gpio_sig_map.h,irq.h}` 会随之失去**显式
+> 交付条目**。生成器按"会被遮蔽但不在交付里"的判据拒绝过宽写法，收敛为 3 条窄
+> linkfile + 12 条显式 copyfile（`gen_manifest_copyfiles.py --check` 由 ❌ 转 ✅）。
 
 **linkfile 的判定标准（2026-11-02 收紧后）**：目标目录在工作区里 **0 个 tracked 文件**
 （整棵都归本项目），且"会被符号链接遮住、但不在交付里"的文件集合**为空**——
@@ -42,13 +53,22 @@ openvela 是 `repo` 多仓工作区：`nuttx`、`apps`、`vendor/espressif`、`p
 等忽略），并剪掉构建期链接（`vendor/espressif/boards/esp32p4/common/board`）。
 默认阈值 `--linkfile-threshold 3`。
 
+> **linkfile 遮蔽检查（2026-11-04 补进 `check_consistency.py`）**：linkfile 把工作区目录
+> 换成指向作品仓的符号链接，**基线在该目录下、作品仓没有的文件会在评审端消失**，而
+> "交付缺文件/未交付改动/内容不一致"三项都看不见这种丢失（实测：把 3 条窄 linkfile
+> 换回 1 条过宽 linkfile，旧版脚本仍给 ✅）。现在第 6 项判据对每条 linkfile 取该仓
+> git 基线文件清单（`git ls-tree -r HEAD -- <dest>`），凡不在 `src` 目录里的即为会被
+> 遮蔽的文件；用"把 linkfile 指到 `apps/examples`"做过否定对照 —— 报出 1462 个会被
+> 遮住的基线文件并 exit 1。两个工具的口径差异：生成器不把 `.gitignore` 当噪声（更严），
+> `check_consistency.py` 把它计入噪声集，所以"只遮住 .gitignore"的情形只有生成器会拦。
+
 > 为什么 apps 侧只有两条：其余 48 个 app 文件是**改在已有上游目录里的文件**
 > （`crypto/mbedtls`、`netutils/netinit`、`system/nxplayer`、`examples/camera`…），
 > 把目录链成符号链接会遮住上游的同目录文件，只能逐文件交付。
 > `app/ai_agent` 同理（`packages/ai_agent` 共 139 文件，我们只改 16 个）。
 
 关闭方式：`gen_manifest_copyfiles.py --no-linkfile`（回落为全 copyfile）；阈值可调
-`--linkfile-threshold N`。模拟部署校验：copyfile 内容全一致、linkfile 5 条解析正确。
+`--linkfile-threshold N`。模拟部署校验：copyfile 内容全一致、linkfile 7 条解析正确。
 
 ## 两个必须知道的限制
 

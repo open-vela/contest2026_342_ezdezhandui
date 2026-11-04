@@ -1,0 +1,16 @@
+=== [1] 悬空 copyfile src ===
+== 工作区 ↔ 作品仓 一致性对账 ==
+  1) 作品仓缺文件（manifest 指向但仓里没有）: 1
+  2) 工作区缺文件（部署后会创建）: 0
+  3) 内容不一致（交付的是旧版本）: 0
+  ❌ 有差异（见上）
+exit=1
+[restore] OK 721a004d965d110bd16c09d042925ea088a01ef60cc28e015061af127abbf37a
+=== [2] 少了 Make.defs 一条 copyfile（未交付改动） ===
+== 工作区 ↔ 作品仓 一致性对账 ==
+  3) 内容不一致（交付的是旧版本）: 0
+     nuttx: 改动 547（噪声 527）, 删除 0, 未交付 1 个
+        · arch/risc-v/src/esp32p4/Make.defs
+exit=1
+[restore] OK 721a004d965d110bd16c09d042925ea088a01ef60cc28e015061af127abbf37a
+[restore] OK 721a004d965d110bd16c09d042925ea088a01ef60cc28e015061af127abbf37a

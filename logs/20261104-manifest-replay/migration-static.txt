@@ -1,0 +1,8 @@
+== V1 静态一致性矩阵 ==
+  1) 共享层零引用: 问题 0
+  2) 构建 parity: 11 个 drivers 源文件, 问题 0
+     (说明) CONFIG_SYSTEM_NXDIAG_ESPRESSIF_CHIP_WO_TOOL 在本树不存在 —— 该驱动只能直接编译验证
+  3) 开关有效性: P4 挂接引用 15 个符号, 问题 0
+  4) 文件数: workspace 芯片内共享层(浅)=121, workspace drivers=20, 作品仓 芯片内共享层(浅)=121, 作品仓 drivers=20, 作品仓 nuttx=567, nuttx 根=/home/ez/share/openvela, 作品仓根=/home/ez/share/openvela/contest2026_342_ezdezhandui
+
+  ✅ V1 全部通过

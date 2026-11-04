@@ -1,0 +1,15 @@
+通用层交付 : 1 条 ['CMakeLists.txt']
+linkfile 子树 : 7 个（替代 705 条 copyfile）
+   ~ nuttx/arch/risc-v/src/esp32p4/esp_hosted  (383 文件)  ->  nuttx/arch/risc-v/src/esp32p4/esp_hosted
+   ~ board/esp32p4  (135 文件)  ->  vendor/espressif/boards/esp32p4
+   ~ nuttx/arch/risc-v/src/esp32p4/espressif  (121 文件)  ->  nuttx/arch/risc-v/src/esp32p4/espressif
+   ~ app/apps/examples/deskmate  (37 文件)  ->  apps/examples/deskmate
+   ~ nuttx/arch/risc-v/src/esp32p4/drivers  (20 文件)  ->  nuttx/arch/risc-v/src/esp32p4/drivers
+   ~ app/apps/examples/audiotest  (5 文件)  ->  apps/examples/audiotest
+   ~ app/apps/system/v4l2ctl  (4 文件)  ->  apps/system/v4l2ctl
+文件树条目 : 68
+清单条目   : 68（含树外 0）
+新增       : 0
+移除       : 0
+
+✅ 清单与文件树一致（linkfile 7 条）

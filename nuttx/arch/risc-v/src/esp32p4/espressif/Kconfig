@@ -2106,6 +2106,23 @@ config ESPRESSIF_LDO
 	bool
 	default n
 
+config ESPRESSIF_PPA
+	bool "PPA (2D pixel processing accelerator)"
+	depends on ARCH_CHIP_ESP32P4
+	default n
+	---help---
+		Enable the ESP32-P4 PPA -- a 2D pixel-processing accelerator doing
+		hardware fill / blend / SRM (scale-rotate-mirror) operations.
+
+		Driver sources: drivers/esp_ppa_scale.c (scale/copy front end) and
+		drivers/esp_ppa_test.c (self test).  The HAL side of this switch
+		pulls esp_hal_ppa/ppa_hal.c and the dma2d hal from esp-hal-3rdparty.
+
+		Default off: for the frame sizes used by this board the CPU
+		conversion path measured faster than PPA (52.6 ms vs 12.6 ms per
+		frame, see docs/40_验证与证据/驱动层优化_前后对比.md), so the
+		application keeps the CPU path and this switch stays off.
+
 menuconfig ESPRESSIF_MIPI_DSI
 	bool "MIPI DSI Host"
 	depends on ARCH_CHIP_ESP32P4

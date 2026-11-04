@@ -96,8 +96,13 @@ static void *dm_touch_hw_thread(void *arg)
 
   for (;;)
     {
-      if (poll(&pfd, 1, 50) > 0 && (pfd.revents & POLLIN) != 0)
-        {
+      /* 每个周期都读一次（GT911 是轮询型：没触摸时 read 会返回 npoints==0），
+       * 这样触摸状态最多滞后 50ms；也是旧 LVGL 设备 indev 的行为。
+       */
+
+      (void)poll(&pfd, 1, 50);
+
+      {
           uint32_t t0 = (uint32_t)TICK2USEC(clock_systime_ticks());
           ssize_t n   = read(fd, &sample, sizeof(sample));
           uint32_t dt = (uint32_t)TICK2USEC(clock_systime_ticks()) - t0;

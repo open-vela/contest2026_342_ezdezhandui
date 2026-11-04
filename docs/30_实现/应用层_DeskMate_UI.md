@@ -2095,3 +2095,32 @@ P4    ：rc=0；nuttx.bin = 1.746 MB（槽 1.75MB）
 ⇒ **需要用户**：① 确认/接上 C6 的 USB 串口使 `/dev/ttyUSB1` 出现（并做上面的 BOOT+RESET 动作）；
 ② 顺手把板子 USB 拔插一次（P4 控制台目前失去响应，见 §27）。之后我可以立即
 烧 `c6_hosted_new` 固件并跑 §5(b)/(c) 的扫描与关联。
+
+### 29. ⚠️ 重要纠正：§25 的"manifest 缺 504 个文件"是**误判**
+
+**纠正内容**：§25 里"manifest 引用了 504 个仓库里不存在的文件"这个结论**不成立**。
+
+**原因**：我当时扫描的是**本机 `.repo/manifests/contest2026_342_ezdezhandui.xml`**
+——那是**上一次 `repo init` 留下的陈旧副本**（65 条、且含大量已不存在的 src），
+**不是交付给评委的那份清单**。`repo sync` 报 `Make.defs` 缺失，也是因为读了这份陈旧副本。
+
+**事实**（直接核对 GitHub 官方仓）：
+
+| 清单 | 条目 |
+|---|---|
+| **官方仓 `contest2026_342_ezdezhandui.xml`** | **329 copyfile + 1 linkfile = 330 条** ✔ |
+| 我按 `gen_manifest_copyfiles.py` 重新生成的 | 724 copyfile + 4 linkfile ✗ **过宽**（把 `nxplayer_main.c` 等**不属于本项目**的文件也扫了进来） |
+
+⇒ 官方清单**本来就是好的**；我那份 724 条是**错的**，**已用官方清单覆盖恢复**
+（`diff` 与官方仓**逐字节一致** ✔）。
+
+**对评委流程的结论**：README 的
+`repo init -u https://github.com/open-vela/contest2026_342_ezdezhandui.git -b dev-ai-contest-2026
+-m contest2026_342_ezdezhandui.xml` + `repo sync -c -j8` + `build.sh`
+这条路径**没有被这个缺陷影响**；我在本机遇到的失败源于**本地陈旧 `.repo` 状态**。
+`gen_manifest_copyfiles.py --check` 现在只给出**优化建议**（把 5 组子树
+`espressif/`(121)、`deskmate/`(37)、`drivers/`(20)、`audiotest/`(5)、`v4l2ctl/`(4)
+由逐文件 copyfile 改写成 linkfile），可显著缩短清单、与 README 描述一致，属可选优化。
+
+**教训（已写入排障经验）**：凡"评委视角"的校验，**必须先 `repo init` 到干净目录**，
+不能拿本机 `.repo` 的陈旧副本当事实来源。

@@ -1967,3 +1967,49 @@ DM-SELFTEST RESULT: PASS (27/27)
      「新建 Pull Request」→ 源分支选你的 fork 的 `dev-ai-contest-2026`、目标选上游的 `dev-ai-contest-2026`。
 - **GitHub（可选，便于看 diff）**：在 fork 里基于上游基线建一个 `main`，再
   `gh pr create --base main --head dev-ai-contest-2026`。
+
+### 25. §4 干净仓库验证：发现并修掉三个**评委会被卡住**的交付缺陷
+
+按 `tools/engineering/sync_and_restore.sh --apply`（受控同步：白名单 sync + 作品仓 copyfile
+回填 + 保护区逐字节校验 + 重建）实测，暴露三个真问题：
+
+**① manifest 引用了 504 个仓库里不存在的文件** ✗（最严重）
+
+`repo sync` 报：
+
+```
+[Errno 2] No such file or directory:
+  contest2026_342_ezdezhandui/nuttx/arch/risc-v/src/common/Make.defs
+```
+
+用 `gen_manifest_copyfiles.py --check` 查出：清单**少列 643 条**、又**多列了 504 条**
+不存在于仓库的路径 ⇒ **评委 `repo sync` 必然失败**。
+修复：`python3 tools/engineering/gen_manifest_copyfiles.py` 重新生成清单，
+由 65 条 → **724 条 copyfile + 4 条 linkfile**（与仓库文件树严格一一对应）。
+
+**② 陈旧符号链接与 copyfile 冲突** ✗
+
+工作区里 `apps/examples/audiotest`、`apps/system/v4l2ctl`、
+`nuttx/arch/risc-v/src/esp32p4`、`nuttx/arch/risc-v/include/esp32p4`、
+`vendor/espressif/boards/esp32p4` 是旧版 manifest 留下的**符号链接**，
+而当前 manifest 改用 copyfile 写同一路径 ⇒ repo 报
+`traversing symlinks not allow`。清理这些陈旧链接后 sync 通过。
+
+**③ `repo sync` 会把 nuttx 回退到更旧基线**（`docs/50/04` 早有记录）
+
+sync 后 nuttx HEAD 变成 `76354c63785`（manifest revision），
+`arch/risc-v/src/common/riscv_doirq.c` 等上游文件缺失 ⇒ 构建失败。
+修复：`git -C nuttx reflog` 找回同步前 HEAD `3d7b1f251a1` → `reset --hard` →
+再按 manifest 映射把作品仓文件树回填（`nuttx/`、`app/apps/`、`board/esp32p4/`）。
+
+**同步/回填后的验证（工作区已恢复可用）**：
+
+```
+模拟器构建：0 error；DM-SELFTEST RESULT: PASS (27/27)
+P4 构建：rc=0；nuttx.bin = 1.746 MB（槽 1.75MB）
+保护区校验：✅ 逐字节未变（apps/examples/deskmate 等三处）
+```
+
+**结论**：清单缺陷已修（724 条，可直接给评委用）；`repo sync` 的基线回退是
+**本机 .repo 的状态问题**（评委全新 `repo init` 拿到的是当前 openvela manifest，
+不会有这个回退）。§4 的"评委零手工步骤"仍需在**全新 clone** 上做最终确认。

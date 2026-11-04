@@ -30,6 +30,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #if defined(CONFIG_BOARDCTL) && !defined(CONFIG_NSH_ARCHINIT)
@@ -74,6 +75,7 @@ static const char *g_usage =
   "  --touch-fake x y     synthesize a hardware-press through the touch snapshot\n"
   "  --touch-wr x y       write a real press into the GT911 registers (end-to-end test)\n"
   "  --wifi-scan          scan wlan0 through the app's WAPI path and print the APs\n"
+  "  --wifi-start         try the hosted RPC wifi_start (bounded, safe to hang)\n"
   "  --ppa-test          run the PPA (2D accelerator) fill selftest and exit\n"
   "  --freeze-preview    stop re-pointing the canvas at new frames (diagnostic)\n"
   "  --soak <sec>        cycle pages every <sec> seconds and log metrics (long run)\n"
@@ -208,6 +210,24 @@ static void dm_write_wifi_bss(void)
   DM_LOG("wifi: BSS table written to %s", DM_WIFI_BSS);
 }
 
+
+/* ---------------------------------------------------------------------------
+ * --wifi-start 的辅助：hosted 的 RPC wifi_start 在本板 C6 固件上**可能永不返回**
+ * （移植层因此故意跳过它，附录 BY.17）。为了既能验证又不会拖死系统，这里用
+ * **独立线程**去调，主线程只等一个有上限的时间。
+ * ------------------------------------------------------------------------- */
+
+volatile int g_dbg_wifi_start_rc = -999;    /* -999=还没返回 */
+
+static void *dm_wifi_start_thread(void *arg)
+{
+  extern int eh_host_wifi_start(void);
+
+  (void)arg;
+  g_dbg_wifi_start_rc = eh_host_wifi_start();
+  return NULL;
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -250,6 +270,47 @@ int main(int argc, FAR char *argv[])
 
           dm_touch_fake_hw(atoi(argv[i + 1]), atoi(argv[i + 2]));
           i += 2;
+        }
+      else if (strcmp(argv[i], "--wifi-start") == 0)
+        {
+          pthread_t tid;
+          struct dm_wifi_ap_s aps[16];
+          int waited = 0;
+
+          if (pthread_create(&tid, NULL, dm_wifi_start_thread, NULL) != 0)
+            {
+              printf("DM-WIFI-START cannot spawn thread\n");
+              return 1;
+            }
+
+          while (g_dbg_wifi_start_rc == -999 && waited < 50)
+            {
+              usleep(100 * 1000);
+              waited++;
+            }
+
+          if (g_dbg_wifi_start_rc == -999)
+            {
+              printf("DM-WIFI-START blocked (RPC did not return in 5s) "
+                     "=> the companion firmware is the 'already started' kind\n");
+              return 2;
+            }
+
+          printf("DM-WIFI-START rc=%d\n", g_dbg_wifi_start_rc);
+
+          {
+            int n = dm_net_wifi_scan(aps, (int)(sizeof(aps) / sizeof(aps[0])));
+
+            printf("DM-WIFI-START scan=%d err=%d\n", n,
+                   n < 0 ? dm_net_wifi_last_error() : 0);
+            for (int k = 0; n > 0 && k < n; k++)
+              {
+                printf("DM-WIFI-START ap%d ssid=%s rssi=%d\n", k, aps[k].ssid,
+                       aps[k].rssi);
+              }
+          }
+
+          return 0;
         }
       else if (strcmp(argv[i], "--wifi-scan") == 0)
         {

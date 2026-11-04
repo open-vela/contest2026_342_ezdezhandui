@@ -1845,3 +1845,37 @@ reads/ok/hits = 200 / 200 / 2      ← 轮询线程读到了按下！
 
 **串口调试约定**（用户 2026-11-04 明确要求）：**优先用 Tabby 的 MCP 连接串口**，
 让用户能实时观察交互；不可用时明确告知并退回 `board.py`。已记入 `docs/50_排障经验/01_环境搭建与模拟器.md`。
+
+### 21. wlan0 测试（§5）：现状与阻塞点
+
+**已完成**：
+
+| 项 | 结果 |
+|---|---|
+| (a) `ifconfig wlan0` | ✅ `Link encap:Ethernet HWaddr 02:00:00:00:00:01 at UP mtu 1500`，IP 0.0.0.0（未关联） |
+| 应用侧扫描通道 | ✅ 新增 `deskmate --wifi-scan`（走应用自己的 WAPI 路径；镜像里没有 `wapi` 命令行工具，见下） |
+| 扫描 ioctl 是否到达驱动 | ✅ hosted 驱动诊断 `g_dbg_wifi_scan_calls=1` |
+| 扫描返回值 | ❌ `g_dbg_wifi_scan_rc=0x3006` = **`ESP_ERR_WIFI_STATE`** |
+| WiFi 模式 | ✅ `g_dbg_wifi_setmode_rc=0`、`g_dbg_wifi_mode=1`（**STA**） |
+
+**根因（已定位到一行注释）**：`eh_hosted_nuttx_entry.c:360` 明确**故意跳过**
+`eh_host_wifi_start()`，理由是附录 **BY.17**：本板 C6 固件是"Wi-Fi station 示例"，
+其自身 app 已启动电台，主机再发一次 `Req_WifiStart` **永不返回**。
+
+**但实测与该假设矛盾**：扫描报 `ESP_ERR_WIFI_STATE`（= 电台未启动）⇒ 这块 C6
+**并没有**把 WiFi 启动起来。
+
+**安全实验（`--wifi-start`）**：用**独立线程**调 `eh_host_wifi_start()`、主线程最多等 5 秒
+（避免拖死系统）。结果：
+
+- 命令**没有任何新输出**；
+- `ps` 显示 **多个 `eh_hosted` 线程卡在信号量上**、NSH 无响应 ⇒ **hosted 栈被卡死**，
+  与 BY.17 的描述完全一致（`Req_WifiStart` 挂住并拖垮整栈）；
+- 复位后恢复正常（`eth0` RUNNING、`wlan0` UP）。
+
+**结论**：§5 (b)/(c) **不能只靠主机侧代码解决** —— 需要 **C6 侧固件把 WiFi 启动起来**
+（或按该注释所说，刷**纯 RPC（network adapter）从机固件**，那样 `wifi_start` 就该由主机发）。
+这是一条**需要 C6 固件配合**的阻塞点，需用户决定/提供固件或确认是否可刷从机固件。
+
+**镜像约束（补充）**：app 槽位 1.75MB 已满（余 4KB），所以**没有**把 `wapi` 命令行工具
+编进镜像，扫描证据改用应用自身的 WAPI 通道（`--wifi-scan`）产出。

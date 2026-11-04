@@ -1362,3 +1362,46 @@ PPA 的计时（`g_dbg_ppa_ms*`）正常可用。
    **不是整帧刷**；最大 614,400px = 全屏的那次属页面切换/整屏失效，不是每帧发生。
    ⇒ **现有的"脏区刷写"策略已经是对的，不需要改成整帧**；10ms 的单次上限也说明
    刷写不是瓶颈（瓶颈是 I2C 停顿）。
+
+## 十九、显示与相机数据通路优化（对齐官方 IDF）
+
+### 19.1 A0 芯片版本判定 + 一个重要的方案修正
+
+在 `esp_csi.c` 里打印一次 `efuse_hal_chip_revision()`，真机结果：
+
+```
+esp_csi_data_init: CSI: P4 芯片版本 = 302 (v3.0)，桥内颜色转换可用
+```
+
+**但"版本门控通过"不等于"RAW8 能转"**。继续读 `s_is_color_format_conversion_supported()`
+（`upper_hal_cam/csi/src/esp_cam_ctlr_csi.c`）：
+
+```c
+return (color_format == CAM_CTLR_COLOR_RGB888 ||
+        color_format == CAM_CTLR_COLOR_RGB565 ||
+        color_format == CAM_CTLR_COLOR_YUV420 || ... YUV422 四种);
+```
+
+⇒ **CSI 桥的颜色模块只做 RGB/YUV 之间的转换，RAW8 根本不在支持列表里**
+（桥里没有去马赛克）。所以之前那个 `NOT_SUPPORTED(262)` 的**真正原因是格式对**，
+不是芯片版本 —— 我原先的猜测（版本门控）被这一轮否掉了。
+
+**结论：Bayer RAW → RGB565 必须走 ISP**，没有捷径。
+
+### 19.2 正确的接线方式（下一轮实施）
+
+读 `esp_isp_processor_cfg_t`（`upper_hal_isp/include/driver/isp_core.h`）发现
+**ISP 处理器没有任何"输出缓冲"字段** ⇒ ISP 是 CSI 桥与控制器 DMA 之间的
+**在线转换器**，输出直接进 CSI 控制器的 DMA。
+
+因此正确接法是：
+
+| 环节 | 取值 | 理由 |
+|---|---|---|
+| `esp_cam_new_csi_ctlr()` 的 input/output color | **RAW8 → RAW8** | 保持桥 bypass，**不会触发**控制器那条只支持 RGB/YUV 的转换路径（=不会再有 262） |
+| ISP 处理器 | `esp_isp_new_processor()`：`input_data_source=CSI`、`input_data_color_type=RAW8`、`output_data_color_type=ISP_COLOR_RGB565`、`bayer_order=BGGR`、`flags.bypass_isp=0` | 硬件去马赛克 + 转 RGB565 |
+| 我们驱动里的"有效输出色" | **RGB565**（仅用于 `framebuffer_size` 计算与上报给 `imgdata`） | 每像素 2B：1280×720×2 = 1,843,200 B |
+| 应用侧 | 删除 `dm_camera_convert_bayer`，缓冲按 RGB565 分配 | §18 里已经加过一半（`DM_CSI_ISP_RGB565`） |
+
+这也解释了我们上一轮看到的 `buffer too small: 921600 < 1843200`：驱动按 RGB565
+算了 1.84MB，而应用按 RAW8 只给了 921,600 —— 两边要按同一套"有效输出色"对齐。

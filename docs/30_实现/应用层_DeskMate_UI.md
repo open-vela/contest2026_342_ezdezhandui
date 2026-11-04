@@ -2148,3 +2148,30 @@ P4    ：rc=0；nuttx.bin = 1.746 MB（槽 1.75MB）
 
 **若要 100% 端到端确认**，需要：机器上腾出 ≥ 15 GB，或在另一台机器上跑一次
 README §四 的三条命令。这属于**环境条件**，不是代码问题。
+
+### 31. §5 实测：`c6_hosted_new` 固件与当前 host 栈**不兼容**（已回退）
+
+按 §28 的思路，本轮把 C6 刷成"纯网络适配器"固件并让主机侧做 init/start，结果是**负面**的，
+过程与结论如实记录（避免后人再踩）：
+
+| 步骤 | 结果 |
+|---|---|
+| 烧 `c6_hosted_new/`（`eh_cp_network_split_station.bin`，app@0x10000） | ✅ 写入 1115248 B，**hash verified**，硬复位成功 |
+| 主机侧 `eh_host_wifi_init → set_mode(STA) → eh_host_wifi_start` | 🔧 已改并构建烧录 |
+| 复位后启动 | ❌ **卡在 MCUboot 之后**：串口只出 2061 B（MCUboot 段），无 NSH、无 hosted 日志 |
+| 回退主机侧代码（恢复"只 set_mode"）、重建重烧 | ❌ **仍然卡住**（2084 B） ⇒ **问题不在主机代码，而在新固件** |
+
+**结论**：`esp-hosted` 的**纯 RPC 网络适配器固件（v3.0.10 那套）与本移植所用的 host 栈不匹配** ——
+从机不回应主机的同步 RPC（`set_mode`/`init`/`start`），主机启动流程被阻塞。
+**推测**：host 与 slave 的 esp-hosted **版本/协议需成对**（本移植的 host 侧对应的是
+`c6_hosted/` 那套 station 固件）。
+
+**处置**：回退主机侧改动（工作区文件已用作品仓原版覆盖，`skipping RPC wifi_start` ✔），
+并把 C6 **刷回 `c6_hosted/eh_cp_wifi_sta_esp32c6_sdio.bin`**（已知可用组合）。
+
+**顺带发现（重要）**：本板 **NuttX 控制台在 `/dev/ttyACM0`（Espressif USB JTAG/serial，303a:1001）**，
+不是 `/dev/ttyUSB0`（那是 CP210x 桥）。直接用 pyserial 打开 ttyACM0 可以完整抓启动日志，
+比 `board.py`（走 ttyUSB0）可靠得多 —— 后续串口取证改用这条路。
+
+**恢复步骤（需人工）**：按住 BOOT(GPIO9) → 按一下 RESET → 松开 BOOT，然后
+`tools/build_flash/c6_hosted/flash_c6.sh /dev/ttyUSB1`。

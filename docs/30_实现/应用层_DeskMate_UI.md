@@ -1436,3 +1436,32 @@ CSIDMA: gcfg=00000003 chen0=00000003 sar=50104000 dar=48164480 ts=0001c1ff ctl0=
 
 **开关已恢复默认关**（RAW8 + CPU 转换是已验证路径），并已重新构建烧录，
 保证板子处于可用状态。
+
+### 19.4 A1 判定结果：ISP 在线路径**不出帧**（0 帧），需要重建 esp_video 那一层
+
+用 `g_dbg_cap_pub` 前后差（30 秒窗口，最可靠的判据）判定：
+
+| 路径 | `cap_pub` 变化 | `disp_commits` 变化 |
+|---|---|---|
+| ISP 非 bypass（开关开） | **0 → 0（一帧都没有）** | 0x1e → 0x16d（显示正常） |
+| RAW8 + CPU 转换（默认） | 正常增长 | 正常增长 |
+
+即：ISP 路径**确实不出帧**（上一轮我据 `frames=1` 的怀疑这次得到证实）。
+
+**缺的那一环**：`esp_cam_ctlr_csi_config_t`（`upper_hal_cam/csi/include/esp_cam_ctlr_csi.h`）
+**只有 `input_data_color_type` / `output_data_color_type`，没有任何 ISP 挂钩字段**；
+而本树**没有 `esp_video` 层**（`find` 只找到 `upper_hal_isp`）。
+
+⇒ 官方 IDF 的"ISP 在线出 RGB565"是 **`esp_video` + `esp_isp_new_processor` + `esp_cam_ctlr` 三者协同**
+的结果，光有 `upper_hal_isp` 这一个组件不够。要在 openvela 上复现，需要**重建 esp_video 的
+ISP 处理器集成**（把 ISP 输出接进控制器 DMA 的那套），属**独立的一次驱动移植**。
+
+**因此本目标的 A 线改为**（在没有 esp_video 的前提下仍能提升性能）：
+
+| 项 | 做法 | 预期收益 |
+|---|---|---|
+| A3 | **传感器侧降载**：研究 SC2336 的 binning/降采样档（如 2×2 binning 出 640×360），减少 DMA 载荷与 CPU 转换量 | 采集 fps ↑、CPU 转换耗时 ↓ |
+| A2′ | **PPA 做 RGB 域的缩放**：CPU 只做最少量的 RAW→RGB（或直接让 sensor 出 RGB？不支持），缩放交给 PPA | 每帧 CPU 像素工作 ↓ |
+| A4 | 开关保留，默认 RAW8；ISP 路径作为"待 esp_video 就绪后启用" | 不影响现网 |
+
+**B 线（显示）不受影响**，继续做 B2（消除整页失效）等。

@@ -50,12 +50,22 @@ LV_FONT_DECLARE(lv_font_simsun_16_cjk)
 #  define DM_FONT_BODY  (&lv_font_simsun_16_cjk)
 #  define DM_FONT_SMALL (&lv_font_simsun_16_cjk)
 #else
-LV_FONT_DECLARE(dm_font_32)
-LV_FONT_DECLARE(dm_font_20)
+/* 单一字体方案：14px / 1bpp / **GB2312 一级 3755 字**。
+ *
+ * 为什么这么选（实测约束）：
+ *   - app 槽位 CONFIG_ESPRESSIF_OTA_SLOT_SIZE=0x1C0000(1.75MB) 且镜像本已满；
+ *   - MCUboot 的 MCUBOOT_MAX_IMG_SECTORS=512 ⇒ 最多只能加载 2MB 镜像，
+ *     所以"扩槽位到 4MB"这条路**走不通**（镜像装不进引导）；
+ *   - 20px 全字表 4bpp=4613KB / 2bpp=2252KB、16px/1bpp=1081KB 都放不下；
+ *     14px/1bpp 全 3755 字 = 946KB，**比原来的"字面量 20px+32px"(966KB) 还省**。
+ * 代价：标题不再有 32px 的字号层次（统一起见用同一档）。
+ */
 
-#  define DM_FONT_TITLE (&dm_font_32)
-#  define DM_FONT_BODY  (&dm_font_20)
-#  define DM_FONT_SMALL (&dm_font_20)
+LV_FONT_DECLARE(dm_font_14)
+
+#  define DM_FONT_TITLE (&dm_font_14)
+#  define DM_FONT_BODY  (&dm_font_14)
+#  define DM_FONT_SMALL (&dm_font_14)
 #endif
 
 /* 版式（1024x600：状态栏 72 / 标签栏 72 / 边距 20） */

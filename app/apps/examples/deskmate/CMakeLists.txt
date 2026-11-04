@@ -20,8 +20,7 @@ if(CONFIG_EXAMPLES_DESKMATE)
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     SRCS
     deskmate_main.c
-    fonts/dm_font_20.c
-    fonts/dm_font_32.c
+    fonts/dm_font_14.c
     src/dm_selftest.c
     src/dm_log.c
     src/agent/dm_agent.c

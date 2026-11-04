@@ -17,7 +17,7 @@ MODULE    = $(CONFIG_EXAMPLES_DESKMATE)
 CFLAGS += ${INCDIR_PREFIX}$(CURDIR)/src
 
 MAINSRC = deskmate_main.c
-CSRCS  += fonts/dm_font_20.c
+CSRCS  += fonts/dm_font_14.c
 CSRCS  += fonts/dm_font_32.c
 CSRCS   = src/dm_selftest.c
 CSRCS  += src/agent/dm_agent.c

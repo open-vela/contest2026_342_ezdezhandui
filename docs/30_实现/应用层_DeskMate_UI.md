@@ -1940,3 +1940,30 @@ DM-SELFTEST RESULT: PASS (27/27)
 **遗留**：真正的拼音 IME 需要一份音节→汉字词库（约 1~3k 条）。若用户能提供
 （或允许装 `pypinyin` / 导出 fcitx 词库），可以在同一位置把"常用语面板"升级成
 "字母键盘 + 候选条 + 选字上屏"，应用侧改动是局部的。
+
+### 24. §3 会话入 logs + 推送 + PR（状态如实）
+
+**已完成**：
+
+| 步骤 | 结果 |
+|---|---|
+| 会话导出 | ✅ `dsh_session_to_contest_log.py --session b8724a01-… --confirm`：23308 行原始 → **10353 条事件**（丢弃流式增量），写入 `logs/ez-xu/2026-11-01/dsh__b8724a01-53eb-473a-879c-d7a63e12dac7.jsonl`（**10.8 MB**），`logs/ez-xu/manifest.json` 更新（31 个 session） |
+| 提交 | ✅ `5f802c0`（含本次全部代码/文档/日志） |
+| 推送 | ✅ `git push fork`：`0251b97..5f802c0` → `dev-ai-contest-2026`（GitHub `ez-xu/contest2026_342_ezdezhandui`） |
+
+**PR 未能自动发起（如实说明）**：
+
+1. 赛事**上游在 Gitee**（`gitee.com/open-vela/contest2026_342_ezdezhandui`）；
+   本机**没有 Gitee token**（`gh`/`glab` 分别是 GitHub/GitLab，Gitee 无官方 CLI）；
+   且 `gitee.com/<user>/contest2026_342_ezdezhandui` 探测都需要凭据（无公开 fork）⇒ **无法自动开 Gitee PR**。
+2. GitHub fork 上**只有 `dev-ai-contest-2026` 一个分支**（没有 main/master 作基线）⇒ 也发不了自 PR。
+
+**手工发起步骤（各 1 分钟）**：
+
+- **Gitee（推荐，面向赛事评审）**：
+  1. 在 Gitee 上 fork `open-vela/contest2026_342_ezdezhandui`；
+  2. 把本仓库 `dev-ai-contest-2026` 推到该 fork；
+  3. 打开 <https://gitee.com/open-vela/contest2026_342_ezdezhandui/pulls> →
+     「新建 Pull Request」→ 源分支选你的 fork 的 `dev-ai-contest-2026`、目标选上游的 `dev-ai-contest-2026`。
+- **GitHub（可选，便于看 diff）**：在 fork 里基于上游基线建一个 `main`，再
+  `gh pr create --base main --head dev-ai-contest-2026`。

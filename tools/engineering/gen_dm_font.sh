@@ -26,6 +26,7 @@ APP_DIR="${REPO}/app/apps/examples/deskmate"
 # 不含 ASCII**——单一字体方案会让所有字母/数字缺字，UI 上画出方框）。
 TTF_ASCII="${DM_TTF_ASCII:-/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf}"
 TTF_CJK="${DM_TTF_CJK:-/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf}"
+CJK_COMMON="${DM_CJK_COMMON:-1}"   # 1 = 正文档并入常用汉字表（修运行时中文乱码）
 SIZES="16 24"
 BPP=4
 CHECK=0
@@ -37,6 +38,8 @@ while [ $# -gt 0 ]; do
     --ttf-ascii) shift; TTF_ASCII="${1:-${TTF_ASCII}}" ;;
     --ttf-cjk)   shift; TTF_CJK="${1:-${TTF_CJK}}" ;;
     --sizes) shift; SIZES="${1:-${SIZES}}" ;;
+    --cjk-common) shift; CJK_COMMON="${1:-1}" ;;
+    --body-size)  shift; BODY_SIZE="${1:-20}" ;;
     --check) CHECK=1 ;;
     -h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -99,6 +102,30 @@ print(''.join(sorted(c for c in chars if ord(c) > 0x7f)))
 PY
 )"
 
+# 1b) 常用汉字表：运行时文本（LLM 回复 / SSID / 天气 / 用户输入）不在字符串字面量里，
+#     只按字面量做子集会把这些字画成方框（真机"中文乱码"的根因）。
+#     用 Python 内置 GB2312 编码现算一级汉字（3755 字），无需外部数据文件；
+#     只并入【正文档】（BODY_SIZE，默认 20px），标题 32px 仍用字面子集控体积。
+
+COMMON_CJK="$(python3 - <<'PYEOF'
+chars = set()
+for hi in range(0xb0, 0xd8):          # GB2312 一级汉字区（3755 字）
+    for lo in range(0xa1, 0xff):
+        try:
+            chars.add(bytes((hi, lo)).decode('gb2312'))
+        except UnicodeDecodeError:
+            continue
+print(''.join(sorted(chars)))
+PYEOF
+)"
+
+BODY_SIZE="${BODY_SIZE:-20}"
+if [ "${CJK_COMMON}" = "1" ]; then
+  SYMBOLS_BODY="${SYMBOLS}${COMMON_CJK}"
+else
+  SYMBOLS_BODY="${SYMBOLS}"
+fi
+
 COUNT="$(python3 -c "import sys;print(len(sys.argv[1]) + 95)" "${SYMBOLS}")"
 CJK_COUNT="$(python3 -c "import sys;print(len(sys.argv[1]))" "${SYMBOLS}")"
 
@@ -125,12 +152,19 @@ mkdir -p "${FONT_DIR}"
 # 2) 逐档生成；命名固定 dm_font_<size>，应用侧按名字声明 -----------------------
 for SZ in ${SIZES}; do
   OUT="${FONT_DIR}/dm_font_${SZ}.c"
-  echo "[dm-font] 生成 ${SZ}px → ${OUT}"
+
+  if [ "${SZ}" = "${BODY_SIZE}" ]; then
+    USE_SYMBOLS="${SYMBOLS_BODY}"
+    echo "[dm-font] 生成 ${SZ}px（正文档：并入常用汉字表）→ ${OUT}"
+  else
+    USE_SYMBOLS="${SYMBOLS}"
+    echo "[dm-font] 生成 ${SZ}px（字面子集）→ ${OUT}"
+  fi
   if ! npx --yes lv_font_conv \
         --font "${TTF_ASCII}" \
         --range 0x20-0x7e \
         --font "${TTF_CJK}" \
-        --symbols "${SYMBOLS}" \
+        --symbols "${USE_SYMBOLS}" \
         --size "${SZ}" \
         --bpp "${BPP}" \
         --format lvgl \

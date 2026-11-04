@@ -43,6 +43,19 @@
 static struct dm_display_metrics_s g_metrics;
 static lv_display_t *g_disp;
 
+/* 看门狗"代际"：每次 create()/destroy() 递增，线程只在"自己那一代"里工作，
+ * 代际一变就退出。
+ *
+ * 为什么用代际而不是布尔停止标志（2026-11-04 真机验证）：
+ *   自检退出后立刻再启动 deskmate 时，旧线程还在 500ms 的轮询睡眠里，没来得及
+ *   看到停止标志；而新 create() 若把标志复位，旧线程就"复活"了 —— `ps` 里出现
+ *   两个 dm-disp-wd，两个看门狗同时重建显示，把触摸/显示通路搞崩（Load access
+ *   fault @ nsh_main）。代际语义没有这个竞争：旧线程看到代际变了就退出，
+ *   且不可能被复位救回。
+ */
+
+static volatile uint32_t g_wd_gen;
+
 /* 显示提交计数：LVGL 每完成一次渲染/刷写就 +1，并记录时间。
  * 自检用它做 display:fed 判据 —— "面板真的在被喂数据"，而不是只看帧缓冲内容
  * （真机踩过：帧缓冲里 UI 完好，但面板早就停了，靠内容判据分辨不出来）。
@@ -277,6 +290,12 @@ int dm_display_create(void)
            g_metrics.stride);
 
     /* 显示看门狗：相机连续流把 DSI 打停时能自救（见 dm_display_watchdog） */
+
+    /* 递增代际：上一次运行的看门狗线程（若有）会在下一轮轮询里看到代际变了
+     * 而退出；新线程捕获的是新代际，二者不会同时工作。
+     */
+
+    g_wd_gen++;
 
     {
       pthread_t wd;
@@ -638,6 +657,12 @@ void dm_display_destroy(void)
       return;
     }
 
+  /* 让看门狗线程退出（见 g_wd_gen 的说明）：递增代际即可，线程在下一轮
+   * 500ms 轮询里看到代际变了就走，不需要阻塞等待。
+   */
+
+  g_wd_gen++;
+
 #if DM_DISPLAY_FBDEV
   if (g_fb_fd >= 0)
     {
@@ -687,10 +712,11 @@ static void *dm_display_watchdog(void *arg)
   uint32_t last = dm_display_commits();
   int stall = 0;
   unsigned int reinits = 0;
+  uint32_t my_gen = g_wd_gen;    /* 只服务"我这一代" */
 
   (void)arg;
 
-  for (;;)
+  while (g_wd_gen == my_gen)
     {
       usleep(DM_DISP_WD_PERIOD_MS * 1000);
 

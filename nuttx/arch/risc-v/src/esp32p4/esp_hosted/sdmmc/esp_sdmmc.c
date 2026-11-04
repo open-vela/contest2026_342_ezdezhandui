@@ -361,6 +361,19 @@ static bool g_widebus;
 
 static uint32_t g_last_error_bits;
 
+/* Set while the interrupt handler has HLE masked.
+ *
+ * HLE (hardware locked error) is level-driven: the CIU stays locked until the
+ * controller is reset, so writing RINTSTS does not clear the condition and the
+ * controller re-interrupts immediately -- measured 2026-11-04: the core never
+ * returned to task context (JTAG PC sampling 8/8 inside _interrupt_handler /
+ * riscv_dispatch_irq), the console stopped and NSH never started.  The source is
+ * therefore masked in the handler, exactly like the level-triggered DAT1 source,
+ * and re-armed when the next transfer is armed.
+ */
+
+static bool g_hle_masked;
+
 /* Programmed-I/O data path.
  *
  * The controller's internal DMA engine never fetches a descriptor on this
@@ -2756,6 +2769,19 @@ static void esp_sdmmc_waitenable(struct sdio_dev_s *dev,
   priv->xfrmask = 0;
   g_last_error_bits = 0;
 
+  /* Re-arm HLE if the handler masked it (see g_hle_masked).
+   *
+   * Arming a transfer is the natural place: the previous transfer is over, so a
+   * lock-up that belonged to it may be gone, and if it is not, the cost is one
+   * interrupt for this transfer instead of a storm that starves the core.
+   */
+
+  if (g_hle_masked)
+    {
+      priv->hw->intmask.val |= SDMMC_ERR_HLE;
+      g_hle_masked = false;
+    }
+
   /* The controller cannot signal a timeout, so it is never part of the
    * hardware mask; it is produced by the watchdog below.
    */
@@ -3533,6 +3559,23 @@ static int esp_sdmmc_interrupt(int irq, void *context, void *arg)
                  (unsigned)((status >> 9) & 1),  (unsigned)((status >> 10) & 1),
                  (unsigned)((status >> 11) & 1), (unsigned)((status >> 12) & 1),
                  (unsigned)((status >> 13) & 1), (unsigned)((status >> 15) & 1));
+        }
+
+      /* HLE is level-driven -- masking the source is the only way to stop the
+       * controller re-interrupting (see g_hle_masked above).  It is re-armed by
+       * esp_sdmmc_waitenable() when the next transfer is armed, so at most one
+       * interrupt per arming is spent on a controller that is still locked.
+       */
+
+      if ((status & SDMMC_ERR_HLE) != 0 && !g_hle_masked)
+        {
+          priv->hw->intmask.val &= ~SDMMC_ERR_HLE;
+          g_hle_masked = true;
+
+          syslog(LOG_WARNING,
+                 "esp_sdmmc: HLE masked (intmask=%08" PRIx32
+                 ") -- controller locked; re-armed at the next transfer\n",
+                 *(volatile uint32_t *)&priv->hw->intmask);
         }
     }
 

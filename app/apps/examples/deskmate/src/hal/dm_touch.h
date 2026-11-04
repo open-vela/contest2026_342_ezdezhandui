@@ -30,6 +30,9 @@
 
 int dm_touch_create(void);
 
+/* 让硬件轮询线程退出（容器任务退出前必须调用） */
+void dm_touch_shutdown(void);
+
 /* Queue one pointer sample.  pressed=true is a touch-down, false a lift. */
 
 void dm_touch_inject(int x, int y, bool pressed);

@@ -96,6 +96,17 @@ volatile uint32_t g_dbg_touch_hw_err;      /* 返回长度不符的次数 */
 volatile uint32_t g_dbg_touch_hw_us;
 volatile uint32_t g_dbg_touch_hw_us_max;
 
+/* 轮询线程停止标志：容器任务（deskmate 作为 NSH 内置命令运行）退出后必须让它退出。
+ * 否则旧线程会和新实例抢同一个触摸设备：
+ *
+ *   2026-11-04 实测：自检退出（DM-EXIT result=0）后再启动 deskmate，`ps` 里出现
+ *   **两个 dm-touch**（PID 14 旧 + 45 新），触摸通路随即崩溃。
+ *
+ * dm_touch_shutdown() 置位、dm_touch_create() 复位；线程每 50ms 检查一次。
+ */
+
+static volatile uint32_t g_touch_gen;
+
 static void *dm_touch_hw_thread(void *arg)
 {
   FAR struct touch_sample_s *sample;
@@ -140,7 +151,9 @@ static void *dm_touch_hw_thread(void *arg)
   pfd.fd     = fd;
   pfd.events = POLLIN;
 
-  for (;;)
+  uint32_t my_gen = g_touch_gen;
+
+  while (g_touch_gen == my_gen)
     {
       (void)poll(&pfd, 1, 50);
 
@@ -339,6 +352,24 @@ void dm_touch_last_tap(int *x, int *y)
     }
 }
 
+/****************************************************************************
+ * Name: dm_touch_shutdown
+ *
+ * Description:
+ *   让硬件轮询线程退出（见 g_touch_gen 的说明）。容器任务退出前必须调用，
+ *   否则线程会越过模块生命周期继续读设备，并与下一个实例抢同一份硬件。
+ *
+ ****************************************************************************/
+
+void dm_touch_shutdown(void)
+{
+  g_touch_gen++;               /* 旧线程看到代际变化即退出（见 g_touch_gen 说明） */
+
+  /* 线程每 50ms poll 一轮，这里给它一整轮多一点的时间退出。 */
+
+  usleep(80 * 1000);
+}
+
 int dm_touch_create(void)
 {
   g_head = 0;
@@ -355,6 +386,8 @@ int dm_touch_create(void)
   lv_indev_set_read_cb(g_indev, dm_touch_read_cb);
 
   /* 起一个**低优先级**线程做硬件轮询：UI 线程从此不碰 I2C */
+
+  g_touch_gen++;             /* 新一代：上一次运行的轮询线程会自行退出 */
 
   {
     pthread_t tid;

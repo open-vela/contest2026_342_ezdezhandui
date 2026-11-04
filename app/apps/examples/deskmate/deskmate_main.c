@@ -472,6 +472,7 @@ int main(int argc, FAR char *argv[])
       DM_ERR("touch bring-up failed");
       dm_camera_destroy();
       dm_display_destroy();
+      dm_touch_shutdown();
       lv_deinit();
       return 1;
     }
@@ -493,6 +494,7 @@ int main(int argc, FAR char *argv[])
       dm_agent_destroy();
       dm_camera_destroy();
       dm_display_destroy();
+      dm_touch_shutdown();
       lv_deinit();
       return rc == 0 ? 0 : 1;
     }
@@ -537,6 +539,7 @@ int main(int argc, FAR char *argv[])
       dm_agent_destroy();
       dm_camera_destroy();
       dm_display_destroy();
+      dm_touch_shutdown();
       lv_deinit();
       return g_app_wifi_link_ok ? 0 : 1;
     }
@@ -562,6 +565,7 @@ int main(int argc, FAR char *argv[])
       dm_agent_destroy();
       dm_camera_destroy();
       dm_display_destroy();
+      dm_touch_shutdown();
       lv_deinit();
       return 0;
     }
@@ -600,6 +604,7 @@ int main(int argc, FAR char *argv[])
       dm_camera_destroy();
       dm_agent_destroy();
       dm_display_destroy();
+      dm_touch_shutdown();
       lv_deinit();
       return 1;
     }
@@ -784,6 +789,7 @@ int main(int argc, FAR char *argv[])
   dm_camera_destroy();
   dm_agent_destroy();
   dm_display_destroy();
+      dm_touch_shutdown();
   lv_deinit();
 
   printf("DM-EXIT %s result=%d\n", selftest ? "selftest" : "run", result);

@@ -120,7 +120,7 @@
  * 默认关：RAW8 + CPU 转换是当前验证过的路径。
  */
 
-#define DM_CSI_ISP_RGB565 1
+/* #define DM_CSI_ISP_RGB565 1 */
 
 /* 相机的"让路"占空比：每采 N 帧、歇 M 毫秒，把带宽让回给 DSI 扫描。
  *

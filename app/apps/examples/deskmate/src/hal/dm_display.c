@@ -609,13 +609,18 @@ void dm_display_destroy(void)
  *   （共用 DW-GDMA/PSRAM 带宽的已知坑）计数会冻住 —— 这时调用板级的显示重建
  *   入口自救，而不是只能复位整机。
  *
- *   判定：连续 STALL_TICKS × 500ms 没有新提交 ⇒ 认为停摆。
+ *   判定：连续 STALL_TICKS × 500ms（= 6 秒）没有新提交 ⇒ 认为停摆。
+ *   注意：页面完全空闲时 LVGL 本来就不会重绘，所以阈值不能太短（3 秒会误报）。
  *   自救：最多 REINIT_MAX 次，之后只告警（避免在真硬件故障上反复折腾）。
  *
  ****************************************************************************/
 
 #define DM_DISP_WD_PERIOD_MS 500
-#define DM_DISP_WD_STALL_TICKS 6        /* 3 秒 */
+/* 6 秒：太短会在"页面完全空闲、LVGL 没有脏区可重绘"时误判（实测 RAW8 自检里
+ * 出现过 stalls=3 的误报）。真停摆（面板被抢死）是**永久**不恢复，6 秒足够区分。
+ */
+
+#define DM_DISP_WD_STALL_TICKS 12       /* 12 × 500ms = 6 秒 */
 #define DM_DISP_WD_REINIT_MAX 3
 
 /* 诊断（JTAG 可读） */
@@ -655,7 +660,7 @@ static void *dm_display_watchdog(void *arg)
       extern int esp32p4_display_reinit(void);
 #endif
 
-      DM_ERR("display: 停摆 3s（commits=%u），尝试重建", (unsigned)now);
+      DM_ERR("display: 停摆 6s（commits=%u），尝试重建", (unsigned)now);
 
 #ifdef CONFIG_ARCH_CHIP_ESP32P4
       if (reinits < DM_DISP_WD_REINIT_MAX)

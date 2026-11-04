@@ -1753,3 +1753,29 @@ display: reinit OK (video restarted)
 
 **两项未获收益的全局配置改动已回退**（tick 保持 10ms、I2C 超时保持 500ms），
 不把未验证的全局改动留在树里。
+
+### 20.6 收口：默认配置与最终验证
+
+**默认配置定为 RAW8 路径**（ISP 开关关）。原因：把 ISP + 让路放到**完整自检**
+（切页 + 各种阶段）里跑时，`cam:fps` 掉到 **4 fps** 且看门狗触发 3 次 ——
+即"ISP 路径 + 让路"只在**相机页稳定**（11.4 提交/s、13.7fps），
+但**扛不住完整自检的负载**。⇒ 默认走已验证的 RAW8，ISP 路径保留为实验开关。
+
+**看门狗阈值 3s → 6s**：3 秒会在"页面完全空闲、LVGL 没有脏区可重绘"时误报
+（RAW8 自检里出现过 `stalls=3` 的误报）；真停摆是永久不恢复，6 秒足够区分。
+
+**最终验证（RAW8 默认）**：
+
+```
+模拟器：DM-SELFTEST RESULT: PASS (29/29)
+真机：  DM-SELFTEST RESULT: PASS (29/29)
+        ui:responsive PASS max_busy=30ms | display:fed PASS 10/s | cam:fps PASS 10fps
+        g_failures = 0
+```
+
+**本目标的交付一览**：
+
+| 问题 | 交付 | 关键证据 |
+|---|---|---|
+| ①屏幕卡死 | 根因定位（ISP 流量翻倍抢 DW-GDMA）→ 让路限流（12帧/80ms）→ 显示看门狗（6s 判定）+ 板级重建入口 | ISP 连续 3.2/s ❌ vs ISP+让路 11.4/s ✅；人为停摆 stalls=6/reinits=3；`reinit OK` 后提交继续增长 |
+| ②触摸停顿 | LVGL 不再建设备 indev（`input_path=NULL`）+ 独立轮询线程 + 无锁快照 | `ui:responsive` max_busy **1540ms → 20~30ms**；触摸判据 PASS；两个否证（tick/超时都无效，500ms 是抢占墙钟） |

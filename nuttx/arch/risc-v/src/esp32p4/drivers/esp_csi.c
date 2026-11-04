@@ -1219,14 +1219,22 @@ void esp_csi_get_default_config(FAR struct esp_csi_config_s *config)
    * bring-up captures the raw sensor stream.
    */
 
-  config->input_color         = CAM_CTLR_COLOR_RAW8;
-
-  /* 控制器两侧都保持 RAW8：CSI 桥的颜色模块只支持 RGB/YUV 之间的转换，
-   * 任何含 RAW 的格式对都会让 s_csi_ctlr_format_conversion() 返回
-   * ESP_ERR_NOT_SUPPORTED(262)。Bayer → RGB565 由 ISP 在线完成（见下）。
+#ifdef CONFIG_ESP_CSI_ISP_RGB565
+  /* ISP 在线时，**DMA 收到的是 ISP 输出的 RGB565**：控制器必须按 16bpp 装配帧，
+   * 否则它按 RAW8（1B/px）算，等不到"帧结束"→ 一帧都发布不出来（实测 0 帧）。
+   * 两侧都写 RGB565：src==dst ⇒ 桥走 bypass，不会触发只支持 RGB/YUV 的转换路径。
    */
 
+  config->input_color         = CAM_CTLR_COLOR_RGB565;
+  config->output_color        = CAM_CTLR_COLOR_RGB565;
+#else
+  /* 默认路径：控制器两侧都 RAW8（桥 bypass）。
+   * 注意含 RAW 的"不相等"格式对会让 s_csi_ctlr_format_conversion() 返回 262。
+   */
+
+  config->input_color         = CAM_CTLR_COLOR_RAW8;
   config->output_color        = CAM_CTLR_COLOR_RAW8;
+#endif
 
   config->byte_swap_en        = false;
   config->input_8bit_swap_en  = false;

@@ -103,7 +103,7 @@ if(CONFIG_ESPRESSIF_MIPI_DSI)
 endif()
 
 if(CONFIG_ESPRESSIF_PPA)
-  target_sources(arch PRIVATE drivers/esp_ppa_test.c)
+  target_sources(arch PRIVATE drivers/esp_ppa_test.c drivers/esp_ppa_scale.c)
 endif()
 
 if(CONFIG_ESPRESSIF_EMAC)

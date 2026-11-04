@@ -278,9 +278,11 @@ int dm_camera_create(int preview_w, int preview_h)
   g_width  = preview_w;
   g_height = preview_h;
 
-  g_pixels     = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
-  g_pixels_pub = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
-  g_prev       = malloc((size_t)preview_w * preview_h * sizeof(uint16_t));
+  /* 128B 对齐：PPA（2D 硬件）读写外部 PSRAM 缓冲要求 L1+L2 cache line 对齐 */
+
+  g_pixels     = memalign(128, (size_t)preview_w * preview_h * sizeof(uint16_t));
+  g_pixels_pub = memalign(128, (size_t)preview_w * preview_h * sizeof(uint16_t));
+  g_prev       = memalign(128, (size_t)preview_w * preview_h * sizeof(uint16_t));
   if (g_pixels == NULL || g_pixels_pub == NULL || g_prev == NULL)
     {
       DM_ERR("camera: no memory for a %dx%d preview", preview_w, preview_h);
@@ -502,6 +504,11 @@ static int dm_camera_capture_once(void)
               }
             else
               {
+                /* 缩放仍走 CPU：实测 PPA（esp_ppa_scale_rgb565）功能正常但
+                 * **比 CPU 慢 4 倍**（52.6ms vs 12.6ms/帧），主因是每帧对
+                 * 1.84MB 输入做 cache msync。helper 保留备用（docs §19.9）。
+                 */
+
                 dm_camera_convert_rgb(src, g_src_width, g_src_height,
                                       g_pixels, g_width, g_height);
               }

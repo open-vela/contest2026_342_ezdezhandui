@@ -492,3 +492,49 @@ int board_lcd_reload_test_pattern(void)
 }
 
 #endif /* CONFIG_ESP32P4_FUNCTION_EV_BOARD_LCD */
+
+/****************************************************************************
+ * Name: esp32p4_display_reinit
+ *
+ * Description:
+ *   "显示重建"入口。相机连续流与 DSI 抢 DW-GDMA/PSRAM 带宽时会把面板打停
+ *   （dm_camera.c 里记录过的已知坑），此前只能复位整机；这个入口把视频流重新
+ *   拉起来：**停流 → 重新绑定帧缓冲（重新武装 DW-GDMA）→ 开流**。
+ *
+ *   可安全重复调用（幂等）：停流在未启动时是空操作，绑定与开流都是重新配置。
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int esp32p4_display_reinit(void)
+{
+  int ret;
+
+  if (!g_board_fb_ready || g_board_fb == NULL)
+    {
+      return -EINVAL;
+    }
+
+  (void)esp_mipi_dsi_video_stop();
+
+  ret = esp_mipi_dsi_bind_framebuffer(g_board_fb, BOARD_FB_SIZE,
+                                      BOARD_FB_WIDTH, BOARD_FB_HEIGHT,
+                                      BOARD_FB_BPP);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: display reinit: bind failed: %d\n", ret);
+      return ret;
+    }
+
+  ret = esp_mipi_dsi_video_start();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: display reinit: video_start failed: %d\n", ret);
+      return ret;
+    }
+
+  syslog(LOG_INFO, "display: reinit OK (video restarted)\n");
+  return OK;
+}

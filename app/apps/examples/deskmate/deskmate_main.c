@@ -69,6 +69,8 @@
 static const char *g_usage =
   "Usage: " DM_PROGNAME " [options]\n"
   "  --selftest          run the headless scenario, print the report and exit\n"
+  "  --disp-reinit       re-run the panel/DSI bring-up once (display recovery test)\n"
+  "  --disp-stall <sec>  freeze the UI loop for <sec> (watchdog test)\n"
   "  --ppa-test          run the PPA (2D accelerator) fill selftest and exit\n"
   "  --freeze-preview    stop re-pointing the canvas at new frames (diagnostic)\n"
   "  --soak <sec>        cycle pages every <sec> seconds and log metrics (long run)\n"
@@ -226,12 +228,22 @@ int main(int argc, FAR char *argv[])
   unsigned int start_ms;
   int result = 0;
   int i;
+  bool disp_reinit_once = false;
+  int  disp_stall_sec = 0;
 
   for (i = 1; i < argc; i++)
     {
       if (strcmp(argv[i], "--selftest") == 0)
         {
           selftest = true;
+        }
+      else if (strcmp(argv[i], "--disp-reinit") == 0)
+        {
+          disp_reinit_once = true;   /* 显示起来之后再执行，见下面 */
+        }
+      else if (strcmp(argv[i], "--disp-stall") == 0 && i + 1 < argc)
+        {
+          disp_stall_sec = atoi(argv[++i]);   /* 人为把 UI 循环冻住，测看门狗 */
         }
 #ifdef CONFIG_ESPRESSIF_PPA
       else if (strcmp(argv[i], "--ppa-test") == 0)
@@ -452,6 +464,24 @@ int main(int argc, FAR char *argv[])
   if (camera_on)
     {
       (void)dm_camera_create(DM_CAMERA_PREVIEW_W, DM_CAMERA_PREVIEW_H);
+    }
+
+  if (disp_stall_sec > 0)
+    {
+      /* 模拟"面板被打停"：UI 线程睡 N 秒，提交计数会停 ⇒ 看门狗应当报出并自救 */
+
+      DM_ERR("display: 人为停摆 %d 秒（看门狗测试）", disp_stall_sec);
+      sleep((unsigned)disp_stall_sec + 5);   /* 先跑 5 秒让看门狗建立基线 */
+      sleep((unsigned)disp_stall_sec);
+    }
+
+  if (disp_reinit_once)
+    {
+#ifdef CONFIG_ARCH_CHIP_ESP32P4
+      extern int esp32p4_display_reinit(void);
+
+      DM_LOG("display reinit rc=%d", esp32p4_display_reinit());
+#endif
     }
 
   if (dm_ui_create() != 0)

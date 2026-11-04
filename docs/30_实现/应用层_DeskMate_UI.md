@@ -1659,3 +1659,30 @@ T1 [commits cap_pub]: 0xea 0x214
 
 **顺带**：`--ppa-test` 加了 `CONFIG_ESPRESSIF_PPA` 守卫，修掉模拟器链接缺
 `esp_ppa_selftest` 的问题（PPA 是 P4 的 arch 侧 helper）。
+
+### 20.3 ✅ P1-c 完成：显示重建入口 + 看门狗（停摆可自救，不再只能复位）
+
+**① 板级"显示重建"入口**（`esp32p4_display.c`：`esp32p4_display_reinit()`）
+按点屏顺序的关键三步重来：**停流 → 重新绑定帧缓冲（重新武装 DW-GDMA）→ 开流**。
+幂等、可重复调用。提供了 `--disp-reinit` 便于直接验证：
+
+```
+display: reinit OK (video restarted)
+重建后 commits 0x76 → 0xea（116 次/15s，持续增长）⇒ 画面没黑、重建入口可用
+```
+
+**② 应用侧显示看门狗**（`dm_display.c`：`dm_display_watchdog` 线程）
+- 判定：`g_disp_commits` 连续 **3 秒**（6×500ms）不增长 ⇒ 认为停摆；
+- 自救：调用上面的重建入口，**最多 3 次**，之后只告警（不在真硬件故障上反复折腾）；
+- 诊断：`g_dbg_disp_stalls` / `g_dbg_disp_reinits`（JTAG 可读）；
+- 提供了 `--disp-stall <sec>` 用于**人为制造停摆**来验证看门狗。
+
+**真机验证**：
+
+| 场景 | 结果 |
+|---|---|
+| 健康运行（自检） | `stalls=0`（**无误报**）；`DM-SELFTEST PASS (29/29)`；`ui:responsive max_busy=20ms` |
+| **人为停摆 8 秒** | `g_dbg_disp_stalls=6`（每 3 秒检出一次）、`g_dbg_disp_reinits=3`（自救到上限）✅ |
+| 重建入口直接调用 | `reinit OK`，之后提交继续增长 ⇒ 可安全重复调用 |
+
+⇒ 面板再被相机连续流打停时，程序能**自己检出来并尝试拉起**，不必复位整机。

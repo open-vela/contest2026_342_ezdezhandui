@@ -26,6 +26,9 @@
 #include <lvgl/lvgl.h>
 
 #include "dm_config.h"
+#include <pthread.h>
+#include <unistd.h>
+
 #include "dm_log.h"
 #include "hal/dm_display.h"
 
@@ -93,6 +96,8 @@ static void dm_flush_cb(lv_display_t *disp, const lv_area_t *area,
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+static void *dm_display_watchdog(void *arg);
 
 /* Create the parent directory of a snapshot path, best effort. */
 
@@ -215,6 +220,18 @@ int dm_display_create(void)
     DM_LOG("display: %s %dx%d bpp=%d stride=%d", g_metrics.backend,
            g_metrics.width, g_metrics.height, g_metrics.bpp,
            g_metrics.stride);
+
+    /* 显示看门狗：相机连续流把 DSI 打停时能自救（见 dm_display_watchdog） */
+
+    {
+      pthread_t wd;
+
+      if (pthread_create(&wd, NULL, dm_display_watchdog, NULL) == 0)
+        {
+          (void)pthread_setname_np(wd, "dm-disp-wd");
+          DM_LOG("display: watchdog started");
+        }
+    }
   }
 #else /* DM_DISPLAY_MEM */
   {
@@ -582,4 +599,82 @@ void dm_display_destroy(void)
 
   g_disp = NULL;
   g_created = false;
+}
+
+/****************************************************************************
+ * Name: dm_display_watchdog
+ *
+ * Description:
+ *   显示看门狗：定期看驱动的"提交计数"是否还在增长。相机连续流把 DSI 打停时
+ *   （共用 DW-GDMA/PSRAM 带宽的已知坑）计数会冻住 —— 这时调用板级的显示重建
+ *   入口自救，而不是只能复位整机。
+ *
+ *   判定：连续 STALL_TICKS × 500ms 没有新提交 ⇒ 认为停摆。
+ *   自救：最多 REINIT_MAX 次，之后只告警（避免在真硬件故障上反复折腾）。
+ *
+ ****************************************************************************/
+
+#define DM_DISP_WD_PERIOD_MS 500
+#define DM_DISP_WD_STALL_TICKS 6        /* 3 秒 */
+#define DM_DISP_WD_REINIT_MAX 3
+
+/* 诊断（JTAG 可读） */
+volatile uint32_t g_dbg_disp_stalls;
+volatile uint32_t g_dbg_disp_reinits;
+
+static void *dm_display_watchdog(void *arg)
+{
+  uint32_t last = dm_display_commits();
+  int stall = 0;
+  unsigned int reinits = 0;
+
+  (void)arg;
+
+  for (;;)
+    {
+      usleep(DM_DISP_WD_PERIOD_MS * 1000);
+
+      uint32_t now = dm_display_commits();
+
+      if (now != last)
+        {
+          last  = now;
+          stall = 0;
+          continue;
+        }
+
+      if (++stall < DM_DISP_WD_STALL_TICKS)
+        {
+          continue;
+        }
+
+      stall = 0;
+      g_dbg_disp_stalls++;
+
+#ifdef CONFIG_ARCH_CHIP_ESP32P4
+      extern int esp32p4_display_reinit(void);
+#endif
+
+      DM_ERR("display: 停摆 3s（commits=%u），尝试重建", (unsigned)now);
+
+#ifdef CONFIG_ARCH_CHIP_ESP32P4
+      if (reinits < DM_DISP_WD_REINIT_MAX)
+        {
+          reinits++;
+          if (esp32p4_display_reinit() == 0)
+            {
+              g_dbg_disp_reinits++;
+              DM_LOG("display: 重建成功（第 %u 次）", reinits);
+            }
+          else
+            {
+              DM_ERR("display: 重建失败（第 %u 次）", reinits);
+            }
+        }
+#else
+      (void)reinits;
+#endif
+    }
+
+  return NULL;
 }

@@ -2013,3 +2013,23 @@ P4 构建：rc=0；nuttx.bin = 1.746 MB（槽 1.75MB）
 **结论**：清单缺陷已修（724 条，可直接给评委用）；`repo sync` 的基线回退是
 **本机 .repo 的状态问题**（评委全新 `repo init` 拿到的是当前 openvela manifest，
 不会有这个回退）。§4 的"评委零手工步骤"仍需在**全新 clone** 上做最终确认。
+
+### 26. §3 的 PR：已发到 GitHub 官方仓库（合入需维护者批准）
+
+按用户要求从 Gitee 换成 **GitHub 官方仓库**：
+
+- 官方仓库：`open-vela/contest2026_342_ezdezhandui`（默认分支 `dev-ai-contest-2026`）✔
+- 源分支：`ez-xu:dev-ai-contest-2026`（已推送，`3dbdf39`）
+- **PR #17 已创建**：<https://github.com/open-vela/contest2026_342_ezdezhandui/pull/17>
+
+| 项 | 值 |
+|---|---|
+| state | **OPEN** |
+| mergeable | MERGEABLE |
+| mergeStateStatus | **BLOCKED**（base 分支保护：需要评审/检查通过） |
+| 规模 | 1316 files，+5,247,282 / −1,170 |
+
+**合入未能完成（如实说明）**：`gh pr merge` 返回
+"the base branch policy prohibits the merge"——官方仓库的分支保护要求评审通过；
+本账号无该仓库 admin/写权限，且仓库未开启 auto-merge（`enablePullRequestAutoMerge` 关闭）。
+⇒ **PR 已就绪，等待官方维护者 approve 后合入。**

@@ -821,7 +821,25 @@ static void dm_page_net_update(void)
         }
       else
         {
-          dm_label_set(s_wifi_state, "%s", DM_I18N_NET_UP " 0.0.0.0");
+          /* 没关联上时显示**真实**地址，别再硬编码 0.0.0.0。
+           *
+           * 早先这行是 DM_I18N_NET_UP " 0.0.0.0" —— 一个纯字面量，无论实际
+           * 有没有地址都印它，和上面接口列表里的真实值对不上，看着像驱动坏了。 */
+
+          const char *wip = "-";
+          int k;
+
+          for (k = 0; k < net->count; k++)
+            {
+              if (net->ifs[k].wireless && net->ifs[k].ip[0] != '\0' &&
+                  strcmp(net->ifs[k].ip, "0.0.0.0") != 0)
+                {
+                  wip = net->ifs[k].ip;
+                  break;
+                }
+            }
+
+          dm_label_set(s_wifi_state, "%s %s", DM_I18N_NET_UP, wip);
         }
     }
 

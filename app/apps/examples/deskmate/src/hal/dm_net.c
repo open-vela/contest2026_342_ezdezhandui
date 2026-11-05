@@ -321,12 +321,7 @@ int dm_net_refresh(void)
         struct dm_net_if_s *entry;
         struct sockaddr_in *sin;
 
-        if (ifa->ifa_name == NULL || ifa->ifa_addr == NULL)
-          {
-            continue;
-          }
-
-        if (ifa->ifa_addr->sa_family != AF_INET)
+        if (ifa->ifa_name == NULL)
           {
             continue;
           }
@@ -336,6 +331,14 @@ int dm_net_refresh(void)
             continue;
           }
 
+        /* 先按名字登记，再决定要不要填地址。
+         *
+         * getifaddrs() 对"还没有 IPv4 地址"的接口会给出 ifa_addr == NULL
+         * （见 libc/net/lib_getifaddrs.c：SIOCGIFADDR 失败时就不设 ifa_addr）。
+         * 早先这里在登记之前就 continue 掉了，结果是 —— wlan0 在拿到 DHCP
+         * 租约之前整个不出现在界面上，而"网卡已起、正在等地址"恰恰是最该
+         * 显示的状态。现在保留条目、地址留空，界面渲染成 "wlan0 网络已启动" + "-"。 */
+
         entry = dm_net_find_if(ifa->ifa_name);
         if (entry == NULL)
           {
@@ -343,6 +346,16 @@ int dm_net_refresh(void)
           }
 
         dm_net_fill_flags(entry);
+
+        /* 同一接口会有多条 ifaddrs（AF_INET/AF_INET6/AF_PACKET…）。
+         * 这里只负责"登记"，地址由下面那条 AF_INET 记录填；
+         * 不要在这里清 entry->ip，否则会按遍历顺序把已填好的地址擦掉。 */
+
+        if (ifa->ifa_addr == NULL ||
+            ifa->ifa_addr->sa_family != AF_INET)
+          {
+            continue;
+          }
 
         sin = (struct sockaddr_in *)ifa->ifa_addr;
         (void)inet_ntop(AF_INET, &sin->sin_addr, entry->ip,

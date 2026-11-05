@@ -3682,6 +3682,7 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
     {
       sdmmc_ll_clear_interrupt(priv->hw, SDMMC_SDIO_INTR);
       priv->cardintr = false;
+      sdmmc_ll_enable_interrupt(priv->hw, SDMMC_SDIO_INTR, false);
       return true;
     }
 
@@ -3694,11 +3695,28 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
         {
           sdmmc_ll_clear_interrupt(priv->hw, SDMMC_SDIO_INTR);
           priv->cardintr = false;
+          sdmmc_ll_enable_interrupt(priv->hw, SDMMC_SDIO_INTR, false);
           return true;
         }
 
       if (clock_systime_ticks() - start > MSEC2TICK(timeout_ms))
         {
+          /* 2026-11-05 修复：超时也必须把 SDIO 中断源屏蔽回去。
+           *
+           * 入口处武装这个源是必须的 —— CIU 只有在源使能时才锁存 SDIO 状态位
+           * （BS.2 实测）。但原来两条返回路径都没有关闭它，于是**第一次超时之后
+           * 这个源就永久武装着**；紧接着的 CMD53 恰好落在"卡中断已在总线上被拉低
+           * + 源已武装"这个组合里，正是本文件记录的 "CMD53 永不完成" 的触发条件
+           * （BW.22）。现场表现完全吻合：开机先是好的（传输几乎逐条成功），
+           * 某刻起每个 RPC 都 3–5 s 超时、响应迟到被丢弃
+           * （`request: no response ... (3000 ms)` / `rx: no waiter ... dropping`），
+           * 同时 `no card interrupt within 2000 ms, polling the companion` 一直刷。
+           *
+           * 现在统一在返回前屏蔽。RAW 状态位不受中断屏蔽影响（RINTSTS 保持原始
+           * 锁存），所以一次迟到的断言仍会被下一次调用看到，不会丢事件。
+           */
+
+          sdmmc_ll_enable_interrupt(priv->hw, SDMMC_SDIO_INTR, false);
           return false;
         }
 
@@ -3706,6 +3724,7 @@ bool esp_sdmmc_wait_card_intr(struct sdio_dev_s *dev, unsigned int timeout_ms)
     }
 
   priv->cardintr = false;
+  sdmmc_ll_enable_interrupt(priv->hw, SDMMC_SDIO_INTR, false);
   return true;
 }
 

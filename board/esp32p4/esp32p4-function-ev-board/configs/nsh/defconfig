@@ -515,3 +515,20 @@ CONFIG_DRIVERS_WIRELESS=y
 CONFIG_NETDEV_WIRELESS_IOCTL=y
 CONFIG_NETDEV_WIRELESS_HANDLER=y
 CONFIG_LV_USE_QRCODE=y
+
+# ── wlan 命令行工具：wapi（scan / essid 连 / disconnect 断 / psk） ──
+CONFIG_WIRELESS_WAPI=y
+CONFIG_WIRELESS_WAPI_CMDTOOL=y
+
+# ── ping 命令（联网验证用）──
+CONFIG_NETUTILS_PING=y
+
+# ── ping 命令本体（apps/system/ping）──
+CONFIG_SYSTEM_PING=y
+
+CONFIG_NET_ICMP_SOCKET=y
+
+CONFIG_NET_ICMPv6_SOCKET=y
+
+# ── 路由表（默认路由/SIOCADDRT 需要）──
+CONFIG_NET_ROUTE=y

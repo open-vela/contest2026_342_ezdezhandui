@@ -55,12 +55,26 @@
  */
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE
-#  define EH_LOGV(...) syslog(LOG_INFO, __VA_ARGS__)
+#  define EH_LOGV(...) EH_V( __VA_ARGS__)
 #else
 #  define EH_LOGV(...) do { } while (0)
 #endif
 
 #define ENTRY_TAG "eh_hosted_nuttx"
+
+/* 2026-11-05：entry 的运行期 INFO 日志统一静音（保留 WARN/ERR）。
+ * 这些日志（扫描结果、AP 列表、模式设置）会周期性刷屏，污染 NSH 控制台。
+ * 排查时把 EH_VERBOSE 改成 1 重新编译即可恢复。
+ */
+#ifndef EH_VERBOSE
+#  define EH_VERBOSE 0
+#endif
+#if EH_VERBOSE
+#  define EH_V(...) EH_V( __VA_ARGS__)
+#else
+#  define EH_V(...) do { } while (0)
+#endif
+
 
 /* Defaults so this file works in a tree whose Kconfig predates the options
  * (same reasoning as esp_hosted_sdio.c's EN_GPIO fallbacks).
@@ -146,7 +160,7 @@ static void hosted_dhcp_event(FAR const void *ctrl_cmd, FAR void *ctx)
   bool    have_nm = hosted_parse_ip4(&e->dhcp_nm, nm);
   bool    have_gw = hosted_parse_ip4(&e->dhcp_gw, gw);
 
-  syslog(LOG_INFO,
+  EH_V(
          "%s: DhcpDnsStatus iface=%d link=%d dhcp=%d ip=%u.%u.%u.%u\n",
          ENTRY_TAG, (int)e->iface, (int)e->net_link_up, (int)e->dhcp_up,
          have_ip ? ip[0] : 0, have_ip ? ip[1] : 0,
@@ -163,7 +177,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 {
   int ret;
 
-  syslog(LOG_INFO, "%s: starting official esp-hosted host stack\n", ENTRY_TAG);
+  EH_V( "%s: starting official esp-hosted host stack\n", ENTRY_TAG);
 
   /* Who is holding DAT1 low?
    *
@@ -235,7 +249,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
     if (eh_host_sdio_get_config(&cfg) == EH_HOST_TRANSPORT_RC_OK && cfg != NULL)
       {
-        syslog(LOG_INFO,
+        EH_V(
                "%s: transport config: sdio tx_q=%u rx_q=%u width=%u clk=%u kHz\n",
                ENTRY_TAG, (unsigned)cfg->tx_queue_size,
                (unsigned)cfg->rx_queue_size, (unsigned)cfg->bus_width,
@@ -285,7 +299,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
         uint8_t rb[4] = { 0, 0, 0, 0 };
         int rr = eh_host_port_sdio_read_reg(NULL, 0x3ff55050u, rb, 4, true);
 
-        syslog(LOG_INFO,
+        EH_V(
                "%s: post-failure INT_RAW probe: ret=%d bytes=%02x %02x %02x %02x\n",
                ENTRY_TAG, rr, rb[0], rb[1], rb[2], rb[3]);
       }
@@ -293,7 +307,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
       return ret;
     }
 
-  syslog(LOG_INFO, "%s: companion connected, transport ready\n", ENTRY_TAG);
+  EH_V( "%s: companion connected, transport ready\n", ENTRY_TAG);
 
   /* wlan0 comes up once there is something to carry: the channel is registered
    * with the stack here, and the network stack finds the interface when it
@@ -345,10 +359,19 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
      * the slave application, so the host only sets the mode.
      */
 
-    syslog(LOG_INFO, "%s: leaving the companion's Wi-Fi initialized/started "
-           "(no RPC wifi_init)\n", ENTRY_TAG);
-    (void)init_cfg;
-    werr = ESP_OK;
+    /* 2026-11-05：恢复 Req_WifiInit。
+     *
+     * C6 现在跑的是 esp-hosted 的 examples/wifi/sta/cp（纯 RPC 协处理器）：
+     * 它的 app_main 只做 NVS + event loop，射频完全由主机驱动。所以主机必须
+     * 先发 Req_WifiInit，否则后续 set_mode 会被从机以
+     * `12289 = ESP_ERR_WIFI_NOT_INIT` 拒绝 —— 那正是最早的现象。
+     * port 侧 sdkconfig shim 的 static_rx_buf_num 已对齐 C6 的 20，因此这里会走
+     * __wrap 的 "First-time" 分支，不会触发 stop+deinit（0x3002 那条老路）。
+     */
+
+    werr = eh_host_wifi_init(&init_cfg);
+    syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
+           "%s: RPC wifi_init -> %d\n", ENTRY_TAG, werr);
 
     if (werr == ESP_OK)
       {
@@ -369,8 +392,19 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
      * firmware, this call belongs back here.
      */
 
-    syslog(LOG_INFO, "%s: skipping RPC wifi_start (the slave app already started "
-           "the radio)\n", ENTRY_TAG);
+    /* 2026-11-05：现在也发 Req_WifiStart。
+     *
+     * 纯 RPC 从机不会自己启动射频，start 必须由主机发。真机已实测
+     * `Req_WifiStart sent (best effort), resp=yes` —— 它会应答，
+     * 之前"永不应答"的结论只对某些固件形态成立。
+     */
+
+    {
+      esp_err_t sret = eh_host_wifi_start();
+
+      syslog(sret == ESP_OK ? LOG_INFO : LOG_WARNING,
+             "%s: RPC wifi_start -> %d\n", ENTRY_TAG, sret);
+    }
 
     /* One scan through the netdev's own ioctl path (goal stage 4).
      *
@@ -477,7 +511,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
                   (void)eh_host_feat_rpc_request_sync_best_effort(
                           RPC_ID__Req_WifiStart, wreq, &resp);
-                  syslog(LOG_INFO, "%s: Req_WifiStart sent (best effort), "
+                  EH_V( "%s: Req_WifiStart sent (best effort), "
                          "resp=%s\n", ENTRY_TAG, resp ? "yes" : "no");
 
                   if (resp != NULL)
@@ -528,7 +562,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
                       for (unsigned i = 0; dir == ESP_OK && i < n; i++)
                         {
-                          syslog(LOG_INFO,
+                          EH_V(
                                  "%s: AP[%u] ssid=\"%s\" rssi=%d ch=%u auth=%d%s\n",
                                  ENTRY_TAG, i, (FAR const char *)aps[i].ssid,
                                  (int)aps[i].rssi, (unsigned)aps[i].primary,
@@ -553,7 +587,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                               memcpy(ccfg.sta.ssid, aps[i].ssid,
                                      sizeof(ccfg.sta.ssid));
 
-                              crc = eh_host_wifi_set_config(WIFI_IF_STA, &ccfg);
+                              crc = ESP_ERR_INVALID_STATE; /* 2026-11-05: 不再自动改配置（会覆盖用户设置/连接） */
                               syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
                                      "%s: RPC wifi_set_config(\"%s\") -> %d\n",
                                      ENTRY_TAG, (FAR const char *)aps[i].ssid,
@@ -561,7 +595,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
                               if (crc == ESP_OK)
                                 {
-                                  crc = eh_host_wifi_connect();
+                                  crc = ESP_ERR_INVALID_STATE;
                                   syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
                                          "%s: RPC wifi_connect -> %d\n",
                                          ENTRY_TAG, crc);
@@ -638,11 +672,11 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
            * let the association poll below be the judge.
            */
 
-          crc = eh_host_wifi_set_config(WIFI_IF_STA, &ccfg);
-          syslog(LOG_INFO, "%s: RPC wifi_set_config(\"%s\") -> %d (advisory)\n",
+          crc = ESP_ERR_INVALID_STATE; /* 2026-11-05: 不再自动改配置（会覆盖用户设置/连接） */
+          EH_V( "%s: RPC wifi_set_config(\"%s\") -> %d (advisory)\n",
                  ENTRY_TAG, names[t], crc);
 
-          crc = eh_host_wifi_connect();
+          crc = ESP_ERR_INVALID_STATE;
           syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
                  "%s: RPC wifi_connect(\"%s\") -> %d\n",
                  ENTRY_TAG, names[t], crc);
@@ -673,7 +707,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
             {
               if (attempt > 0 && (attempt % 4) == 0)
                 {
-                  (void)eh_host_wifi_connect();
+                  (void)0; /* 2026-11-05: 不再自动连接 */
                 }
 
               for (int w = 0; w < 5; w++)
@@ -690,7 +724,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
               memset(&info, 0, sizeof(info));
               if (eh_host_wifi_sta_get_ap_info(&info) == ESP_OK)
                 {
-                  syslog(LOG_INFO,
+                  EH_V(
                          "%s: connected to \"%s\" ssid=\"%s\" rssi=%d ch=%u\n",
                          ENTRY_TAG, names[t], (FAR const char *)info.ssid,
                          (int)info.rssi, (unsigned)info.primary);
@@ -746,7 +780,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                     qrc = eh_host_feat_rpc_request_sync(
                               RPC_ID__Req_GetDhcpDnsStatus, qreq, &qresp);
 
-                    syslog(LOG_INFO,
+                    EH_V(
                            "%s: Req_GetDhcpDnsStatus(%d) -> %d resp=%s\n",
                            ENTRY_TAG, (int)RPC_ID__Req_GetDhcpDnsStatus, qrc,
                            qresp != NULL ? "yes" : "no");
@@ -764,7 +798,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                         bool    q_nm = hosted_parse_ip4(&d->dhcp_nm, qnm);
                         bool    q_gw = hosted_parse_ip4(&d->dhcp_gw, qgw);
 
-                        syslog(LOG_INFO,
+                        EH_V(
                                "%s: dhcp status iface=%d link=%d dhcp=%d "
                                "ip=%u.%u.%u.%u\n",
                                ENTRY_TAG, (int)d->iface, (int)d->net_link_up,
@@ -850,7 +884,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                   nxsig_sleep(1);
                 }
 
-              syslog(LOG_INFO, "%s: station MAC %s before DHCP\n", ENTRY_TAG,
+              EH_V( "%s: station MAC %s before DHCP\n", ENTRY_TAG,
                      esp_hosted_netdev_mac_learned() ? "learnt" : "NOT learnt");
 
               {
@@ -869,7 +903,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                     drc = dhcpc_request(hc, &ds);
                     if (drc == OK)
                       {
-                        syslog(LOG_INFO, "%s: DHCP over wlan0 -> %s\n",
+                        EH_V( "%s: DHCP over wlan0 -> %s\n",
                                ENTRY_TAG, inet_ntoa(ds.ipaddr));
                         (void)esp_hosted_netdev_apply_ip(
                                 (FAR const uint8_t *)&ds.ipaddr.s_addr,
@@ -886,13 +920,13 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                   }
               }
 
-              syslog(LOG_INFO, "%s: bouncing the link for a fresh network-up "
+              EH_V( "%s: bouncing the link for a fresh network-up "
                      "event\n", ENTRY_TAG);
 
               nxsig_sleep(8);
               (void)eh_host_wifi_disconnect();
               nxsig_sleep(2);
-              (void)eh_host_wifi_connect();
+              (void)0; /* 2026-11-05: 不再自动连接 */
 
               for (int w = 0; w < 25; w++)
                 {
@@ -900,7 +934,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                   memset(&info, 0, sizeof(info));
                   if (eh_host_wifi_sta_get_ap_info(&info) == ESP_OK)
                     {
-                      syslog(LOG_INFO, "%s: re-associated after the bounce "
+                      EH_V( "%s: re-associated after the bounce "
                              "(rssi=%d ch=%u)\n", ENTRY_TAG, (int)info.rssi,
                              (unsigned)info.primary);
                       break;
@@ -1011,7 +1045,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
             soerr = errno;
           }
 
-        syslog(LOG_INFO,
+        EH_V(
                "%s: TCP 192.168.1.1:80 over wlan0 -> %s (soerr=%d)\n",
                ENTRY_TAG,
                (rc == 0 && soerr == 0) ? "connected" :

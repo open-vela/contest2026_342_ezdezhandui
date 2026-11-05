@@ -42,6 +42,19 @@
 
 #define SDIO_TAG "eh_host_port_sdio"
 
+/* 2026-11-05：SDIO 周期日志静音（slave interrupt / no card interrupt / 卡初始化明细）。
+ * 这些日志每秒数条，会淹没 NSH 命令输出。EH_VERBOSE=1 可恢复。
+ */
+#ifndef EH_VERBOSE
+#  define EH_VERBOSE 0
+#endif
+#if EH_VERBOSE
+#  define EH_V(...) syslog(LOG_INFO, __VA_ARGS__)
+#else
+#  define EH_V(...) do { } while (0)
+#endif
+
+
 #include <nuttx/wdog.h>
 
 /* Transfer guard.
@@ -425,7 +438,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
       return ESP_FAIL;
     }
 
-  syslog(LOG_INFO, "%s: CCCR 0x02 IOEx before: %02x\n", TAG, value);
+  EH_V( "%s: CCCR 0x02 IOEx before: %02x\n", TAG, value);
 
   value |= FN1_ENABLE_MASK;
 
@@ -443,7 +456,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
       return ESP_FAIL;
     }
 
-  syslog(LOG_INFO, "%s: CCCR 0x02 IOEx after: %02x\n", TAG, value);
+  EH_V( "%s: CCCR 0x02 IOEx after: %02x\n", TAG, value);
 
   /* 2. Wait for function 1 to report ready (CCCR 0x03, BIT(1)). */
 
@@ -465,7 +478,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
       nxsig_usleep(SDIO_FN_READY_WAIT_MS * 1000);
     }
 
-  syslog(LOG_INFO, "%s: CCCR 0x03 IO_RDY=%02x after %d try/tries\n",
+  EH_V( "%s: CCCR 0x03 IO_RDY=%02x after %d try/tries\n",
          TAG, ready, i + 1);
 
   if ((ready & FN1_ENABLE_MASK) == 0)
@@ -489,7 +502,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
       return ESP_FAIL;
     }
 
-  syslog(LOG_INFO, "%s: CCCR 0x04 INT_ENABLE before: %02x\n", TAG, value);
+  EH_V( "%s: CCCR 0x04 INT_ENABLE before: %02x\n", TAG, value);
 
   value |= IENM_MASK | FN1_ENABLE_MASK;
 
@@ -505,7 +518,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
       return ESP_FAIL;
     }
 
-  syslog(LOG_INFO, "%s: CCCR 0x04 INT_ENABLE after: %02x (want %02x)\n",
+  EH_V( "%s: CCCR 0x04 INT_ENABLE after: %02x (want %02x)\n",
          TAG, ready, value);
 
   if ((ready & (IENM_MASK | FN1_ENABLE_MASK)) !=
@@ -590,7 +603,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
 
   if (show_config)
     {
-      syslog(LOG_INFO,
+      EH_V(
              "%s: card ready: slot %d, %d-bit, block %d, CLK io_%d CMD io_%d "
              "D0..D3 %d,%d,%d,%d\n",
              TAG, CONFIG_ESPRESSIF_SDMMC_SLOT, EH_HOST_PORT_SDIO_BUS_WIDTH,
@@ -1234,9 +1247,20 @@ int eh_host_port_sdio_write_block(void *ctx, uint32_t reg, uint8_t *data,
  * prompt (appendix BY.15).  The card interrupt is what actually wakes the
  * wait when a packet arrives, so a slow fallback costs nothing but a late
  * poll when the interrupt itself was missed.
+ *
+ * 2026-11-05 修正：上面那句"慢回退不花钱"只在卡中断**正常**时成立。实测本板
+ * 的卡中断并不来（`no card interrupt within N ms, polling the companion` 一直刷），
+ * 于是每一次等待都要**全额耗掉这个 slice** 才能退化为轮询。原来这里是 2000 ms，
+ * 而 RPC 超时是 3000/5000 ms —— 一个 RPC 交换里有两三步等待就必然超时，症状正是
+ * 现场看到的 `request: no response ... (3000 ms)` + `rx: no waiter ... dropping`，
+ * 以及 `wapi scan` / DeskMate 网络页失败。
+ *
+ * 上文设计注释本来就写着"this is the poll rate (10 Hz)"，100 ms 才对得上 10 Hz；
+ * 2000 ms 与它自相矛盾。控制台噪声已由 poll_falls 的限流
+ * （`<= 8 || % 64 == 0`）解决，不再需要靠拉长 slice 来压制。
  */
 
-#define EH_SDIO_INTR_POLL_MS 2000
+#define EH_SDIO_INTR_POLL_MS 100
 
 /****************************************************************************
  * Name: eh_host_port_sdio_wait_slave_intr
@@ -1344,7 +1368,7 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
 
           if (intr_hits <= 8 || (intr_hits % 64) == 0)
             {
-              syslog(LOG_INFO, "%s: slave interrupt (hit #%u)\n",
+              EH_V( "%s: slave interrupt (hit #%u)\n",
                      SDIO_TAG, (unsigned)intr_hits);
             }
 
@@ -1363,7 +1387,7 @@ int eh_host_port_sdio_wait_slave_intr(void *ctx, uint32_t ticks_to_wait)
 
       if (poll_falls <= 8 || (poll_falls % 64) == 0)
         {
-          syslog(LOG_INFO, "%s: no card interrupt within %u ms, polling the "
+          EH_V( "%s: no card interrupt within %u ms, polling the "
                  "companion (#%u)\n",
                  SDIO_TAG, (unsigned)slice, (unsigned)poll_falls);
         }

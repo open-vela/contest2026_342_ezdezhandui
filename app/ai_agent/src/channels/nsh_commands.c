@@ -582,9 +582,24 @@ static void cmd_ask(int argc, char** argv)
         return;
     }
 
-    /* Concatenate all arguments as the message */
+    /* Concatenate all arguments as the message.
+     *
+     * 2026-11-05: 这里曾在真机上把整机打挂。strncat() 在本镜像里解析到 P4 的
+     * ROM 实现（__call_strncat @0x4fc00310 -> 真身 0x4fc1b662），而 ROM 版在
+     * +0x12 处 `lbu a4,-1(a1)` 读【源】指针；argv[i] 为 NULL 时该读落到地址 0
+     * -> Load access fault (MCAUSE 5, MTVAL 0) -> PANIC -> 重启时经 GPIO54
+     * 复位 C6 -> WiFi 关联丢失、wlan0 掉回 0.0.0.0。
+     *
+     * 因此这里对 argv[i] 做显式判空并留证：一旦 argc 与实际 token 不一致，
+     * 日志会直接说出是第几个参数为空。 */
     char content[256] = { 0 };
     for (int i = 1; i < argc; i++) {
+        if (argv == NULL || argv[i] == NULL) {
+            syslog(LOG_ERR,
+                   "[%s] ask: argv[%d] is NULL (argc=%d, content=\"%s\") -- "
+                   "stopping the join\n", TAG, i, argc, content);
+            break;
+        }
         strncat(content, argv[i], sizeof(content) - strlen(content) - 1);
         if (i < argc - 1)
             strncat(content, " ", sizeof(content) - strlen(content) - 1);
@@ -953,6 +968,11 @@ static void* cli_thread(void* arg)
             continue;
         }
 
+        /* 先清零：tokenise() 只写 argv[0..argc-1]，不清数组尾部。上一行更长时，
+         * 尾部会残留旧指针；一旦 argc 与数组内容不一致，分发层就会把陈旧
+         * （或 NULL）指针当成参数用下去 —— 正是 2026-11-05 那次 panic 的形态。 */
+        memset(argv, 0, sizeof(argv));
+
         int argc = tokenise(line, argv, MAX_ARGS);
         if (argc == 0) {
             pthread_mutex_lock(&g_stdout_lock);
@@ -1024,8 +1044,15 @@ static void* cli_thread(void* arg)
             cmd_config_reset();
         else if (strcmp(cmd, "heartbeat_trigger") == 0)
             cmd_heartbeat_trigger();
-        else if (strcmp(cmd, "ask") == 0)
+        else if (strcmp(cmd, "ask") == 0) {
+            /* 取证用：2026-11-05 的 panic 只说"某个 argv[i] 是 NULL"，没说第几个、
+             * 也没说 argc 是多少。每个 token 打一行，下次复现自己会说话。 */
+            for (int i = 0; i < argc; i++)
+                syslog(LOG_INFO, "[%s] ask: argc=%d argv[%d]=%p \"%s\"\n",
+                       TAG, argc, i, (void*)argv[i],
+                       argv[i] ? argv[i] : "(null)");
             cmd_ask(argc, argv);
+        }
         else if (strcmp(cmd, "cron_start") == 0)
             cmd_cron_start();
 #ifdef CONFIG_AI_AGENT_NODE

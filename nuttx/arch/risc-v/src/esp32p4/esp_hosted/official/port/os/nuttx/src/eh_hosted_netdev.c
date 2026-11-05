@@ -49,8 +49,18 @@
 #include <nuttx/net/ip.h>
 #include <nuttx/net/ethernet.h>
 #include <nuttx/wireless/wireless.h>
+#include <nuttx/net/dns.h>
+#include <netutils/dhcpc.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <net/route.h>
+#include <net/if.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "eh_common_interface.h"
+#include "eh_host_sys.h"
 #include "eh_host_mcu_transport_channels.h"
 #ifdef CONFIG_ESPRESSIF_HOSTED_WIFI
 #  include "eh_host_wifi.h"
@@ -108,7 +118,25 @@ int g_dbg_ap_setmode_rc = DM_DBG_UNSET;    /* set_mode(WIFI_MODE_AP) 的返回 *
 int g_dbg_ap_setcfg_rc = DM_DBG_UNSET;     /* set_config(WIFI_IF_AP) 的返回 */
 int g_dbg_ap_restore_rc = DM_DBG_UNSET;    /* 实验后恢复 set_mode(STA) 的返回 */
 
+/* 2026-11-05：逐帧诊断日志默认关闭（每帧一行会刷爆控制台，把 ping/DHCP 结果冲出屏幕）。
+ * 排查时把 EH_NETDEV_TRACE 改成 1 重新编译即可恢复。 */
+#ifndef EH_NETDEV_TRACE
+#  define EH_NETDEV_TRACE 0
+#endif
+#if EH_NETDEV_TRACE
+#  define EH_TRACE(...) syslog(LOG_INFO, __VA_ARGS__)
+#else
+#  define EH_TRACE(...) do { } while (0)
+#endif
+
 static char g_sta_psk[65];     /* 暂存的 STA 密码：ENCODE 先到、ESSID 后到 */
+
+/* 2026-11-05：静态地址兜底只做一次（见 hosted_netdev_txpoll 里的推导） */
+static bool g_static_fixup_done;
+
+/* 由本文件下方定义、供 TX 路径兜底调用 */
+int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
+                               FAR const uint8_t *gw);
 
 /* Frames handed up must fit the netdev buffer; the companion advertises 1536
  * byte transfers, and an Ethernet frame is at most 1518, so one MTU-sized
@@ -124,6 +152,7 @@ static char g_sta_psk[65];     /* 暂存的 STA 密码：ENCODE 先到、ESSID �
 
 struct hosted_netdev_s
 {
+
   struct net_driver_s dev;      /* Must come first: the network stack casts */
   bool                bifup;    /* The interface has been taken up        */
   eh_host_channel_t  *channel;  /* Stack-side channel for ESP_STA_IF      */
@@ -172,7 +201,7 @@ static void hosted_netdev_txavail(FAR struct net_driver_s *dev)
     if (tx_trace < 20)
       {
         tx_trace++;
-        syslog(LOG_INFO,
+        EH_TRACE(
                "%s: txavail len=%u txfn=%s channel=%s bifup=%d\n",
                NETDEV_TAG, (unsigned)dev->d_len,
                priv->txfn ? "yes" : "no",
@@ -222,13 +251,152 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
   if (poll_trace < 20)
     {
       poll_trace++;
-      syslog(LOG_INFO, "%s: txpoll len=%u\n", NETDEV_TAG,
+      EH_TRACE("%s: txpoll len=%u\n", NETDEV_TAG,
              (unsigned)dev->d_len);
     }
 
   if (dev->d_len == 0 || priv->txfn == NULL || priv->channel == NULL)
     {
       return 1;
+    }
+
+  /* 2026-11-05 止血：源 MAC 全零的帧绝对不能发出去。
+   *
+   * 真机实测（TX 帧头日志）：
+   *   `TX 304 B type=0800 dst=ff:ff:ff:ff:ff:ff src=00:00:00:00:00:00`
+   * 全零源地址不是有效站点，AP 的网桥无从投递回包 —— 表现为 DHCP 收不到
+   * OFFER、ARP 无应答、ping 全丢。这里兜底成占位地址并显式报错，
+   * 避免再出现"静默发坏帧"这种最难查的故障形态。
+   */
+
+  if (dev->d_mac.ether.ether_addr_octet[0] == 0 &&
+      dev->d_mac.ether.ether_addr_octet[1] == 0 &&
+      dev->d_mac.ether.ether_addr_octet[2] == 0 &&
+      dev->d_mac.ether.ether_addr_octet[3] == 0 &&
+      dev->d_mac.ether.ether_addr_octet[4] == 0 &&
+      dev->d_mac.ether.ether_addr_octet[5] == 0)
+    {
+      dev->d_mac.ether.ether_addr_octet[0] = 0x02;
+      dev->d_mac.ether.ether_addr_octet[1] = 0x00;
+      dev->d_mac.ether.ether_addr_octet[2] = 0x00;
+      dev->d_mac.ether.ether_addr_octet[3] = 0x00;
+      dev->d_mac.ether.ether_addr_octet[4] = 0x00;
+      dev->d_mac.ether.ether_addr_octet[5] = 0x01;
+
+      syslog(LOG_ERR, "%s: FATAL: d_mac was all zero at TX; forced placeholder "
+             "02:00:00:00:00:01\n", NETDEV_TAG);
+    }
+
+  /* 2026-11-05：任何方式拿到地址后都必须有默认路由。
+   *
+   * DHCP 路径由 apply_ip() 装好了路由+DNS；但用 `wapi ip` / `wapi mask` 设
+   * **静态地址**时那条路不会跑 —— 于是同网段通（实测 ping 网关 9/10 回包、
+   * DNS 解析成功），出网段却 `sendto failed: 101`（ENETUNREACH）。
+   * 这里兜底：接口已有地址但没有网关时，按 x.x.x.1 推导出网关，
+   * 交给同一个 apply_ip() 统一处理（地址/掩码/网关/DNS/路由）。
+   */
+
+  /* 2026-11-05：发送前自愈 —— 若还没拿到真实 STA MAC，先试一次再发。
+   * 真机踩过：注册时取 MAC 太早会失败，之后若没有连接动作就永远保持全零，
+   * 于是 ARP/DHCP 全部被 AP 丢弃（`sendto failed: 101`）。
+   */
+
+  if (!g_hosted_netdev.mac_learned)
+    {
+      uint8_t hm[6];
+
+      if (eh_host_sys_get_mac(WIFI_IF_STA, hm) == ESP_OK)
+        {
+          memcpy(dev->d_mac.ether.ether_addr_octet, hm,
+                 sizeof(dev->d_mac.ether.ether_addr_octet));
+          g_hosted_netdev.mac_learned = true;
+
+          syslog(LOG_INFO, "%s: station MAC learnt before TX "
+                 "%02x:%02x:%02x:%02x:%02x:%02x\n", NETDEV_TAG,
+                 hm[0], hm[1], hm[2], hm[3], hm[4], hm[5]);
+        }
+    }
+
+  if (!g_static_fixup_done && dev->d_ipaddr != 0 && dev->d_netmask != 0 &&
+      dev->d_draddr == 0)
+    {
+      uint8_t  ipb[4];
+      uint8_t  nmb[4];
+      uint8_t  gwb[4];
+      uint32_t gw  = htonl((ntohl(dev->d_ipaddr) & ntohl(dev->d_netmask)) | 1u);
+
+      g_static_fixup_done = true;
+
+      /* 按**内存字节**取，不能用 >>24 位移：
+       * NuttX 的 d_ipaddr / d_netmask 是网络字节序，小端机上位移会把整个地址
+       * 反序（实测 192.168.1.200 被打成 200.1.168.192，网关 192.168.1.1 变成
+       * 0.1.168.193，于是立刻 ENETUNREACH）。apply_ip() 收的正是这种字节数组。
+       * `(ip & mask) | 1` 在网络字节序下恰好把最后一字节置 1 = x.x.x.1 ✓
+       */
+
+      memcpy(ipb, &dev->d_ipaddr, sizeof(ipb));
+      memcpy(nmb, &dev->d_netmask, sizeof(nmb));
+      memcpy(gwb, &gw, sizeof(gwb));
+
+      syslog(LOG_INFO, "%s: static-IP fallback: gateway %u.%u.%u.%u "
+             "(route + DNS installed)\n", NETDEV_TAG,
+             gwb[0], gwb[1], gwb[2], gwb[3]);
+
+      (void)esp_hosted_netdev_apply_ip(ipb, nmb, gwb);
+    }
+
+  if (dev->d_len >= 14)
+    {
+      FAR uint8_t *p = (FAR uint8_t *)dev->d_buf;
+
+      /* 2026-11-05：DHCP 报文取证（仅 DHCP 帧）。
+       *
+       * BOOTP 布局：xid[4..8] flags[10..12] ciaddr[12..16] yiaddr[16..20]
+       * chaddr[28..34]。若 chaddr 与以太源 MAC 不一致，DHCP 服务器通常直接忽略
+       * 该请求 —— 与"DISCOVER 已发出但无 OFFER"的现象完全吻合。
+       */
+
+      if (p[12] == 0x08 && p[13] == 0x00 && dev->d_len > 14 + 20 + 8 + 34)
+        {
+          FAR uint8_t *ip4 = p + 14;
+          uint8_t      ihl = (uint8_t)((ip4[0] & 0x0f) * 4);
+
+          if (ip4[9] == 17 && (uint32_t)dev->d_len > 14u + ihl + 8u + 34u)
+            {
+              FAR uint8_t *udp = ip4 + ihl;
+
+              if (udp[2] == 0x00 && udp[3] == 0x43)          /* dport 67 = DHCP server */
+                {
+                  FAR uint8_t *b = udp + 8;
+
+                  syslog(LOG_INFO,
+                         "%s: DHCP pkt: xid=%02x%02x%02x%02x flags=%02x%02x "
+                         "ciaddr=%u.%u.%u.%u yiaddr=%u.%u.%u.%u "
+                         "chaddr=%02x:%02x:%02x:%02x:%02x:%02x "
+                         "ethsrc=%02x:%02x:%02x:%02x:%02x:%02x\n",
+                         NETDEV_TAG,
+                         b[4], b[5], b[6], b[7], b[10], b[11],
+                         b[12], b[13], b[14], b[15],
+                         b[16], b[17], b[18], b[19],
+                         b[28], b[29], b[30], b[31], b[32], b[33],
+                         p[6], p[7], p[8], p[9], p[10], p[11]);
+                }
+            }
+        }
+
+      /* 取证：把 src/dst MAC 也打出来。
+       *
+       * 纯 RPC 模式下，主机帧的源 MAC 就是空口上的发送地址 —— 若它与从机的
+       * STA MAC 不一致，AP 会丢弃全部帧（症状正是"发得出去、收不回来"）。
+       */
+
+      EH_TRACE(
+             "%s: TX %u B type=%04x dst=%02x:%02x:%02x:%02x:%02x:%02x "
+             "src=%02x:%02x:%02x:%02x:%02x:%02x\n", NETDEV_TAG,
+             (unsigned)dev->d_len,
+             (((unsigned)p[12] << 8) | (unsigned)p[13]),
+             p[0], p[1], p[2], p[3], p[4], p[5],
+             p[6], p[7], p[8], p[9], p[10], p[11]);
     }
 
   if (priv->txfn(priv->channel->api_chan, dev->d_buf, dev->d_len) != ESP_OK)
@@ -296,6 +464,18 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
       len >= NET_LL_HDRLEN(&priv->dev))
     {
       FAR struct eth_hdr_s *eth;
+
+      /* 取证：RX 侧到底有没有帧进来。
+       * MAC 是从收到的第一帧里学来的，学不到就说明 RX 没通 ——
+       * 而 AP 会丢弃"未知站点"发来的所有帧，表现为 ARP 请求有去无回。
+       */
+
+      {
+        FAR uint8_t *rp = (FAR uint8_t *)buf;
+
+        EH_TRACE("%s: RX %u B type=%04x\n", NETDEV_TAG, (unsigned)len,
+               (((unsigned)rp[12] << 8) | (unsigned)rp[13]));
+      }
 
       /* Flush a pending transmit first: d_buf/d_len are shared between the two
        * directions in this netdev model.
@@ -399,7 +579,7 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
                 }
 
               line[n * 3] = '\0';
-              syslog(LOG_INFO, "%s: non-IP frame len=%u type=%04x:%s\n",
+              EH_TRACE("%s: non-IP frame len=%u type=%04x:%s\n",
                      NETDEV_TAG, (unsigned)len, (unsigned)eth->type, line);
             }
 
@@ -616,7 +796,23 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
                 ev.u.essid.pointer = (FAR void *)(uintptr_t)(used + elen);
                 ev.u.essid.length  = alen;
                 ev.u.essid.flags   = 1;
-                ev.len = (uint16_t)elen;
+
+                /* len 必须**含**内联的名字字节。
+                 *
+                 * 无线 API 的事件流是一个按 iw_event.len 串起来的链
+                 * （wapi 在 wireless.c:316 就是 `stream->current +=
+                 * iwe_stream->len;`）。ESSID 事件的约定是把名字直接跟在事件
+                 * 结构后面、并让 len 覆盖全部（Linux wext 也是
+                 * `iwe.len = IW_EV_LEN(essid) + len`）。
+                 *
+                 * 原来这里写的是 `ev.len = elen`（只含头），名字却在后面多占
+                 * alen 字节 —— 解析器下一次前进就落进名字里，整条流从此错位，
+                 * 于是 `wapi scan` 明明拿到 593 字节事件流、却解析出 0 个 AP、
+                 * 什么都不打印。取证日志：`SIOCGIWSCAN room=4096 used=593
+                 * aps=9 -> OK` 之后 wapi 静默返回。
+                 */
+
+                ev.len = (uint16_t)(elen + alen);
 
                 if (used + elen + alen > room)
                   {
@@ -667,6 +863,52 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
             }
 
           iwr->u.data.length = used;
+
+          /* 取证：wapi 的取结果路径此前是"静默失败"的（WAPI_ERROR 被编成空），
+           * 这里把 room / used / 缓存条数 / 返回码打出来，一眼能看出是
+           * "没人来取"、"缓冲区太小" 还是 "缓存本来就空"。
+           */
+
+          syslog(LOG_INFO, "%s: SIOCGIWSCAN room=%u used=%u aps=%d -> %s\n",
+                 NETDEV_TAG, (unsigned)room, (unsigned)used, (int)g_scan_count,
+                 (i < g_scan_count) ? "E2BIG" : "OK");
+
+          /* 装不下时必须回 -E2BIG，不能回 OK。
+           *
+           * 无线 API 的约定是：SIOCGIWSCAN 的结果放不下就返回 E2BIG，调用方据此
+           * 知道"结果已就绪、只是缓冲区太小"，然后换大缓冲区重取。
+           *
+           * wapi 就是这么用的 —— 它的 wapi_scan_stat() 先拿一个 1 字节缓冲
+           * （u.data.length = 0）试一次，期望拿到 E2BIG。原来这里无论装没装下都
+           * 只 break 然后 return OK（length = 0），wapi 便判定"扫描完成、零个 AP"，
+           * 于是 `wapi scan` 明明驱动里缓存了 15 个 AP，却什么都不打印。
+           *
+           * 判据：循环因装不下而 break 时 i < g_scan_count；正常跑完则相等。
+           */
+
+          if (i < g_scan_count)
+            {
+              return -E2BIG;
+            }
+
+          return OK;
+        }
+
+      /* 2026-11-05：必须接受 SIOCSIWAUTH / SIOCGIWAUTH。
+       *
+       * wapi 的 `wapi psk` 在设口令之前会先发 IW_AUTH_WPA_VERSION 和
+       * IW_AUTH_CIPHER_PAIRWISE（都是 SIOCSIWAUTH）。原来这里没有这一条 ->
+       * 返回 -ENOTTY -> wapi 判定认证参数设置失败，**直接跳过**后续的
+       * SIOCSIWENCODEEXT -> 口令永远进不了驱动。
+       * 真机现象完全吻合：`joining ... psk_len=0`，且日志里连 `encode cmd=` 都不出现
+       * （而 DeskMate 不走这步，所以它的 encode 成功）。
+       */
+
+      case SIOCSIWAUTH:
+      case SIOCGIWAUTH:
+        {
+          syslog(LOG_INFO, "%s: auth param accepted (cmd=0x%04x)\n",
+                 NETDEV_TAG, (unsigned)cmd);
           return OK;
         }
 
@@ -682,6 +924,15 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
           FAR const uint8_t *key = (FAR const uint8_t *)iwr->u.encoding.pointer;
           size_t             klen = iwr->u.encoding.length;
 
+          /* 取证：`wapi psk` 走的是 SIOCSIWENCODEEXT，而真机上 ESSID 那侧看到的
+           * 一直是 psk_len=0。这一行能区分两种可能：
+           *   - ioctl 根本没到驱动（不会有这行日志）；
+           *   - 到了但 pointer/length 是空的（ptr=(nil) 或 len=0）。
+           */
+
+          syslog(LOG_INFO, "%s: encode cmd=0x%04x ptr=%p len=%u\n",
+                 NETDEV_TAG, (unsigned)cmd, (FAR void *)key, (unsigned)klen);
+
           if (cmd == SIOCSIWENCODEEXT && key != NULL &&
               klen >= sizeof(struct iw_encode_ext))
             {
@@ -694,8 +945,12 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
 
           if (key == NULL || klen == 0)
             {
-              g_sta_psk[0] = '\0';
-              g_dbg_wifi_psk_len = 0;
+              /* 2026-11-05：空 key 不再清掉已存的口令。
+               *
+               * wapi 的 `wapi psk` 会先/后再发一次不带 key 的 ENCODE（只设标志位），
+               * 原来这里把 g_sta_psk 清空 -> 紧接着 ESSID 用 psk_len=0 去连 WPA2 AP
+               * -> 认证必然失败。真机现象正是 `joining ... psk_len=0 authmode=2`。 */
+              return OK;
               g_dbg_wifi_enc_rc = OK;
               return OK;
             }
@@ -793,6 +1048,20 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
                       sizeof(cfg.sta.password));
             }
 
+          /* 2026-11-05：显式声明加密门槛与 PMF。
+           *
+           * 从机日志实测：`connect FAILED after 6 tries — reason 210`
+           * （NO_AP_FOUND_W_COMPATIBLE_SECURITY）。主机侧确实下发了 ssid 与
+           * password（eh_host_wifi_set_config 的 STA 分支会序列化 password），
+           * 但这颗 cfg 是 memset 出来的，`threshold.authmode` 恒为 0（OPEN），
+           * 而扫描结果里目标 AP 是 auth=3（WPA2-PSK）。把门槛显式写成
+           * "WPA 及以上都接受"，并声明 PMF 可选，去掉这一层歧义。
+           */
+
+          cfg.sta.threshold.authmode = WIFI_AUTH_WPA_PSK;
+          cfg.sta.pmf_cfg.capable    = true;
+          cfg.sta.pmf_cfg.required   = false;
+
           ret = eh_host_wifi_set_config(WIFI_IF_STA, &cfg);
           g_dbg_wifi_setcfg_rc = (int)ret;
           if (ret != ESP_OK)
@@ -809,8 +1078,144 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
               return -EIO;
             }
 
-          syslog(LOG_INFO, "%s: joining \"%.*s\"\n", NETDEV_TAG,
-                 (int)iwr->u.essid.length, (FAR const char *)ssid);
+          syslog(LOG_INFO,
+                 "%s: joining \"%.*s\" psk_len=%u authmode=%d\n", NETDEV_TAG,
+                 (int)iwr->u.essid.length, (FAR const char *)ssid,
+                 (unsigned)strnlen(g_sta_psk, sizeof(g_sta_psk)),
+                 (int)cfg.sta.threshold.authmode);
+
+          /* 2026-11-05：注册时若没取到 STA MAC，这里再补一次。
+           *
+           * 走到这一步说明 RPC 一定可用（关联请求本身就是经 RPC 发出的）。
+           * 源 MAC 不对的话，AP 会丢弃我们所有的帧 —— 这正是"发得出去、
+           * 收不回来"的根因，所以必须在 DHCP/ARP 之前拿到真值。
+           */
+
+          if (!g_hosted_netdev.mac_learned)
+            {
+              uint8_t lm[6];
+
+              if (eh_host_sys_get_mac(WIFI_IF_STA, lm) == ESP_OK)
+                {
+                  memcpy(dev->d_mac.ether.ether_addr_octet, lm,
+                         sizeof(dev->d_mac.ether.ether_addr_octet));
+                  g_hosted_netdev.mac_learned = true;
+
+                  syslog(LOG_INFO,
+                         "%s: station MAC from companion (late) "
+                         "%02x:%02x:%02x:%02x:%02x:%02x\n", NETDEV_TAG,
+                         lm[0], lm[1], lm[2], lm[3], lm[4], lm[5]);
+                }
+            }
+
+          /* 2026-11-05：纯 RPC 从机不跑 DHCP —— 现在 IP 栈归主机。
+           *
+           * 换成 `examples/wifi/sta/cp` 固件后，从机只做射频收发，不再有
+           * `DhcpDnsStatus` 事件；而板上的 `netinit` 只在开机时跑一次 DHCP，
+           * 那时还没关联，必然失败（app 里那句 `DHCP on wlan0 failed` 同理）。
+           * 所以在这里、关联请求发出后，由主机自己拉一次地址。
+           *
+           * 关联需要几百毫秒（真机实测 500 ms），先等 2 s 再请求；
+           * 拿到的地址/掩码/网关交给已有的 apply_ip()，它顺手装 DNS 和默认路由。
+           */
+
+          {
+            struct dhcpc_state ds;
+            int                attempt;
+
+            /* 关联本身只要几百毫秒，但 DHCP 需要 AP 侧 4-way 完成后再来，
+             * 所以这里重试 3 次、每次间隔 2 s，并把 errno 打出来区分
+             * "open 失败 / 请求超时 / 收到 NAK"。
+             */
+
+            for (attempt = 1; attempt <= 3; attempt++)
+              {
+                FAR void *dhcpc;
+
+                /* 2026-11-05：等关联真正完成（轮询），而不是盲等 2 秒。
+                 *
+                 * DHCP 的 DISCOVER 只有在关联完成后才会被 AP 应答；固定延时既可能
+                 * 太短（关联还没完成 -> 无 OFFER），也可能白等。
+                 * get_ap_info 成功即视为已关联，同时留下确凿日志。
+                 */
+
+                {
+                  wifi_ap_record_t ap;
+                  int              w;
+
+                  for (w = 0; w < 40; w++)
+                    {
+                      memset(&ap, 0, sizeof(ap));
+                      if (eh_host_wifi_sta_get_ap_info(&ap) == ESP_OK)
+                        {
+                          syslog(LOG_INFO,
+                                 "%s: ASSOCIATED \"%.32s\" rssi=%d (%d00 ms)\n",
+                                 NETDEV_TAG, (const char *)ap.ssid,
+                                 (int)ap.rssi, w);
+                          break;
+                        }
+
+                      usleep(100000);
+                    }
+
+                  if (w >= 40)
+                    {
+                      syslog(LOG_WARNING,
+                             "%s: NOT associated after 4s; DHCP will likely fail\n",
+                             NETDEV_TAG);
+                    }
+                }
+
+                /* 2026-11-05：必须把真实 STA MAC 传给 dhcpc！
+               *
+               * dhcpc_open(ifname, macaddr, maclen) 的第二个参数是**原始 6 字节
+               * MAC**，它会被原样填进 BOOTP 的 chaddr。原来这里传 NULL/0 ->
+               * chaddr = 00:00:00:00:00:00 -> DHCP 服务器无法识别客户端 ->
+               * 永远收不到 OFFER（真机取证：`DHCP pkt: chaddr=00:00:...:00
+               * ethsrc=10:bd:a3:89:70:d0`）。
+               */
+
+              dhcpc = dhcpc_open("wlan0", dev->d_mac.ether.ether_addr_octet, 6);
+                if (dhcpc == NULL)
+                  {
+                    syslog(LOG_ERR, "%s: dhcpc_open failed (errno=%d)\n",
+                           NETDEV_TAG, errno);
+                    continue;
+                  }
+
+                if (dhcpc_request(dhcpc, &ds) == OK)
+                  {
+                    syslog(LOG_INFO,
+                           "%s: DHCP got %u.%u.%u.%u nm %u.%u.%u.%u gw %u.%u.%u.%u "
+                           "(attempt %d)\n", NETDEV_TAG,
+                           (unsigned)(ntohl(ds.ipaddr.s_addr) >> 24) & 0xff,
+                           (unsigned)(ntohl(ds.ipaddr.s_addr) >> 16) & 0xff,
+                           (unsigned)(ntohl(ds.ipaddr.s_addr) >> 8) & 0xff,
+                           (unsigned)ntohl(ds.ipaddr.s_addr) & 0xff,
+                           (unsigned)(ntohl(ds.netmask.s_addr) >> 24) & 0xff,
+                           (unsigned)(ntohl(ds.netmask.s_addr) >> 16) & 0xff,
+                           (unsigned)(ntohl(ds.netmask.s_addr) >> 8) & 0xff,
+                           (unsigned)ntohl(ds.netmask.s_addr) & 0xff,
+                           (unsigned)(ntohl(ds.default_router.s_addr) >> 24) & 0xff,
+                           (unsigned)(ntohl(ds.default_router.s_addr) >> 16) & 0xff,
+                           (unsigned)(ntohl(ds.default_router.s_addr) >> 8) & 0xff,
+                           (unsigned)ntohl(ds.default_router.s_addr) & 0xff,
+                           attempt);
+
+                    (void)esp_hosted_netdev_apply_ip(
+                           (FAR const uint8_t *)&ds.ipaddr.s_addr,
+                           (FAR const uint8_t *)&ds.netmask.s_addr,
+                           (FAR const uint8_t *)&ds.default_router.s_addr);
+
+                    dhcpc_close(dhcpc);
+                    break;
+                  }
+
+                syslog(LOG_ERR, "%s: DHCP attempt %d failed (errno=%d)\n",
+                       NETDEV_TAG, attempt, errno);
+                dhcpc_close(dhcpc);
+              }
+          }
           return OK;
         }
 
@@ -1001,7 +1406,19 @@ int esp_hosted_netdev_up(void)
 
   netdev_ifup(&priv->dev);
 
-  syslog(LOG_INFO, "%s: wlan0 up (IFF_UP set)\n", NETDEV_TAG);
+  /* 2026-11-05：接口一 up 就必须带 IFF_RUNNING。
+   *
+   * DHCP 客户端要在**还没有 IP** 的时候发广播（DISCOVER/REQUEST）。实测这时
+   * 如果只有 IFF_UP，协议栈的路由查找不认这个设备，DHCP 直接
+   * `DHCP attempt N failed (errno=113 = EHOSTUNREACH)`。
+   * （原来只在 apply_ip() 里设 IFF_RUNNING —— 那已经是拿到地址之后了，
+   *   对 DHCP 来说太晚；network-split 固件由从机做 DHCP，所以一直没暴露。）
+   */
+
+  priv->dev.d_flags |= IFF_UP | IFF_RUNNING;
+  priv->dev.d_flags &= ~IFF_NOARP;
+
+  syslog(LOG_INFO, "%s: wlan0 up (IFF_UP|IFF_RUNNING, ARP on)\n", NETDEV_TAG);
   return OK;
 }
 
@@ -1022,6 +1439,16 @@ int esp_hosted_netdev_up(void)
 int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
                                FAR const uint8_t *gw)
 {
+  /* 2026-11-05：全零地址 = "对端还没就绪"（从机在未关联时持续上报
+   * DhcpDnsStatus link=0/ip=0.0.0.0）。原来照单全收 -> 把用户刚设好的
+   * 静态地址/默认路由清零 -> ping 立刻 sendto failed: 101。这里直接忽略。
+   */
+
+  if (ip == NULL || (ip[0] | ip[1] | ip[2] | ip[3]) == 0)
+    {
+      return OK;
+    }
+
   FAR struct hosted_netdev_s *priv = &g_hosted_netdev;
 
   if (ip == NULL)
@@ -1038,7 +1465,82 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
       (((uint32_t)gw[0] << 24) | ((uint32_t)gw[1] << 16) |
        ((uint32_t)gw[2] << 8) | (uint32_t)gw[3]) : 0;
 
+  /* 2026-11-05：通过接口 ioctl 正式配置地址。
+   *
+   * 只写 net_driver_s 里的 d_ipaddr/d_netmask/d_draddr 时，协议栈"目的地址是否
+   * 可达"的判断拿不到这个接口 —— 真机实测连**同网段**的网关都
+   * `sendto failed: 101`（ENETUNREACH），说明问题不在缺默认路由，而在接口本身
+   * 没被 IPv4 层当作可用出口。这里改走标准路径 SIOCSIFADDR / SIOCSIFNETMASK。
+   */
+
+  {
+    int s = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (s >= 0)
+      {
+        struct ifreq ifr;
+
+        memset(&ifr, 0, sizeof(ifr));
+        strlcpy(ifr.ifr_name, "wlan0", IFNAMSIZ);
+
+        ((FAR struct sockaddr_in *)&ifr.ifr_addr)->sin_family = AF_INET;
+        ((FAR struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr =
+          priv->dev.d_ipaddr;
+        (void)ioctl(s, SIOCSIFADDR, (unsigned long)(uintptr_t)&ifr);
+
+        ((FAR struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr =
+          priv->dev.d_netmask;
+        (void)ioctl(s, SIOCSIFNETMASK, (unsigned long)(uintptr_t)&ifr);
+
+        close(s);
+      }
+  }
+
   netdev_ifup(&priv->dev);
+
+  /* 2026-11-05：接口 up 之后**再下发一次**地址/掩码。
+   *
+   * 真机实测：第一次 SIOCSIFADDR 发生在接口尚未完全 up 时，协议栈没有真正
+   * 接纳该地址 -> "DHCP 拿到 IP、默认路由也装了，但 sendto 一律 ENETUNREACH"；
+   * 随后用 `wapi ip`/`wapi mask` 再下一次同样的地址，立刻就能 ping 通
+   * （`56 bytes from 192.168.1.1 time=730 ms`）。把这次"二次下发"固化进来，
+   * DHCP 之后无需任何手工操作。
+   */
+
+  {
+    int s2 = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (s2 >= 0)
+      {
+        struct ifreq ifr2;
+
+        memset(&ifr2, 0, sizeof(ifr2));
+        strlcpy(ifr2.ifr_name, "wlan0", IFNAMSIZ);
+
+        ((FAR struct sockaddr_in *)&ifr2.ifr_addr)->sin_family = AF_INET;
+        ((FAR struct sockaddr_in *)&ifr2.ifr_addr)->sin_addr.s_addr =
+          priv->dev.d_ipaddr;
+        (void)ioctl(s2, SIOCSIFADDR, (unsigned long)(uintptr_t)&ifr2);
+
+        ((FAR struct sockaddr_in *)&ifr2.ifr_addr)->sin_addr.s_addr =
+          priv->dev.d_netmask;
+        (void)ioctl(s2, SIOCSIFNETMASK, (unsigned long)(uintptr_t)&ifr2);
+
+        close(s2);
+      }
+  }
+
+
+  /* 2026-11-05：C6 已改回纯 RPC 的 examples/wifi/sta/cp 固件 —— 这时 wlan0 是
+   * 一个**真正的以太网 over WiFi 接口**（主机的以太帧由从机直接发上空中），
+   * ARP 必须正常走，所以这里**不再**置 IFF_NOARP（那是 network-split 固件
+   * 专用的补丁：CP 自己跑 IP 栈、不桥接二层）。
+   */
+
+  priv->dev.d_flags |= IFF_UP | IFF_RUNNING;
+  priv->dev.d_flags &= ~IFF_NOARP;
+  syslog(LOG_INFO, "%s: wlan0 flags=%04x (UP|RUNNING, ARP on)\n", NETDEV_TAG,
+         (unsigned)priv->dev.d_flags);
 
   syslog(LOG_INFO,
          "%s: wlan0 address %u.%u.%u.%u mask %u.%u.%u.%u gw %u.%u.%u.%u "
@@ -1048,6 +1550,67 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
          (priv->dev.d_netmask >> 8) & 0xff, priv->dev.d_netmask & 0xff,
          priv->dev.d_draddr >> 24 & 0xff, (priv->dev.d_draddr >> 16) & 0xff,
          (priv->dev.d_draddr >> 8) & 0xff, priv->dev.d_draddr & 0xff);
+
+  /* 2026-11-05：把 DNS 指向对端 DHCP 给出的网关。
+   *
+   * 原来 DNS 是开机时按 CONFIG 写死的 192.168.1.1，而这块板接入的网段是
+   * 192.168.0.x —— 于是 `ping www.baidu.com` 一定卡在域名解析。
+   * 家用/办公 AP 绝大多数同时就是 DNS，用网关注册最稳。
+   */
+
+  if (gw != NULL && priv->dev.d_draddr != 0)
+    {
+      struct sockaddr_in dns;
+
+      memset(&dns, 0, sizeof(dns));
+      dns.sin_family      = AF_INET;
+      dns.sin_port        = htons(53);
+      dns.sin_addr.s_addr = priv->dev.d_draddr;
+
+      if (dns_add_nameserver((FAR const struct sockaddr *)&dns,
+                             sizeof(dns)) == OK)
+        {
+          syslog(LOG_INFO, "%s: DNS nameserver -> %u.%u.%u.%u\n",
+                 NETDEV_TAG, gw[0], gw[1], gw[2], gw[3]);
+        }
+    }
+
+  /* 2026-11-05：装默认路由。
+   *
+   * 只把 ip/netmask/gateway 写进 net_driver_s 是不够的 —— NuttX 的发包要查
+   * 路由表，没有 default route 时 `ping` 会直接 `sendto failed: 101`
+   * （ENETUNREACH），DNS 也解析不了。真机实测就是这个：
+   *   `PING 223.5.5.5 ... ERROR: sendto failed at seqno 0: 101`
+   *   `ping www.baidu.com` -> `ping_gethostip() failed`
+   * 这里用 DHCP 事件里的网关补一条 RTF_GATEWAY 的默认路由。
+   */
+
+  if (gw != NULL && priv->dev.d_draddr != 0)
+    {
+      int s = socket(AF_INET, SOCK_DGRAM, 0);
+
+      if (s >= 0)
+        {
+          struct rtentry rt;
+
+          memset(&rt, 0, sizeof(rt));
+          ((FAR struct sockaddr_in *)&rt.rt_dst)->sin_family     = AF_INET;
+          ((FAR struct sockaddr_in *)&rt.rt_genmask)->sin_family = AF_INET;
+          ((FAR struct sockaddr_in *)&rt.rt_gateway)->sin_family = AF_INET;
+          ((FAR struct sockaddr_in *)&rt.rt_gateway)->sin_addr.s_addr =
+            priv->dev.d_draddr;
+          rt.rt_dev   = (FAR char *)"wlan0";
+          rt.rt_flags = RTF_UP | RTF_GATEWAY;
+
+          if (ioctl(s, SIOCADDRT, (unsigned long)(uintptr_t)&rt) == 0)
+            {
+              syslog(LOG_INFO, "%s: default route via %u.%u.%u.%u\n",
+                     NETDEV_TAG, gw[0], gw[1], gw[2], gw[3]);
+            }
+
+          close(s);
+        }
+    }
 
   return OK;
 }
@@ -1083,12 +1646,66 @@ int esp_hosted_netdev_register(void)
    * MAC over the control channel (goal stage 4 wires that through).
    */
 
-  priv->dev.d_mac.ether.ether_addr_octet[0] = 0x02;
-  priv->dev.d_mac.ether.ether_addr_octet[1] = 0x00;
-  priv->dev.d_mac.ether.ether_addr_octet[2] = 0x00;
-  priv->dev.d_mac.ether.ether_addr_octet[3] = 0x00;
-  priv->dev.d_mac.ether.ether_addr_octet[4] = 0x00;
-  priv->dev.d_mac.ether.ether_addr_octet[5] = 0x01;
+  /* 2026-11-05：从从机取真实 STA MAC（彻底去掉占位/硬编码）。
+   *
+   * 空口上用的是**从机的 STA MAC**。主机若拿别的 MAC 当源地址发帧，AP 的网桥
+   * 无法把回包投递给一个"不属于该端口的站点"，表现就是我们已经反复看到的
+   * "帧发得出去（TX 304/310/42 B）、但没有任何回包（DHCP 无 OFFER、ARP 无应答）"。
+   *
+   * 原来这里是本地管理占位地址 02:00:00:00:00:01（并靠 RX 学习修正），后来
+   * 临时硬编码过 10:bd:a3:89:70:d0。现在改成走官方同源 RPC：
+   *   eh_host_sys_get_mac(WIFI_IF_STA, mac)  ->  RPC_ID__Req_GetMACAddress
+   * 这正是 ESP-IDF 主机侧的做法（netif 的 MAC 来自 esp_wifi_get_mac()）。
+   */
+
+  {
+    uint8_t m[6];
+    int     attempt;
+    bool    got = false;
+
+    /* 重试：本函数在 "transport ready" 之后立刻调用，此时 RPC-ext-v2 的特性
+     * 初始化可能还没走完 —— 实测第一次必失败（`eh_host_sys_get_mac failed`），
+     * 而紧接着的 `RPC wifi_init -> 0` 却成功，说明只差一点点时间。
+     */
+
+    for (attempt = 1; attempt <= 6 && !got; attempt++)
+      {
+        if (eh_host_sys_get_mac(WIFI_IF_STA, m) == ESP_OK)
+          {
+            memcpy(priv->dev.d_mac.ether.ether_addr_octet, m,
+                   sizeof(priv->dev.d_mac.ether.ether_addr_octet));
+            priv->mac_learned = true;
+            got = true;
+
+            syslog(LOG_INFO,
+                   "%s: station MAC from companion %02x:%02x:%02x:%02x:%02x:%02x"
+                   " (attempt %d)\n", NETDEV_TAG,
+                   m[0], m[1], m[2], m[3], m[4], m[5], attempt);
+          }
+        else
+          {
+            usleep(300000);
+          }
+      }
+
+    if (!got)
+      {
+        /* 失败也必须回填占位值：全零 MAC 的帧是无效站点，AP 必然丢弃。
+         * （真实 MAC 会在 TX 路径上持续重试获取，见 hosted_netdev_txpoll。） */
+
+        priv->dev.d_mac.ether.ether_addr_octet[0] = 0x02;
+        priv->dev.d_mac.ether.ether_addr_octet[1] = 0x00;
+        priv->dev.d_mac.ether.ether_addr_octet[2] = 0x00;
+        priv->dev.d_mac.ether.ether_addr_octet[3] = 0x00;
+        priv->dev.d_mac.ether.ether_addr_octet[4] = 0x00;
+        priv->dev.d_mac.ether.ether_addr_octet[5] = 0x01;
+
+        syslog(LOG_WARNING,
+               "%s: eh_host_sys_get_mac failed after 6 tries; placeholder "
+               "02:00:00:00:00:01 in use, will retry before TX\n",
+               NETDEV_TAG);
+      }
+  }
 
   /* Name it wlan0 (goal stage 4).
    *

@@ -127,7 +127,11 @@ static void sta_app_started(void);
 
 esp_err_t eh_host_wifi_start(void)
 {
-    esp_err_t rc = eh_rpc_do_empty_request(RPC_ID__Req_WifiStart);
+    /* 2026-11-05：WifiStart 用默认超时只有 300 ms，而从机真正把射频拉起来需要
+     * 更久（真机：`request: no response uid=… msg_id=280 (300 ms)` ->
+     * 之后所有 scan 返回 ESP_ERR_INVALID_STATE=259，关联/DHCP/ping 全链条失效）。
+     * 这里显式给 5 秒。 */
+    esp_err_t rc = eh_rpc_do_empty_request_timeout(RPC_ID__Req_WifiStart, 5000);
 
     if (rc == ESP_OK) {
         sta_app_started();

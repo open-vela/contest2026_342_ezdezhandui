@@ -531,7 +531,11 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
              */
 
             {
-              esp_err_t dir = eh_host_wifi_scan_start(NULL, true);
+              esp_err_t dir = ESP_ERR_INVALID_STATE;
+              /* 2026-11-05：停用 entry 的周期性扫描。
+               * 它会与用户的 `wapi scan` / 连接流程争抢同一个扫描 RPC
+               * （真机：entry 扫描成功 count=19，紧随其后的 wapi scan 3s 超时）。
+               * 需要时由用户显式执行 wapi scan。 */
 
               syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
                      "%s: direct eh_host_wifi_scan_start -> %d\n",

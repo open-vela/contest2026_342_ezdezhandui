@@ -51,6 +51,9 @@
 #include <nuttx/wireless/wireless.h>
 #include <nuttx/net/dns.h>
 #include <netutils/dhcpc.h>
+#include <nuttx/wqueue.h>
+#include <nuttx/sched.h>
+#include <nuttx/clock.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/route.h>
@@ -257,6 +260,9 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
 
   if (dev->d_len == 0 || priv->txfn == NULL || priv->channel == NULL)
     {
+      syslog(LOG_ERR, "[TX-CHK] skip: d_len=%u txfn=%p chan=%p\n",
+             (unsigned)dev->d_len, (FAR void *)priv->txfn,
+             (FAR void *)priv->channel);
       return 1;
     }
 
@@ -384,6 +390,30 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
             }
         }
 
+      /* 2026-11-05：ARP 帧取证（只打 0x0806）。
+       * 真机：DHCP(广播) 能通，ARP(广播) 2 秒无应答 -> arp_send 以 ENETUNREACH 终止。
+       * 这里把请求帧逐字段摊开：eth | arp{htype,ptype,hlen,plen,op,sha,spa,tha,tpa}
+       */
+
+      if (p[12] == 0x08 && p[13] == 0x06 && dev->d_len >= 42)
+        {
+          syslog(LOG_ERR,
+                 "[ARP-CHK] eth dst=%02x:%02x:%02x:%02x:%02x:%02x src=%02x:%02x:%02x:%02x:%02x:%02x | "
+                 "htype=%04x ptype=%04x hlen=%02x plen=%02x op=%04x | "
+                 "sha=%02x:%02x:%02x:%02x:%02x:%02x spa=%u.%u.%u.%u | "
+                 "tha=%02x:%02x:%02x:%02x:%02x:%02x tpa=%u.%u.%u.%u\n",
+                 p[0], p[1], p[2], p[3], p[4], p[5],
+                 p[6], p[7], p[8], p[9], p[10], p[11],
+                 (unsigned)((p[14] << 8) | p[15]),
+                 (unsigned)((p[16] << 8) | p[17]),
+                 p[18], p[19],
+                 (unsigned)((p[20] << 8) | p[21]),
+                 p[22], p[23], p[24], p[25], p[26], p[27],
+                 p[28], p[29], p[30], p[31],
+                 p[32], p[33], p[34], p[35], p[36], p[37],
+                 p[38], p[39], p[40], p[41]);
+        }
+
       /* 取证：把 src/dst MAC 也打出来。
        *
        * 纯 RPC 模式下，主机帧的源 MAC 就是空口上的发送地址 —— 若它与从机的
@@ -399,7 +429,17 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
              p[6], p[7], p[8], p[9], p[10], p[11]);
     }
 
-  if (priv->txfn(priv->channel->api_chan, dev->d_buf, dev->d_len) != ESP_OK)
+  {
+    esp_err_t trc = priv->txfn(priv->channel->api_chan, dev->d_buf, dev->d_len);
+
+    if (trc != ESP_OK)
+      {
+        syslog(LOG_ERR, "[TX-CHK] txfn FAILED rc=%d len=%u\n",
+               (int)trc, (unsigned)dev->d_len);
+      }
+  }
+
+  if (0)
     {
       NETDEV_TXERRORS(dev);
       dev->d_len = 0;
@@ -1436,6 +1476,65 @@ int esp_hosted_netdev_up(void)
  *
  ****************************************************************************/
 
+
+/* 2026-11-05：地址应用必须离开"无线 ioctl 的调用栈"。
+ *
+ * 真机证据：
+ *   - shell 里手工 `wapi ip`/`wapi mask`（不持 netdev 锁）  -> ping 立刻通
+ *   - apply_ip() 里的同样 ioctl（在 hosted_netdev_ioctl 内部、netdev_lock 已持有）
+ *     -> 字段正确、rc=0，但 sendto 一律 ENETUNREACH
+ * 原因是 SIOCSIFADDR 内部要发 RTM_NEWADDR 通知，而该通知在持锁状态下无法完成，
+ * 协议栈始终不知道这个地址。：
+ * 因此 apply_ip() 只登记待应用地址，真正的 ioctl 交给 lpwork 线程执行。
+ */
+
+static volatile bool g_apply_in_worker;
+static uint32_t      g_pend_ip;
+static uint32_t      g_pend_nm;
+static uint32_t      g_pend_gw;
+static struct work_s g_apply_work;
+
+static void hosted_apply_worker(FAR void *arg)
+{
+  uint8_t ip[4];
+  uint8_t nm[4];
+  uint8_t gw[4];
+
+  UNUSED(arg);
+
+  memcpy(ip, &g_pend_ip, 4);
+  memcpy(nm, &g_pend_nm, 4);
+  memcpy(gw, &g_pend_gw, 4);
+
+  g_apply_in_worker = true;
+  (void)esp_hosted_netdev_apply_ip(ip, nm, gw);
+  g_apply_in_worker = false;
+}
+
+/* 2026-11-05：地址下发改由**独立用户任务**执行。
+ *
+ * 真机对照证明：同一组 ioctl，由 shell 任务发出立刻生效；由驱动/lpwork 线程
+ * 发出则 sendto 一律 ENETUNREACH（此前已排除参数、短路、时序、锁、IFF_FLAGS）。
+ * 这里创建一个短命任务（与 NSH 命令同属用户任务上下文）执行同样的动作。
+ */
+
+static int hosted_apply_task(int argc, FAR char *argv[])
+{
+  uint8_t ip[4];
+  uint8_t nm[4];
+  uint8_t gw[4];
+
+  memcpy(ip, &g_pend_ip, 4);
+  memcpy(nm, &g_pend_nm, 4);
+  memcpy(gw, &g_pend_gw, 4);
+
+  g_apply_in_worker = true;
+  (void)esp_hosted_netdev_apply_ip(ip, nm, gw);
+  g_apply_in_worker = false;
+
+  return 0;
+}
+
 int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
                                FAR const uint8_t *gw)
 {
@@ -1443,6 +1542,23 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
    * DhcpDnsStatus link=0/ip=0.0.0.0）。原来照单全收 -> 把用户刚设好的
    * 静态地址/默认路由清零 -> ping 立刻 sendto failed: 101。这里直接忽略。
    */
+
+  /* 2026-11-05：如果当前在无线 ioctl 的调用栈里（持有 netdev 锁），
+   * 就只登记待应用地址并投递给 lpwork；真正的 ioctl 在 lpwork 线程执行，
+   * 那里不持锁，RTM_NEWADDR 通知才能完成。 */
+
+  if (!g_apply_in_worker)
+    {
+      memcpy((void *)&g_pend_ip, ip, 4);
+      memcpy((void *)&g_pend_nm, nm, 4);
+      memcpy((void *)&g_pend_gw, gw, 4);
+
+      syslog(LOG_INFO, "%s: deferring address application to lpwork\n",
+             NETDEV_TAG);
+
+      (void)task_create("wlan-apply", 100, 3072, hosted_apply_task, NULL);
+      return OK;
+    }
 
   if (ip == NULL || (ip[0] | ip[1] | ip[2] | ip[3]) == 0)
     {
@@ -1456,14 +1572,106 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
       return -EINVAL;
     }
 
-  priv->dev.d_ipaddr  = ((uint32_t)ip[0] << 24) | ((uint32_t)ip[1] << 16) |
-                        ((uint32_t)ip[2] << 8) | (uint32_t)ip[3];
-  priv->dev.d_netmask = (nm != NULL) ?
-      (((uint32_t)nm[0] << 24) | ((uint32_t)nm[1] << 16) |
-       ((uint32_t)nm[2] << 8) | (uint32_t)nm[3]) : 0xffffff00;
-  priv->dev.d_draddr  = (gw != NULL) ?
-      (((uint32_t)gw[0] << 24) | ((uint32_t)gw[1] << 16) |
-       ((uint32_t)gw[2] << 8) | (uint32_t)gw[3]) : 0;
+  /* 2026-11-05（最终根因）：三个地址字段必须是**网络字节序**。
+   *
+   * 原来用 (ip[0]<<24)|(ip[1]<<16)|… 组合成 0xc0a80109，但在小端机上内存里变成
+   * 09 a8 01 c0 —— ARP 请求里的 spa/tpa 因此全部反序。真机取证：
+   *   [ARP-CHK] sha=10:bd:a3:89:70:d0 spa=9.1.168.192 tpa=1.1.168.192
+   * 即"我要找 1.1.168.192"，该地址不存在，AP 不回 -> arp_send 以 ENETUNREACH
+   * 终止 -> ping 全部 sendto failed: 101。
+   * ip/nm/gw 三个数组本身就是网络序，直接 memcpy 即可。
+   */
+
+  if (ip != NULL)
+    {
+      memcpy(&priv->dev.d_ipaddr, ip, 4);
+    }
+  else
+    {
+      priv->dev.d_ipaddr = 0;
+    }
+
+  if (nm != NULL)
+    {
+      memcpy(&priv->dev.d_netmask, nm, 4);
+    }
+  else
+    {
+      priv->dev.d_netmask = 0xffffff00;
+    }
+
+  if (gw != NULL)
+    {
+      memcpy(&priv->dev.d_draddr, gw, 4);
+    }
+  else
+    {
+      priv->dev.d_draddr = 0;
+    }
+
+  /* 2026-11-05：地址必须**由 SIOCSIFADDR 真正下发**，否则协议栈收不到通知。
+   *
+   * NuttX 的 SIOCSIFADDR 在"新值与当前 d_ipaddr 相同"时直接 break —— 既不设置
+   * 也不发 RTM_NEWADDR 通知。原来本函数先把 d_ipaddr/d_netmask 直接写好再发
+   * ioctl -> ioctl 变成空操作 -> 协议栈从未得知该地址 -> DHCP 明明拿到 IP、
+   * 默认路由也装了，sendto 却一律 ENETUNREACH。
+   * 而手工在 shell 里 `wapi ip`/`wapi mask`（无短路、真正下发）之后 ping 立刻通，
+   * 与此完全吻合。这里先清零字段，再把真实值交给 ioctl。
+   */
+
+  {
+    struct in_addr ip_v;
+    struct in_addr nm_v;
+    int            ss = socket(AF_INET, SOCK_DGRAM, 0);
+
+    ip_v.s_addr = priv->dev.d_ipaddr;
+    nm_v.s_addr = priv->dev.d_netmask;
+
+    priv->dev.d_ipaddr  = 0;
+    priv->dev.d_netmask = 0;
+
+    if (ss >= 0)
+      {
+        struct ifreq ifr_v;
+
+        memset(&ifr_v, 0, sizeof(ifr_v));
+        strlcpy(ifr_v.ifr_name, "wlan0", IFNAMSIZ);
+
+        int r1;
+        int e1;
+        int r2;
+        int e2;
+
+        ((FAR struct sockaddr_in *)&ifr_v.ifr_addr)->sin_family = AF_INET;
+        ((FAR struct sockaddr_in *)&ifr_v.ifr_addr)->sin_addr   = ip_v;
+        r1 = ioctl(ss, SIOCSIFADDR, (unsigned long)(uintptr_t)&ifr_v);
+        e1 = errno;
+
+        ((FAR struct sockaddr_in *)&ifr_v.ifr_addr)->sin_addr   = nm_v;
+        r2 = ioctl(ss, SIOCSIFNETMASK, (unsigned long)(uintptr_t)&ifr_v);
+        e2 = errno;
+
+        /* 2026-11-05：显式走一次 SIOCSIFFLAGS(IFF_UP)。
+         *
+         * 真机对照：手工 `wapi ip`/`wapi mask` 之后 ping 立刻通；而 apply_ip()
+         * 里同样的地址 ioctl（rc=0、字段一致）之后 ping 一律 ENETUNREACH。
+         * 差别在于 netdev_ifup() 只是直接把 d_flags |= IFF_UP，并没有走
+         * SIOCSIFFLAGS 的完整"上设备"流程（含 ARP/轮询初始化）。
+         */
+
+        ifr_v.ifr_flags = IFF_UP | IFF_BROADCAST | IFF_RUNNING;
+        (void)ioctl(ss, SIOCSIFFLAGS, (unsigned long)(uintptr_t)&ifr_v);
+
+        syslog(LOG_INFO,
+               "%s: addr ioctl: SIOCSIFADDR rc=%d e=%d  SIOCSIFNETMASK rc=%d e=%d"
+               "  -> d_ipaddr=%08x d_netmask=%08x d_draddr=%08x d_flags=%04x\n",
+               NETDEV_TAG, r1, e1, r2, e2,
+               (unsigned)priv->dev.d_ipaddr, (unsigned)priv->dev.d_netmask,
+               (unsigned)priv->dev.d_draddr, (unsigned)priv->dev.d_flags);
+
+        close(ss);
+      }
+  }
 
   /* 2026-11-05：通过接口 ioctl 正式配置地址。
    *
@@ -1736,6 +1944,41 @@ int esp_hosted_netdev_register(void)
 
   syslog(LOG_INFO, "%s: %s registered (STA channel bound)\n",
          NETDEV_TAG, priv->dev.d_ifname);
+  /* 2026-11-05：延迟 1 秒再下发一次地址。
+   *
+   * 真机线索：手工执行 `wapi ip`/`wapi mask` 后，ping 的**第 1 个包仍然
+   * ENETUNREACH、第 2 个包就通**（~1 秒后）。说明协议栈接纳地址/路由存在约
+   * 1 秒的延迟，而 DHCP 之后紧接着 ping 必然全失败。
+   * 这里等 1 秒再下发一次 ioctl，等价于"手工再敲一遍 wapi ip"，让路由立即生效。
+   */
+
+  {
+    int s3;
+
+    usleep(1000000);
+
+    s3 = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s3 >= 0)
+      {
+        struct ifreq ifr3;
+
+        memset(&ifr3, 0, sizeof(ifr3));
+        strlcpy(ifr3.ifr_name, "wlan0", IFNAMSIZ);
+
+        ((FAR struct sockaddr_in *)&ifr3.ifr_addr)->sin_family = AF_INET;
+        ((FAR struct sockaddr_in *)&ifr3.ifr_addr)->sin_addr.s_addr =
+          priv->dev.d_ipaddr;
+        (void)ioctl(s3, SIOCSIFADDR, (unsigned long)(uintptr_t)&ifr3);
+
+        ((FAR struct sockaddr_in *)&ifr3.ifr_addr)->sin_addr.s_addr =
+          priv->dev.d_netmask;
+        (void)ioctl(s3, SIOCSIFNETMASK, (unsigned long)(uintptr_t)&ifr3);
+
+        close(s3);
+      }
+  }
+
+
   return OK;
 }
 

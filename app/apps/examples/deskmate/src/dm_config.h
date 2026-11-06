@@ -74,6 +74,16 @@
 #  define DM_INPUT_PATH  "/dev/input0"
 #endif
 
+/* Camera capture device (V4L2).  Declared here as well so the NSH usage text
+ * can quote the configured path without duplicating the fallback.
+ */
+
+#if defined(CONFIG_EXAMPLES_DESKMATE_CAMERA_DEVPATH)
+#  define DM_CAMERA_PATH CONFIG_EXAMPLES_DESKMATE_CAMERA_DEVPATH
+#elif !defined(DM_CAMERA_PATH)
+#  define DM_CAMERA_PATH "/dev/video0"
+#endif
+
 /* Optional hostfs mount (simulator snapshot exchange) */
 
 #ifdef CONFIG_EXAMPLES_DESKMATE_HOSTFS_PATH
@@ -148,6 +158,41 @@
  */
 
 #define DM_CAMERA_PREVIEW_MS 66
+
+/* 采集线程的跳帧数：每 N 帧只做 1 次软件去马赛克 + 缩放。
+ *
+ * 依据（JTAG 累计计数器）：`g_dbg_conv_us_max` 峰值 220 ms/帧，
+ * `g_dbg_conv_us` 在相机页打开期间几乎线性增长 —— 也就是**每帧都在花整帧的
+ * 转换成本，而 UI 只有 66 ms（15 fps）才取一次**。中间那些帧转完就扔了。
+ *
+ * 跳帧不是"降低画质"，而是"不转换没人要的帧"：预览仍然每次取最新一帧，
+ * 只是不再为丢弃的帧付费。1 = 不跳帧。
+ */
+
+#ifndef DM_CAMERA_DECIMATE
+#  define DM_CAMERA_DECIMATE 2
+#endif
+
+/* 相机采集线程的调度优先级（数值越大优先级越高）。
+ *
+ * **实测结论：不要把它降到主循环之下。**
+ *
+ * 曾按"相机让路给 UI"的思路设为 90（低于主循环的 100），A/B 结果是**两边都
+ * 变差**（自检同一场景，4 秒窗口）：
+ *
+ *   prio 100（默认，与 UI 同权）：cam 4 fps，ui:responsive max_busy = 70 ms
+ *   prio  90（低于 UI）        ：cam 2 fps，ui:responsive max_busy = 219 ms
+ *
+ * 原因：压住采集线程并不会让它"温柔地"让路 —— 它只是在 poll()/mutex 上等更久，
+ * 一旦拿到 CPU 仍要一次性做完 1280x720 → 320x180 的整帧转换，于是尖峰更大、
+ * 出帧更稀。真正的解法是把单帧转换本身变便宜（跳帧/去内除法），不是调优先级。
+ *
+ * 保持默认（与 UI 同权）由 RR 时间片公平轮转。留这个宏是为了让上面的实验可复现。
+ */
+
+#ifndef DM_CAMERA_THREAD_PRIORITY
+#  define DM_CAMERA_THREAD_PRIORITY 100
+#endif
 #define DM_CAMERA_PREVIEW_H 180
 
 /* Simulator convenience: write a wifi_sim BSS table before the UI starts, so
@@ -158,6 +203,65 @@
 #  define DM_WIFI_BSS CONFIG_EXAMPLES_DESKMATE_WIFI_BSS
 #else
 #  define DM_WIFI_BSS ""
+#endif
+
+/* 默认启动（不带参数直接跑 deskmate）时要主动拉起来的三件事 -----------------
+ *
+ * 产品定位是"上电就是一个能用的中控屏"，所以三件事默认全开：
+ *
+ *   DM_CAMERA_AUTOSTART : 打开摄像头，相机页一进去就有画面
+ *   DM_AGENT_AUTOSPAWN  : 把内置 ai_agent 起成同进程任务并 ws 连上去，
+ *                         顶栏直接显示"已连服务"，对话直接走大模型
+ *   DM_WLAN_AUTOSTART   : 把无线口拉起来（ifup + 可选关联 + DHCP）
+ *
+ * 这三个默认**只作用于交互式启动**：--selftest / --tour / --wifi-probe /
+ * --ap-probe / --wifi-connect 这些取证与诊断路径要求可重复、可对比，不能被
+ * 后台线程和 1.5 秒的 agent 启动等待搅乱，所以它们仍按各自的显式参数走。
+ *
+ * 三项都能在命令行关掉：--no-camera / --no-agent-spawn / --no-wlan。
+ */
+
+#ifdef CONFIG_EXAMPLES_DESKMATE_CAMERA_AUTOSTART
+#  define DM_CAMERA_AUTOSTART 1
+#else
+#  define DM_CAMERA_AUTOSTART 0
+#endif
+
+#ifdef CONFIG_EXAMPLES_DESKMATE_AGENT_AUTOSPAWN
+#  define DM_AGENT_AUTOSPAWN 1
+#else
+#  define DM_AGENT_AUTOSPAWN 0
+#endif
+
+/* 没有 ai_agent 的镜像（sim / goldfish 配置）就算 Kconfig 开着也起不来，
+ * 直接把默认值归零，免得每次启动都刷一条"spawn 不支持"的告警噪声。
+ */
+
+#if !defined(CONFIG_EXAMPLES_AI_AGENT_VELA)
+#  undef  DM_AGENT_AUTOSPAWN
+#  define DM_AGENT_AUTOSPAWN 0
+#endif
+
+#ifdef CONFIG_EXAMPLES_DESKMATE_WLAN_AUTOSTART
+#  define DM_WLAN_AUTOSTART 1
+#else
+#  define DM_WLAN_AUTOSTART 0
+#endif
+
+/* 无线 STA 的默认凭据：SSID 留空表示"只把口拉起来并要 DHCP"，不主动关联
+ * （ESP-Hosted 的从机固件常常自己已经连上了，应用再重复关联只会打断它）。
+ */
+
+#ifdef CONFIG_EXAMPLES_DESKMATE_WLAN_SSID
+#  define DM_WLAN_SSID CONFIG_EXAMPLES_DESKMATE_WLAN_SSID
+#else
+#  define DM_WLAN_SSID ""
+#endif
+
+#ifdef CONFIG_EXAMPLES_DESKMATE_WLAN_PSK
+#  define DM_WLAN_PSK  CONFIG_EXAMPLES_DESKMATE_WLAN_PSK
+#else
+#  define DM_WLAN_PSK  ""
 #endif
 
 /* Snapshot directory used when no explicit path is given */

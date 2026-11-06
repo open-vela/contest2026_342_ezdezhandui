@@ -11,6 +11,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/clock.h>
 
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -53,6 +54,21 @@
 #define DM_AGENT_CHAT_ID   "deskmate-ui"
 #define DM_AGENT_QDEPTH    8
 #define DM_AGENT_MSGLEN    512
+
+/* 单调毫秒。
+ *
+ * **绝不要写 clock() / (CLOCKS_PER_SEC / 1000)**：NuttX 的 CLOCKS_PER_SEC 是
+ * 1000000/CONFIG_USEC_PER_TICK，本板 CONFIG_USEC_PER_TICK=10000 ⇒ 100，
+ * 于是 100/1000 在整型里是 **0**；clock()/0 是常量除零（UB），GCC 直接把那段
+ * 编译成 `ebreak`。真机实测：ws 模式未连上时应用一起来就
+ * `riscv_exception: Breakpoint ... EPC 0x4007b75c`（UI 线程）与 `0x4007b436`
+ * （ws worker 线程）两处，正好对应本文件里两个调用点。
+ */
+
+static uint32_t dm_agent_now_ms(void)
+{
+  return (uint32_t)TICK2MSEC(clock_systime_ticks());
+}
 
 /****************************************************************************
  * Private Types
@@ -466,7 +482,14 @@ static int dm_agent_ws_read(char *out, size_t out_len)
 }
 
 static int dm_agent_ws_connect(void);
-static volatile int g_ws_last_try_ms;
+static volatile uint32_t g_ws_last_try_ms;
+
+/* 最近一次连接/发送失败的原因（0 = 没有失败）。用它把"离线"拆成可分辨的
+ * 几种：agent 没起、没有回环、握手被拒、发送失败 —— 否则用户看到的永远是
+ * 同一句"离线"，根本没法排查。
+ */
+
+static volatile int g_ws_last_err;
 
 static void *dm_agent_ws_worker(void *arg)
 {
@@ -478,7 +501,7 @@ static void *dm_agent_ws_worker(void *arg)
 
   if (!g_ws_ready)
     {
-      g_ws_last_try_ms = (int)(clock() / (CLOCKS_PER_SEC / 1000));
+      g_ws_last_try_ms = dm_agent_now_ms();
     }
 
   return NULL;
@@ -541,6 +564,7 @@ static int dm_agent_ws_connect(void)
         errno != EINPROGRESS)
       {
         DM_LOG("agent: connect(%s:%d) failed: %d", g_host, g_port, errno);
+        g_ws_last_err = errno;
         close(fd);
         return -errno;
       }
@@ -549,6 +573,12 @@ static int dm_agent_ws_connect(void)
         getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen) < 0 || err != 0)
       {
         DM_LOG("agent: connect(%s:%d) timed out or refused", g_host, g_port);
+
+        /* 连不上最常见的原因就是"没人监听 / 没有回环"，把它们记下来，
+         * 徽标上就能直接看到 ETIMEDOUT(110) / ECONNREFUSED(111)。
+         */
+
+        g_ws_last_err = (err != 0) ? err : ETIMEDOUT;
         close(fd);
         return -ETIMEDOUT;
       }
@@ -562,10 +592,12 @@ static int dm_agent_ws_connect(void)
     {
       close(g_fd);
       g_fd = -1;
+      g_ws_last_err = EPROTO;
       return -EPROTO;
     }
 
   g_ws_ready = true;
+  g_ws_last_err = 0;
   DM_LOG("agent: websocket connected to %s:%d", g_host, g_port);
 
   return 0;
@@ -610,6 +642,25 @@ int dm_agent_init(const char *mode)
   return 0;
 }
 
+void dm_agent_retry_now(void)
+{
+  /* 主动发起一次重连，不等下一次 dm_agent_poll()。
+   *
+   * 为什么需要它：重连逻辑挂在 dm_agent_poll() 里（每 5 s 节流一次），而
+   * `--say` / `--selftest` 这类探针在主线程里等 timeout，**期间没有 poll**，
+   * 于是"连不上"会一直保持到探针放弃 —— 看起来像 agent 起不来，实际是没人
+   * 去连。实测该路径空等满 20 s 后才在 send 里顺带连上。
+   */
+
+  if (g_mode != DM_AGENT_WS)
+    {
+      return;
+    }
+
+  g_ws_last_try_ms = dm_agent_now_ms();
+  dm_agent_ws_kick();
+}
+
 void dm_agent_set_endpoint(const char *host, int port)
 {
   if (host != NULL && host[0] != '\0')
@@ -635,7 +686,19 @@ const char *dm_agent_state(void)
       return "mock";
     }
 
-  return g_ws_ready ? "online" : "offline";
+  if (g_ws_ready)
+    {
+      return "online";
+    }
+
+  /* 把"离线"再拆一层：不带 errno 的 offline 对排查毫无用处。 */
+
+  return "offline";
+}
+
+int dm_agent_last_error(void)
+{
+  return g_ws_last_err;
 }
 
 int dm_agent_send(const char *text)
@@ -695,9 +758,9 @@ int dm_agent_poll(char *buf, size_t len)
 
   if (g_mode == DM_AGENT_WS && !g_ws_ready)
     {
-      int now = (int)(clock() / (CLOCKS_PER_SEC / 1000));
+      uint32_t now = dm_agent_now_ms();
 
-      if (now - g_ws_last_try_ms >= 5000)
+      if (g_ws_last_try_ms == 0 || now - g_ws_last_try_ms >= 5000u)
         {
           g_ws_last_try_ms = now;
           dm_agent_ws_kick();

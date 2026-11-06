@@ -144,12 +144,32 @@ static void tls_ctx_free(tls_ctx_t* ctx)
 #define CONN_POOL_SIZE 2
 #endif
 
+/* 空闲多久之后必须重新握手。
+ *
+ * 2026-11-06 真机取证（问题2）：第一次 LLM 调用成功后，连接留在池里；约 2 分钟
+ * 后再发第二条消息，日志只有
+ *     [vela_tls] Reusing pooled connection to amr-link.open-design.ai:443
+ * 之后整整 90 s 没有任何回包 —— 既不报错也不超时，用户看到的就是"一直不回"。
+ * 原因是中间隔着 Cloudflare：闲置的 TLS 连接被对端静默丢弃（没有 FIN/RST），
+ * 主机侧写进去的请求进了黑洞。
+ *
+ * 所以给复用加一个时间上限：超过 30 s 的连接一律当成已失效，重新握手。
+ * 握手的代价只有约 1.5~2 s，而挂死的代价是整条对话失败。
+ */
+
+#ifndef CONFIG_AI_AGENT_TLS_POOL_IDLE_SEC
+#  define TLS_POOL_IDLE_SEC 30
+#else
+#  define TLS_POOL_IDLE_SEC CONFIG_AI_AGENT_TLS_POOL_IDLE_SEC
+#endif
+
 typedef struct {
     tls_ctx_t ctx;
     char host[128];
     char port[8];
-    bool in_use; /* locked by a request */
-    bool valid; /* connection is alive */
+    bool in_use;   /* locked by a request */
+    bool valid;    /* connection is alive */
+    time_t idle_at; /* when it was returned to the pool */
 } conn_slot_t;
 
 static conn_slot_t s_pool[CONN_POOL_SIZE];
@@ -160,10 +180,26 @@ static conn_slot_t* pool_acquire(const char* host, const char* port)
 {
     pthread_mutex_lock(&s_pool_lock);
 
-    /* 1. Find an existing valid slot for this host:port */
+    /* 1. Find an existing valid slot for this host:port.
+     *
+     * 除了"有效"还必须"够新"：闲置超过 TLS_POOL_IDLE_SEC 的连接一律丢弃重连。
+     * 对端（Cloudflare）会静默回收闲置连接，写进去的请求不会得到任何响应，
+     * 也不会报错 —— 表现为"点了发送一直不回"。
+     */
+
     for (int i = 0; i < CONN_POOL_SIZE; i++) {
         conn_slot_t* s = &s_pool[i];
         if (s->valid && !s->in_use && strcmp(s->host, host) == 0 && strcmp(s->port, port) == 0) {
+            if (s->idle_at != 0 && time(NULL) - s->idle_at > TLS_POOL_IDLE_SEC) {
+                syslog(LOG_INFO,
+                    "[%s] Pooled connection idle %lds > %ds, reconnecting\n", TAG,
+                    (long)(time(NULL) - s->idle_at), (int)TLS_POOL_IDLE_SEC);
+                tls_ctx_free(&s->ctx);
+                s->valid = false;
+                s->host[0] = '\0';
+                s->idle_at = 0;
+                continue;
+            }
             s->in_use = true;
             pthread_mutex_unlock(&s_pool_lock);
             return s;
@@ -202,12 +238,40 @@ static void pool_release(conn_slot_t* s, const char* host, const char* port, boo
         strncpy(s->host, host, sizeof(s->host) - 1);
         strncpy(s->port, port, sizeof(s->port) - 1);
         s->valid = true;
+        s->idle_at = time(NULL);   /* 复用超时的计时起点 */
     } else {
         tls_ctx_free(&s->ctx);
         s->valid = false;
         s->host[0] = '\0';
+        s->idle_at = 0;
     }
     s->in_use = false;
+    pthread_mutex_unlock(&s_pool_lock);
+}
+
+/* 丢掉某个 host:port 在池里的所有空闲连接。
+ *
+ * 用于"连接层失败"之后：坏连接必须从池里清掉，否则下一次调用又会复用它，
+ * 同一个错误重复出现。不碰 in_use 的槽（那可能是别的线程正在用的）。
+ */
+
+void vela_tls_pool_drop(const char* host, const char* port)
+{
+    pthread_mutex_lock(&s_pool_lock);
+    for (int i = 0; i < CONN_POOL_SIZE; i++) {
+        conn_slot_t* s = &s_pool[i];
+
+        if (!s->valid || s->in_use) {
+            continue;
+        }
+
+        if (strcmp(s->host, host) == 0 && strcmp(s->port, port) == 0) {
+            tls_ctx_free(&s->ctx);
+            s->valid = false;
+            s->host[0] = '\0';
+            s->idle_at = 0;
+        }
+    }
     pthread_mutex_unlock(&s_pool_lock);
 }
 
@@ -229,9 +293,55 @@ void vela_tls_pool_cleanup(void)
     pthread_mutex_unlock(&s_pool_lock);
 }
 
+/* 系统时间对 TLS 是**前置条件**，不是可以事后补救的东西。
+ *
+ * 本板没有 RTC 电池，上电后 CLOCK_REALTIME 从 0 起算。mbedtls 在建上下文时
+ * 就按"当前时间"判断证书有效期，所以必须**在 mbedtls_ssl_init 之前**把时间
+ * 摆到证书有效期内。
+ *
+ * 原来这一步放在 ctr_drbg_seed 之后、紧挨着 TCP connect：看起来很合理（反正
+ * 比握手早），但实测第一次握手仍然失败（ssl_handshake ret=-0x004e，服务器
+ * 侧致命告警），要等整个 POST 失败、重建连接之后才成功。
+ * 真机代价：每条首问多 ~13 s（实测 llm_ms 27.7 s，其中一半是这一次白跑）。
+ *
+ * 现在提到函数最开头，并在 agent 启动时也调一次，让**第一次**握手就带着
+ * 正确的时间。
+ */
+
+#define VELA_TLS_EPOCH_FLOOR 1704067200   /* 2024-01-01 */
+#define VELA_TLS_EPOCH_FAKE  1772275200   /* 2026-02-28 */
+
+void vela_tls_ensure_clock(void)
+{
+    static volatile bool forced = false;
+    time_t now = time(NULL);
+
+    if (now >= VELA_TLS_EPOCH_FLOOR) {
+        return;
+    }
+
+    /* 只在"明显不合理"时才动系统时钟：并发线程可能同时在读它，但把它从
+     * 1970 拨到 2026 对谁都不会更糟。日志只在第一次打，避免刷屏。
+     */
+
+    struct timespec ts = { .tv_sec = VELA_TLS_EPOCH_FAKE, .tv_nsec = 0 };
+
+    if (clock_settime(CLOCK_REALTIME, &ts) == 0 && !forced) {
+        forced = true;
+        syslog(LOG_WARNING,
+            "[%s] CLOCK_REALTIME was %ld (pre-2024), forced to %ld so that TLS "
+            "certificate validation can succeed\n",
+            TAG, (long)now, (long)VELA_TLS_EPOCH_FAKE);
+    }
+}
+
 static int tls_ctx_connect(tls_ctx_t* ctx, const char* host, const char* port)
 {
     int ret;
+
+    /* 必须最先做（见上面的说明）：证书校验依赖系统时间。 */
+
+    vela_tls_ensure_clock();
 
     mbedtls_ssl_init(&ctx->ssl);
     mbedtls_ssl_config_init(&ctx->cfg);
@@ -248,15 +358,12 @@ static int tls_ctx_connect(tls_ctx_t* ctx, const char* host, const char* port)
         return VELA_TLS_ERR_HANDSHAKE;
     }
 
-    /* Check system time — crucial for TLS certificate validation. */
-    time_t now = time(NULL);
-    syslog(LOG_DEBUG, "[%s] Handshake start: Host=%s, UNIX=%ld\n", TAG, host, (long)now);
+    /* 时间已由 tls_ctx_connect() 开头统一保证，这里只记录实际值，
+     * 方便和服务器侧对齐排查。
+     */
 
-    if (now < 1704067200) { /* Jan 1 2024 */
-        syslog(LOG_WARNING, "[%s] Clock too old, forcing to 2026\n", TAG);
-        struct timespec ts = { .tv_sec = 1772275200, .tv_nsec = 0 };
-        clock_settime(CLOCK_REALTIME, &ts);
-    }
+    syslog(LOG_DEBUG, "[%s] Handshake start: Host=%s, UNIX=%ld\n", TAG, host,
+        (long)time(NULL));
 
     /* TCP connect — use HTTP CONNECT proxy if configured */
 #ifdef CONFIG_AI_AGENT_NET_RPMSG
@@ -449,9 +556,19 @@ static int tls_write_request(tls_ctx_t* ctx,
         if (ret > 0) {
             written += ret;
         } else if (ret == 0) {
+            syslog(LOG_ERR, "[%s] write headers: peer closed after %d/%d\n",
+                TAG, written, pos);
             free(hdr);
             return VELA_TLS_ERR_WRITE;
         } else if (ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            /* 原来的日志只有 "Write request failed: -3"，完全看不出是
+             * "连接已被对端丢弃"（-0x7880 PEER_CLOSE_NOTIFY / -0x4C RECV_FAILED）
+             * 还是 "本地缓冲区分配失败"。真机 2026-11-06 就是被这条无信息的日志
+             * 卡住的：请求已经写进一个死连接，对端不会有任何响应。
+             * 现在把 mbedtls 的错误码一起打出来。 */
+            syslog(LOG_ERR,
+                "[%s] write headers failed: -0x%04x after %d/%d\n",
+                TAG, -ret, written, pos);
             free(hdr);
             return VELA_TLS_ERR_WRITE;
         }
@@ -469,8 +586,13 @@ static int tls_write_request(tls_ctx_t* ctx,
             if (ret > 0) {
                 bw += (size_t)ret;
             } else if (ret == 0) {
+                syslog(LOG_ERR, "[%s] write body: peer closed after %zu/%zu\n",
+                    TAG, bw, body_len);
                 return VELA_TLS_ERR_WRITE;
             } else if (ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+                syslog(LOG_ERR,
+                    "[%s] write body failed: -0x%04x after %zu/%zu\n",
+                    TAG, -ret, bw, body_len);
                 return VELA_TLS_ERR_WRITE;
             }
         }
@@ -656,7 +778,7 @@ static int tls_read_response(tls_ctx_t* ctx, char* resp_buf, size_t resp_cap,
 
 /* ── Public API ──────────────────────────────────────────────── */
 
-int vela_https_request(
+static int vela_https_request_once(
     const char* host,
     const char* port,
     const char* method,
@@ -754,6 +876,53 @@ int vela_https_request(
     bool keep = false;
     ret = tls_read_response(&slot->ctx, resp_buf, resp_cap, out_body_len, &keep);
     pool_release(slot, host, port, ret > 0 && keep);
+    return ret;
+}
+
+/* 对外入口：**一次失败就重试一次**，且第二次强制走全新连接。
+ *
+ * 2026-11-06 真机取证（问题2 最后一块）。Cloudflare 会在没有任何 FIN/RST 的
+ * 情况下丢弃闲置的 TLS 连接，此时 mbedtls_ssl_write() 会拿到
+ *     ssl_handshake / write 失败 -0x004e (MBEDTLS_ERR_NET_SEND_FAILED)
+ * 或者 -0x7880 (PEER_CLOSE_NOTIFY)，表现为"发出去一条消息，agent 报
+ * `LLM call failed`，用户侧就是那句话永远没有回答"。
+ *
+ * 这类失败**本质是瞬时的**：换一条新连接立刻就能成功。所以这里兜住它 ——
+ * 用户不需要知道池化的细节，只需要"发出去就有回答"。
+ *
+ * 只对"连接层"失败重试（Vela TLS 的 -1/-3 与握手 -2）；HTTP 状态码、读失败、
+ * 缓冲区不够都不重试，避免把真正的问题掩盖成延迟。
+ */
+
+int vela_https_request(
+    const char* host,
+    const char* port,
+    const char* method,
+    const char* path,
+    const vela_header_t* headers,
+    const char* body,
+    size_t body_len,
+    char* resp_buf,
+    size_t resp_cap,
+    size_t* out_body_len)
+{
+    int ret = vela_https_request_once(host, port, method, path, headers, body,
+        body_len, resp_buf, resp_cap, out_body_len);
+
+    if (ret == VELA_TLS_ERR_WRITE || ret == VELA_TLS_ERR_CONNECT
+        || ret == VELA_TLS_ERR_HANDSHAKE) {
+        /* 连接层失败：丢掉可能的坏连接，换一条新的再来一次。 */
+
+        syslog(LOG_WARNING,
+            "[%s] %s %s:%s%s failed (%d) — retrying on a fresh connection\n",
+            TAG, method, host, port, path, ret);
+
+        vela_tls_pool_drop(host, port);
+
+        ret = vela_https_request_once(host, port, method, path, headers, body,
+            body_len, resp_buf, resp_cap, out_body_len);
+    }
+
     return ret;
 }
 

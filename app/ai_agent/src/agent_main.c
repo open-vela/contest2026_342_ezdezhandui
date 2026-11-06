@@ -150,7 +150,45 @@ static void* network_watch_task(void* arg)
     (void)arg;
     syslog(LOG_INFO, "[%s] Network watcher started\n", TAG);
 
+    /* **先把本地服务起起来，再去碰网络。**
+     *
+     * 原来第一行是 network_wifi_reconnect()，而那一步会同步等 WiFi 关联
+     * （本板没配 SSID 时它会一直重试）。结果是 ws_server 要等它回来才 listen，
+     * 同机上 deskmate 的 ws 客户端只能反复 "connect refused" 重试。
+     *
+     * 真机实测：deskmate 侧从启动到 agent=online 要 ~20 s，而这整段时间
+     * 端口 28789 根本没在监听 —— 看起来像"连不上 agent"，实际是"还没开始听"。
+     *
+     * ws_server 绑 INADDR_ANY、只服务本机回环与本网段，与 WAN 完全无关，
+     * 所以把它和 agent_loop_start() 提到最前面；WiFi 重连挪到后面异步做。
+     */
+
+    /* 无 RTC 的板子上电后 CLOCK_REALTIME 是 1970，TLS 证书校验必然失败。
+     * 在第一次联网之前就把时钟摆到证书有效期内，省掉一次"必然失败的握手 + 重连"。
+     */
+
+    vela_tls_ensure_clock();
+
+    if (agent_loop_start() != OK) {
+        syslog(LOG_WARNING, "[%s] agent_loop_start failed\n", TAG);
+    }
+    if (ws_server_start() != OK) {
+        syslog(LOG_WARNING, "[%s] ws_server_start failed\n", TAG);
+    }
+
     network_wifi_reconnect();
+
+    /* **本地 WebSocket 服务不依赖 WAN**。
+     *
+     * 原来 ws_server_start() 被 network_wait_connected(30000) 门控：本板拿不到
+     * IP 时（WiFi 未通）端口 28789 永远不会监听，于是同机上的 deskmate 无论怎么
+     * 重连都只能回退到"离线应答"。而 ws_server 绑定的是 INADDR_ANY，回调只走
+     * 本机回环/本网段，根本不需要外网。
+     *
+     * 所以：WS 服务与 agent 主循环**无条件**启动（LLM 调用失败只会让单条回复
+     * 变成错误提示，不会影响 UI 能不能连上 agent）；其余需要外网的通道仍按
+     * 原来的逻辑等网络。
+     */
 
     if (network_wait_connected(30000) == OK) {
         syslog(LOG_INFO, "[%s] Network connected: %s\n", TAG, network_get_ip());
@@ -166,10 +204,6 @@ static void* network_watch_task(void* arg)
         if (feishu_bot_start() != OK)
             syslog(LOG_WARNING, "[%s] feishu_bot_start failed\n", TAG);
 #endif
-        if (agent_loop_start() != OK)
-            syslog(LOG_WARNING, "[%s] agent_loop_start failed\n", TAG);
-        if (ws_server_start() != OK)
-            syslog(LOG_WARNING, "[%s] ws_server_start failed\n", TAG);
 #ifdef CONFIG_AI_AGENT_NODE
         if (node_client_start() != OK)
             syslog(LOG_WARNING, "[%s] node_client_start failed\n", TAG);
@@ -467,9 +501,6 @@ static inline long boot_ms(struct timespec* t0)
 
 int ai_agent_main(int argc, char* argv[])
 {
-    (void)argc;
-    (void)argv;
-
     printf("[AI_AGENT_MAIN] ENTER argc=%d\n", argc);
     g_shutdown_requested = false;
 
@@ -690,10 +721,26 @@ int ai_agent_main(int argc, char* argv[])
      * READYTORUN and never scheduled (observed: agent_cli stayed ready while
      * the four earlier threads all ran). Creating the CLI thread here, before
      * the network watcher, keeps it off the tail of that burst.
+     *
+     * `--no-cli` 关掉它：CLI 线程会无条件 read(STDIN_FILENO)，也就是把
+     * **NSH 的串口控制台抢走**。被别的程序（deskmate --agent-spawn）内嵌
+     * 启动时必须关掉，否则整个 nsh> 提示符就再也回不来了。
      */
     {
-        int rc = nsh_commands_start();
-        BOOT_LOG_RC(&t0, "P6", "nsh_commands_start", rc);
+        bool want_cli = true;
+
+        for (int i = 1; i < argc; i++) {
+            if (strcmp(argv[i], "--no-cli") == 0) {
+                want_cli = false;
+            }
+        }
+
+        if (want_cli) {
+            int rc = nsh_commands_start();
+            BOOT_LOG_RC(&t0, "P6", "nsh_commands_start", rc);
+        } else {
+            syslog(LOG_INFO, "[%s] CLI thread disabled by --no-cli\n", TAG);
+        }
     }
 
     /* Network watcher thread: reconnect + wait + start net services */

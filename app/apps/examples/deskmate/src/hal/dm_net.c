@@ -31,6 +31,13 @@
 #include <arpa/inet.h>
 
 #if defined(CONFIG_NET) && defined(CONFIG_NETDEV_WIRELESS_IOCTL)
+
+  /* ARPHRD_ETHER 定义在 <net/if_arp.h>（NuttX 里由 <netinet/arp.h> 间接带入）。
+   * wapi 自己也是这么拿的（apps/wireless/wapi/src/wireless.c:47），填
+   * struct iw_scan_req.bssid.sa_family 需要它。
+   */
+
+#  include <netinet/arp.h>
 #  include <nuttx/wireless/wireless.h>
 #  define DM_HAVE_WAPI 1
 #  define IW_EVENT_HEADER offsetof(struct iw_event, u)
@@ -578,7 +585,13 @@ static int dm_net_wifi_scan_once(struct dm_wifi_ap_s *aps, int max_aps)
 {
 #ifdef DM_HAVE_WAPI
   const char *ifname = dm_net_wifi_ifname();
-  static char scan_buf[2048];
+
+  /* 2048 不够：驱动侧上限是 HOSTED_MAX_AP=32 条，每条带 BSSID+SSID+qual+freq
+   * 约 76~80 B，最坏 ~2.4 KB，热点多的环境会直接 E2BIG(22)，
+   * 而 UI 只能显示一个没头没脑的"扫描失败 (22)"。
+   */
+
+  static char scan_buf[4096];
   struct iwreq iwr;
   struct iw_event *ev;
   struct dm_wifi_ap_s *cur = NULL;
@@ -601,13 +614,35 @@ static int dm_net_wifi_scan_once(struct dm_wifi_ap_s *aps, int max_aps)
 
   dm_net_wifi_ensure_infra(ifname);
 
-  /* Ask for a scan, then read what the driver collected.  The first call only
-   * kicks the state machine off; a driver that is already scanning answers
-   * with the results on the second call.
+  /* 触发扫描：**必须**带上 struct iw_scan_req，不能传一个全零的 iwreq。
+   *
+   * 2026-11-06 根因（问题1）。同一块板上 `wapi scan wlan0` 能扫到 8~10 个 AP，
+   * 而 DeskMate 的网络页永远"扫描失败" —— 差别就在这一个参数上：
+   *
+   *   apps/wireless/wapi/src/wireless.c:1200 wapi_escan_channel_init()
+   *     填 req.scan_type / req.bssid = ff:ff:ff:ff:ff:ff / num_channels,
+   *     然后 wrq.u.data.pointer = &req; wrq.u.data.length = sizeof(req);
+   *
+   * 而这里原来是 `memset(&iwr, 0, ...)` 之后直接发 SIOCSIWSCAN ——
+   * u.data.pointer 为 NULL、length 为 0。esp-hosted 的 netdev 虽然目前没读
+   * 这两个字段，但 NuttX 的 netdev 派发层和其它驱动都会按 wext 语义解引用，
+   * 而且"零长度请求"在语义上就是非法请求。现在按 wapi 的方式填满。
    */
 
-  memset(&iwr, 0, sizeof(iwr));
-  strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
+  {
+    static struct iw_scan_req req;
+
+    memset(&req, 0, sizeof(req));
+    req.scan_type       = IW_SCAN_TYPE_ACTIVE;
+    req.bssid.sa_family = ARPHRD_ETHER;
+    memset(req.bssid.sa_data, 0xff, IFHWADDRLEN);
+
+    memset(&iwr, 0, sizeof(iwr));
+    strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
+    iwr.u.data.pointer = (void *)&req;
+    iwr.u.data.length  = sizeof(req);
+    iwr.u.data.flags   = 0;
+  }
 
   if (ioctl(g_sock, SIOCSIWSCAN, (unsigned long)&iwr) < 0)
     {
@@ -778,25 +813,32 @@ static int dm_net_wifi_scan_once(struct dm_wifi_ap_s *aps, int max_aps)
       found++;
     }
 
-  /* Drop entries we could not name. */
+  /* 不能因为"叫不出名字"就把整条 AP 丢掉。
+   *
+   * 原先是 `if (aps[i].ssid[0] != '\0')` —— SSID 解析失败（隐藏 SSID、或
+   * iw_event 里 essid.pointer 的偏移解释和驱动不一致）就让这条记录整个消失，
+   * 而且 "found N" 是在丢弃之后才打的，日志上完全看不出来。真机实测过
+   * 驱动报 7 个、应用只显示 5 个。
+   *
+   * 现在：保留记录（BSSID 仍然可用），只是界面上显示成 <hidden>。
+   */
 
   {
-    int out = 0;
+    int hidden = 0;
 
     for (int i = 0; i < found && i < max_aps; i++)
       {
-        if (aps[i].ssid[0] != '\0')
+        if (aps[i].ssid[0] == '\0')
           {
-            if (out != i)
-              {
-                aps[out] = aps[i];
-              }
-
-            out++;
+            strlcpy(aps[i].ssid, "<hidden>", sizeof(aps[i].ssid));
+            hidden++;
           }
       }
 
-    found = out;
+    if (hidden > 0)
+      {
+        DM_LOG("wifi: %d AP(s) with no readable SSID kept as <hidden>", hidden);
+      }
   }
 
   DM_LOG("wifi: scan found %d AP(s) on %s", found, ifname);
@@ -856,12 +898,32 @@ int dm_net_wifi_connect(const char *ssid, const char *psk)
       strlcpy(iwr.ifr_name, ifname, IFNAMSIZ);
       iwr.u.encoding.pointer = &enc.ext;
       iwr.u.encoding.length  = sizeof(enc.ext) + enc.ext.key_len;
-      iwr.u.encoding.flags   = IW_ENCODE_INDEX;
+
+      /* flags 必须是 0，不能写 IW_ENCODE_INDEX。
+       *
+       * IW_ENCODE_INDEX 的值是 0x00FF，它编码的是"密钥索引"这个字段本身，
+       * 直接填进去等于声称"用第 255 号密钥"。wpa_supplicant 的
+       * wpa_driver_wext_set_key_ext() 在这里就是不填任何标志位。
+       * esp-hosted 的 netdev 恰好不读这个字段，所以以前没暴露问题，
+       * 但换成任何一小段"按 wext 语义校验"的驱动就会直接拒收。
+       */
+
+      iwr.u.encoding.flags   = 0;
 
       ret = ioctl(g_sock, SIOCSIWENCODEEXT, (unsigned long)&iwr);
       if (ret < 0)
         {
-          DM_WARN("wifi: setting the passphrase failed (%d)", errno);
+          /* 口令没送到驱动就**不要再往下走**。
+           *
+           * 原来这里只是 DM_WARN 然后继续发 SIOCSIWESSID —— 驱动会拿着上一次
+           * （可能是空的）口令去关联 WPA2 AP，必然失败；而界面只会等 15 秒后
+           * 报"未关联"，完全看不出真正的原因。wapi 的做法就是失败即中止。
+           */
+
+          int e = errno;
+
+          DM_ERR("wifi: setting the passphrase failed (%d)", e);
+          return -e;
         }
     }
 
@@ -898,13 +960,21 @@ int dm_net_wifi_connect(const char *ssid, const char *psk)
  * 同一现象在 docs/30_实现/连接_WiFi_SDIO.md 的 BY.19 里有完整记录（重试后扫到 25 个 AP）。
  */
 
-#define DM_SCAN_RETRY_MAX   6
-#define DM_SCAN_RETRY_WAIT  (6 * 1000 * 1000)   /* 6s，单位 us */
+/* 重试预算：原来是 6 次 × 6s = 最长 36~40s，期间界面只显示"扫描中…"，
+ * 既没有进度也没有取消 —— 用户合理判断就是"点了没反应"。
+ *
+ * 2026-11-06 收到 3 次 × 2s（最坏 ~6s）。从机空闲时第一次就成功，所以这个
+ * 改动只压缩了失败路径的时长，不降低成功率。
+ */
+
+#define DM_SCAN_RETRY_MAX   3
+#define DM_SCAN_RETRY_WAIT  (2 * 1000 * 1000)   /* 2s，单位 us */
 
 static int dm_net_wifi_scan_impl(struct dm_wifi_ap_s *aps, int max_aps)
 {
   int attempt;
   int found = 0;
+  int last_err = 0;
 
   for (attempt = 0; attempt < DM_SCAN_RETRY_MAX; attempt++)
     {
@@ -922,16 +992,39 @@ static int dm_net_wifi_scan_impl(struct dm_wifi_ap_s *aps, int max_aps)
 
       if (found < 0)
         {
-          return found;
+          last_err = found;
+
+          /* 2026-11-06：**错误也要重试**，不能一有错就放弃。
+           *
+           * 真机取证：CP 侧扫描是成功的（`scan done, 8 AP(s)`），失败发生在
+           * 之后的取记录 RPC（`msg_id=289` 超时 → 驱动回 -EIO）。而 CP 的
+           * 射频同一时刻可能正被它自己的关联流程占着，下一次请求就通了。
+           * 所以 -EIO/-ETIMEDOUT 属于"这次没赶上"，只有 -ENODEV / -EINVAL
+           * 才是"永远不可能成功"（没有网卡 / 参数错）。
+           */
+
+          if (found == -ENODEV || found == -EINVAL)
+            {
+              return found;
+            }
+
+          DM_LOG("wifi: scan attempt #%d failed (%d), retrying",
+                 attempt + 1, found);
+        }
+      else
+        {
+          /* 0 个 AP：多半是从机还在关联流程里，等一会儿再来。 */
+
+          DM_LOG("wifi: scan attempt #%d found 0 AP, retrying", attempt + 1);
         }
 
-      /* 0 个 AP：多半是从机还在关联流程里，等一会儿再来。 */
-
-      DM_LOG("wifi: scan attempt #%d found 0 AP, retrying", attempt + 1);
-      usleep(DM_SCAN_RETRY_WAIT);
+      if (attempt + 1 < DM_SCAN_RETRY_MAX)
+        {
+          usleep(DM_SCAN_RETRY_WAIT);
+        }
     }
 
-  return 0;
+  return found > 0 ? found : (last_err != 0 ? last_err : 0);
 }
 
 static void *dm_wifi_scan_worker(void *arg)
@@ -969,7 +1062,15 @@ int dm_net_wifi_scan_start(void)
   if (g_scan_state == DM_SCAN_RUNNING)
     {
       pthread_mutex_unlock(&g_scan_lock);
-      return 0;
+
+      /* 已经在扫：返回 -EALREADY 而不是 0。
+       *
+       * 以前返回 0，界面就当成"这次是我启动的"，于是把 AP 列表清空、重新
+       * 显示"扫描中…"，然后等一个永远属于**上一轮**的完成事件 —— 用户连点
+       * 两次看到的就只有列表闪一下就没了。
+       */
+
+      return -EALREADY;
     }
 
   g_scan_state = DM_SCAN_RUNNING;
@@ -979,7 +1080,19 @@ int dm_net_wifi_scan_start(void)
 
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-  pthread_attr_setstacksize(&attr, 8192);
+
+  /* 16 KiB，和 `wapi` 内置命令的栈一样大。
+   *
+   * 2026-11-06：原来给 8 KiB。扫描这条链是
+   *   ioctl -> psock_vioctl -> netdev_wifr_ioctl -> eh_hosted_netdev ->
+   *   eh_host_wifi_* -> esp-hosted RPC -> SDIO
+   * 而 wapi 走的是**完全相同**的一条链，NuttX 给它 16384（builtin_list.h）。
+   * 栈不够时线程会静默死掉，g_scan_state 永远停在 DM_SCAN_RUNNING，
+   * dm_net_wifi_scan_start() 从此一直返回 -EALREADY —— 界面就永久卡在
+   * "扫描中…"，看起来等于"扫描按钮坏了"。
+   */
+
+  pthread_attr_setstacksize(&attr, 16384);
 
   ret = pthread_create(&tid, &attr, dm_wifi_scan_worker, NULL);
   pthread_attr_destroy(&attr);
@@ -1392,15 +1505,70 @@ int dm_net_if_set_dhcp(const char *ifname)
 #endif
 }
 
+/* DHCP 状态**按接口**分别记账。
+ *
+ * 原来只有一个全局 g_dhcp_state / 一个 static s_name。以太网自启接进来之后，
+ * 有线口和无线口会先后各请求一次 DHCP，用单份状态就会出现：
+ * 第二个请求看到 state==1 直接返回 0（假装已发起），或者更糟 —— 无线口的
+ * 结果把有线口的成功覆盖掉，网络页显示"没地址"而实际是通的。
+ */
+
+#define DM_DHCP_SLOTS 4
+
 static volatile int g_dhcp_state;
 static int          g_dhcp_err;
+
+static struct
+{
+  char name[DM_NET_MAX_IFSZ];
+  volatile int state;      /* 0=idle 1=running 2=done -1=failed */
+  int err;
+} g_dhcp_slot[DM_DHCP_SLOTS];
+
+static int dm_dhcp_slot_of(const char *ifname, bool create)
+{
+  int i;
+  int free_slot = -1;
+
+  for (i = 0; i < DM_DHCP_SLOTS; i++)
+    {
+      if (g_dhcp_slot[i].name[0] != '\0' &&
+          strcmp(g_dhcp_slot[i].name, ifname) == 0)
+        {
+          return i;
+        }
+
+      if (free_slot < 0 && g_dhcp_slot[i].name[0] == '\0')
+        {
+          free_slot = i;
+        }
+    }
+
+  if (!create || free_slot < 0)
+    {
+      return -1;
+    }
+
+  strlcpy(g_dhcp_slot[free_slot].name, ifname,
+          sizeof(g_dhcp_slot[free_slot].name));
+  g_dhcp_slot[free_slot].state = 0;
+  g_dhcp_slot[free_slot].err   = 0;
+  return free_slot;
+}
 
 static void *dm_dhcp_worker(void *arg)
 {
   const char *ifname = (const char *)arg;
+  int slot = dm_dhcp_slot_of(ifname, true);
   int rc;
 
   rc = dm_net_if_set_dhcp(ifname);
+
+  if (slot >= 0)
+    {
+      g_dhcp_slot[slot].err   = rc;
+      g_dhcp_slot[slot].state = rc == 0 ? 2 : -1;
+    }
 
   g_dhcp_err   = rc;
   g_dhcp_state = rc == 0 ? 2 : -1;
@@ -1414,6 +1582,7 @@ int dm_net_if_set_dhcp_async(const char *ifname)
   static const char *s_name;
   pthread_t tid;
   pthread_attr_t attr;
+  int slot;
   int ret;
 
   if (ifname == NULL)
@@ -1421,7 +1590,13 @@ int dm_net_if_set_dhcp_async(const char *ifname)
       return -EINVAL;
     }
 
-  if (g_dhcp_state == 1)
+  slot = dm_dhcp_slot_of(ifname, true);
+  if (slot >= 0 && g_dhcp_slot[slot].state == 1)
+    {
+      return 0;
+    }
+
+  if (g_dhcp_state == 1 && slot < 0)
     {
       return 0;
     }
@@ -1441,6 +1616,13 @@ int dm_net_if_set_dhcp_async(const char *ifname)
     {
       g_dhcp_state = -1;
       g_dhcp_err   = ret;
+
+      if (slot >= 0)
+        {
+          g_dhcp_slot[slot].state = -1;
+          g_dhcp_slot[slot].err   = ret;
+        }
+
       return -ret;
     }
 
@@ -1455,6 +1637,34 @@ int dm_net_if_dhcp_status(int *err)
     }
 
   return g_dhcp_state;
+}
+
+int dm_net_if_dhcp_status_of(const char *ifname, int *err)
+{
+  int slot;
+
+  if (ifname == NULL)
+    {
+      return dm_net_if_dhcp_status(err);
+    }
+
+  slot = dm_dhcp_slot_of(ifname, false);
+  if (slot < 0)
+    {
+      if (err != NULL)
+        {
+          *err = 0;
+        }
+
+      return 0;
+    }
+
+  if (err != NULL)
+    {
+      *err = g_dhcp_slot[slot].err;
+    }
+
+  return g_dhcp_slot[slot].state;
 }
 
 bool dm_net_ap_supported(void)

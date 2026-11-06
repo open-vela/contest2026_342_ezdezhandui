@@ -1095,17 +1095,24 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
                       sizeof(cfg.sta.password));
             }
 
-          /* 2026-11-05：显式声明加密门槛与 PMF。
+          /* 加密门槛必须跟着"有没有密码"走。
            *
-           * 从机日志实测：`connect FAILED after 6 tries — reason 210`
-           * （NO_AP_FOUND_W_COMPATIBLE_SECURITY）。主机侧确实下发了 ssid 与
-           * password（eh_host_wifi_set_config 的 STA 分支会序列化 password），
-           * 但这颗 cfg 是 memset 出来的，`threshold.authmode` 恒为 0（OPEN），
-           * 而扫描结果里目标 AP 是 auth=3（WPA2-PSK）。把门槛显式写成
-           * "WPA 及以上都接受"，并声明 PMF 可选，去掉这一层歧义。
+           * 2026-11-06 真机取证（问题1 的最后一环）：对着一个**开放**热点
+           * （扫描结果 secure=0、authmode=OPEN）发起关联时，日志是
+           *     joining "Hello_World_2.4G" psk_len=0 authmode=2
+           *     NOT associated after 4s
+           * 门槛被硬编码成 WIFI_AUTH_WPA_PSK(2)，而 IDF 的 threshold.authmode
+           * 语义是"低于此强度的 AP 一律不连"。开放热点的 authmode 是 OPEN(0)，
+           * 永远低于 2 —— 所以没有密码的开放网络**在驱动层就注定连不上**，
+           * 应用侧怎么点都没用。这正是用户说的"wapi 能连、界面不能连"的另一半
+           * 原因（两者走的都是这条 SIOCSIWESSID，只是扫描结果不同）。
+           *
+           * 正确做法：有口令时才要求 WPA 及以上；没有口令就接受开放网络。
            */
 
-          cfg.sta.threshold.authmode = WIFI_AUTH_WPA_PSK;
+          cfg.sta.threshold.authmode = (g_sta_psk[0] != '\0')
+                                       ? WIFI_AUTH_WPA_PSK
+                                       : WIFI_AUTH_OPEN;
           cfg.sta.pmf_cfg.capable    = true;
           cfg.sta.pmf_cfg.required   = false;
 

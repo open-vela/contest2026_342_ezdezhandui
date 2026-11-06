@@ -38,6 +38,7 @@
 #include "eh_host_port_config.h"
 #include "eh_host_port_sdio.h"
 #include "eh_host_port_sync.h"
+#include "eh_hosted_log.h"
 #include "eh_host_port_sdio_reg.h"
 
 #define SDIO_TAG "eh_host_port_sdio"
@@ -45,14 +46,10 @@
 /* 2026-11-05：SDIO 周期日志静音（slave interrupt / no card interrupt / 卡初始化明细）。
  * 这些日志每秒数条，会淹没 NSH 命令输出。EH_VERBOSE=1 可恢复。
  */
-#ifndef EH_VERBOSE
-#  define EH_VERBOSE 0
-#endif
-#if EH_VERBOSE
-#  define EH_V(...) syslog(LOG_INFO, __VA_ARGS__)
-#else
-#  define EH_V(...) do { } while (0)
-#endif
+/* 2026-11-06：本地 EH_VERBOSE 数值开关并入 eh_hosted_log.h 的编译期分级。
+ * EH_V 是 bring-up 进度（EH_INFO），EH_SDIO_TRACE 才是逐事务细节（EH_TRACE）；
+ * 两者各自一个 Kconfig 开关，不需要再改源码里的 0/1。 */
+#define EH_V(...)      EH_INFO(__VA_ARGS__)
 
 
 #include <nuttx/wdog.h>
@@ -372,7 +369,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
 
     if (r2 == 0 && rev != 0 && rev != 0xff)
       {
-        syslog(LOG_INFO, "%s: card already enumerated (CCCR 0x00=%02x), "
+        EH_INFO( "%s: card already enumerated (CCCR 0x00=%02x), "
                "skipping the re-probe\n", TAG, rev);
       }
     else
@@ -400,7 +397,7 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
               {
                 if (tries > 0)
                   {
-                    syslog(LOG_INFO,
+                    EH_INFO(
                            "%s: SDIO probe succeeded on try %d\n",
                            TAG, tries + 1);
                   }
@@ -564,14 +561,14 @@ int eh_host_port_sdio_card_init(void *ctx, bool show_config)
     hi = 0;
     rb  = sdio_io_rw_direct(c->dev, false, 0, CCCR_FN0_BLKSIZE, 0, &lo);
     rb |= sdio_io_rw_direct(c->dev, false, 0, CCCR_FN0_BLKSIZE + 1, 0, &hi);
-    syslog(LOG_INFO, "%s: FN0 block size read back %u (ret %d)\n", TAG,
+    EH_INFO( "%s: FN0 block size read back %u (ret %d)\n", TAG,
            (unsigned)(lo | ((unsigned)hi << 8)), rb);
 
     lo = 0;
     hi = 0;
     rb  = sdio_io_rw_direct(c->dev, false, 0, CCCR_FN1_BLKSIZE, 0, &lo);
     rb |= sdio_io_rw_direct(c->dev, false, 0, CCCR_FN1_BLKSIZE + 1, 0, &hi);
-    syslog(LOG_INFO, "%s: FN1 block size read back %u (ret %d)\n", TAG,
+    EH_INFO( "%s: FN1 block size read back %u (ret %d)\n", TAG,
            (unsigned)(lo | ((unsigned)hi << 8)), rb);
 
     if (rb < 0)

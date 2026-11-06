@@ -45,6 +45,7 @@
 #include "gen_v2.h"
 #include "esp_wifi.h"
 
+#include "eh_hosted_log.h"
 #include "eh_hosted_nuttx.h"
 
 #ifdef CONFIG_ESPRESSIF_HOSTED_OFFICIAL
@@ -54,26 +55,20 @@
  * DHCP 结果 / 所有错误与警告 —— 这些用正常 LOG_INFO/LOG_ERR 打。
  */
 
-#ifdef CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE
-#  define EH_LOGV(...) EH_V( __VA_ARGS__)
-#else
-#  define EH_LOGV(...) do { } while (0)
-#endif
-
 #define ENTRY_TAG "eh_hosted_nuttx"
 
 /* 2026-11-05：entry 的运行期 INFO 日志统一静音（保留 WARN/ERR）。
  * 这些日志（扫描结果、AP 列表、模式设置）会周期性刷屏，污染 NSH 控制台。
- * 排查时把 EH_VERBOSE 改成 1 重新编译即可恢复。
+ *
+ * 2026-11-06：原来的写法是
+ *     #define EH_V(...) EH_V( __VA_ARGS__)      // EH_VERBOSE=1 时
+ * 这是**自递归宏**：展开后宏名还在原位，于是变成一次对不存在函数 EH_V() 的
+ * 调用 —— 把 EH_VERBOSE 改成 1 根本不是"恢复日志"，而是编译失败。
+ * 现在统一走 eh_hosted_log.h：EH_V 就是 EH_INFO，开关是
+ * CONFIG_ESPRESSIF_HOSTED_LOG_INFO；更细的逐帧/逐 ioctl 走 EH_TRACE。
  */
-#ifndef EH_VERBOSE
-#  define EH_VERBOSE 0
-#endif
-#if EH_VERBOSE
-#  define EH_V(...) EH_V( __VA_ARGS__)
-#else
-#  define EH_V(...) do { } while (0)
-#endif
+#define EH_V(...)      EH_INFO(__VA_ARGS__)
+#define EH_LOGV(...)   EH_TRACE(__VA_ARGS__)
 
 
 /* Defaults so this file works in a tree whose Kconfig predates the options
@@ -370,13 +365,13 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
      */
 
     werr = eh_host_wifi_init(&init_cfg);
-    syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
+    EH_INFO_OR_ERR(werr == ESP_OK,
            "%s: RPC wifi_init -> %d\n", ENTRY_TAG, werr);
 
     if (werr == ESP_OK)
       {
         werr = eh_host_wifi_set_mode(WIFI_MODE_STA);
-        syslog(werr == ESP_OK ? LOG_INFO : LOG_ERR,
+        EH_INFO_OR_ERR(werr == ESP_OK,
                "%s: RPC wifi_set_mode(STA) -> %d\n", ENTRY_TAG, werr);
       }
 
@@ -402,7 +397,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
     {
       esp_err_t sret = eh_host_wifi_start();
 
-      syslog(sret == ESP_OK ? LOG_INFO : LOG_WARNING,
+      EH_INFO_OR_WARN(sret == ESP_OK,
              "%s: RPC wifi_start -> %d\n", ENTRY_TAG, sret);
     }
 
@@ -451,7 +446,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
 
                 errno = 0;
                 rc = ioctl(fd, SIOCSIWSCAN, (unsigned long)(uintptr_t)&iwr);
-                syslog(rc == 0 ? LOG_INFO : LOG_ERR,
+                EH_INFO_OR_ERR(rc == 0,
                        "%s: SIOCSIWSCAN(wlan0) try %d -> %d (errno=%d)\n",
                        ENTRY_TAG, attempt + 1, rc, errno);
 
@@ -476,17 +471,17 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
               esp_err_t   mrc;
 
               mrc = eh_host_wifi_get_mode(&mode);
-              syslog(mrc == ESP_OK ? LOG_INFO : LOG_ERR,
+              EH_INFO_OR_ERR(mrc == ESP_OK,
                      "%s: RPC wifi_get_mode -> %d mode=%d\n", ENTRY_TAG, mrc,
                      (int)mode);
 
               mrc = eh_host_wifi_set_mode(WIFI_MODE_STA);
-              syslog(mrc == ESP_OK ? LOG_INFO : LOG_ERR,
+              EH_INFO_OR_ERR(mrc == ESP_OK,
                      "%s: RPC wifi_set_mode(STA) again -> %d\n", ENTRY_TAG, mrc);
 
               mode = WIFI_MODE_NULL;
               mrc = eh_host_wifi_get_mode(&mode);
-              syslog(mrc == ESP_OK ? LOG_INFO : LOG_ERR,
+              EH_INFO_OR_ERR(mrc == ESP_OK,
                      "%s: RPC wifi_get_mode after set -> %d mode=%d\n",
                      ENTRY_TAG, mrc, (int)mode);
             }
@@ -531,15 +526,24 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
              */
 
             {
-              esp_err_t dir = ESP_ERR_INVALID_STATE;
               /* 2026-11-05：停用 entry 的周期性扫描。
                * 它会与用户的 `wapi scan` / 连接流程争抢同一个扫描 RPC
                * （真机：entry 扫描成功 count=19，紧随其后的 wapi scan 3s 超时）。
-               * 需要时由用户显式执行 wapi scan。 */
+               * 需要时由用户显式执行 wapi scan。
+               *
+               * 2026-11-06：这里原本还有一行
+               *     EH_INFO_OR_ERR(dir == ESP_OK,
+               *            "%s: direct eh_host_wifi_scan_start -> %d\n", ...);
+               * 而 dir 是写死 ESP_ERR_INVALID_STATE 的 —— 于是每次开机都必打一条
+               * `direct eh_host_wifi_scan_start -> 259` 的 LOG_ERR。259 是
+               * ESP_ERR_INVALID_STATE，只表示"这行代码自己没跑扫描"，不是任何真实
+               * 故障；它和同一段日志里 `scan done, 19 AP(s)` 直接矛盾，把排查带偏过
+               * 不止一次。既然扫描已被主动停用，这条"失败"根本不该存在 —— 删掉。
+               * 下面 if (dir == ESP_OK) 的分支同样不会执行，保留只为记录当时的取证
+               * 思路；重新启用周期扫描时，把 dir 改回真实调用即可。
+               */
 
-              syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
-                     "%s: direct eh_host_wifi_scan_start -> %d\n",
-                     ENTRY_TAG, dir);
+              esp_err_t dir = ESP_ERR_INVALID_STATE;
 
               /* And the results, which is what the scan is for. */
 
@@ -549,7 +553,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                   uint16_t count = 0;
 
                   dir = eh_host_wifi_scan_get_ap_num(&count);
-                  syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
+                  EH_INFO_OR_ERR(dir == ESP_OK,
                          "%s: scan_get_ap_num -> %d count=%u\n",
                          ENTRY_TAG, dir, (unsigned)count);
 
@@ -558,7 +562,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                       uint16_t n = count > 8 ? 8 : count;
 
                       dir = eh_host_wifi_scan_get_ap_records(&n, aps);
-                      syslog(dir == ESP_OK ? LOG_INFO : LOG_ERR,
+                      EH_INFO_OR_ERR(dir == ESP_OK,
                              "%s: scan_get_ap_records -> %d n=%u\n",
                              ENTRY_TAG, dir, (unsigned)n);
 
@@ -592,7 +596,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                                      sizeof(ccfg.sta.ssid));
 
                               crc = ESP_ERR_INVALID_STATE; /* 2026-11-05: 不再自动改配置（会覆盖用户设置/连接） */
-                              syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+                              EH_INFO_OR_ERR(crc == ESP_OK,
                                      "%s: RPC wifi_set_config(\"%s\") -> %d\n",
                                      ENTRY_TAG, (FAR const char *)aps[i].ssid,
                                      crc);
@@ -600,7 +604,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                               if (crc == ESP_OK)
                                 {
                                   crc = ESP_ERR_INVALID_STATE;
-                                  syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+                                  EH_INFO_OR_ERR(crc == ESP_OK,
                                          "%s: RPC wifi_connect -> %d\n",
                                          ENTRY_TAG, crc);
                                   joined = crc == ESP_OK;
@@ -681,7 +685,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                  ENTRY_TAG, names[t], crc);
 
           crc = ESP_ERR_INVALID_STATE;
-          syslog(crc == ESP_OK ? LOG_INFO : LOG_ERR,
+          EH_INFO_OR_ERR(crc == ESP_OK,
                  "%s: RPC wifi_connect(\"%s\") -> %d\n",
                  ENTRY_TAG, names[t], crc);
 
@@ -871,7 +875,7 @@ static int eh_hosted_nuttx_thread(int argc, char *argv[])
                     errno = 0;
                     prc = sendto(fd, probe, sizeof(probe), 0,
                                  (FAR struct sockaddr *)&to, sizeof(to));
-                    syslog(prc >= 0 ? LOG_INFO : LOG_ERR,
+                    EH_INFO_OR_ERR(prc >= 0,
                            "%s: probe broadcast sendto -> %d (errno=%d)\n",
                            ENTRY_TAG, prc, errno);
                     close(fd);

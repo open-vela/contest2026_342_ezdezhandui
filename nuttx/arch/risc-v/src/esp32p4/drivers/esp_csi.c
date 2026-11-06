@@ -255,6 +255,7 @@ int g_dbg_csi_chen0_disable  = -1;
 int g_dbg_csi_chen0_del      = -1;
 int g_dbg_csi_dsi_restart_rc = -999;
 int g_dbg_csi_chen0_restart  = -1;
+int g_dbg_csi_dsi_dead       = 0;   /* 相机拆完发现 DSI 已停的次数 */
 
 /****************************************************************************
  * Private Functions
@@ -828,8 +829,29 @@ static int esp_csi_data_uninit(FAR struct imgdata_s *data)
    * 且相机启动/采集期间重拉会直接触发 Exception 7。只留快照供定位。
    */
 
-  _info("CSI: uninit done (chen0 disable=%08x del=%08x)\n",
-        (unsigned)g_dbg_csi_chen0_disable, (unsigned)g_dbg_csi_chen0_del);
+  /* 健康检查：相机拆完之后，DSI 是否还活着？
+   *
+   * 不重拉 DSI（上一段注释里的实测结论依然成立），但**必须检查并报告** ——
+   * 否则"用过相机之后面板冻住"这种故障只能靠肉眼发现。
+   *
+   * 判据用 DSI 驱动自己的状态，而不是 chen0 的位：esp_mipi_dsi_video_dma_is_active()
+   * 直接回答"DSI 还在不在推流"，比从共享寄存器的某一位反推可靠。
+   */
+
+  if (esp_mipi_dsi_video_dma_is_active())
+    {
+      _info("CSI: DSI still streaming after camera teardown (expected)\n");
+    }
+  else
+    {
+      _err("ERROR: CSI: DSI DMA is NOT active after camera teardown; "
+           "the panel will freeze until the next esp_mipi_dsi_video_start()\n");
+      g_dbg_csi_dsi_dead++;
+    }
+
+  _info("CSI: uninit done (chen0 disable=%08x del=%08x dsi_dead=%d)\n",
+        (unsigned)g_dbg_csi_chen0_disable, (unsigned)g_dbg_csi_chen0_del,
+        g_dbg_csi_dsi_dead);
 
   return OK;
 }
@@ -1304,11 +1326,16 @@ int esp_csi_imgdata_uninitialize(FAR struct imgdata_s *data)
  ****************************************************************************/
 
 void esp_csi_frames(FAR struct imgdata_s *data, FAR uint32_t *delivered,
-                    FAR uint32_t *dropped, FAR uint32_t *errors)
+                    FAR uint32_t *dropped, FAR uint32_t *received)
 {
   FAR struct esp_csi_priv_s *priv;
 
-  if (data == NULL || data->ops != &g_esp_csi_ops)
+  if (data == NULL)
+    {
+      data = &g_esp_csi_priv.data;
+    }
+
+  if (data->ops != &g_esp_csi_ops)
     {
       return;
     }
@@ -1325,10 +1352,34 @@ void esp_csi_frames(FAR struct imgdata_s *data, FAR uint32_t *delivered,
       *dropped = priv->ndropped;
     }
 
-  if (errors != NULL)
+  if (received != NULL)
     {
-      *errors = priv->nframes;
+      *received = priv->nframes;
     }
+}
+
+
+/****************************************************************************
+ * Name: esp_csi_video_dma_is_active
+ ****************************************************************************/
+
+bool esp_csi_video_dma_is_active(void)
+{
+  return g_esp_csi_priv.ctlr_created && g_esp_csi_priv.streaming;
+}
+
+/****************************************************************************
+ * Name: esp_csi_imgdata_get
+ ****************************************************************************/
+
+FAR struct imgdata_s *esp_csi_imgdata_get(void)
+{
+  if (!g_esp_csi_priv.ctlr_created)
+    {
+      return NULL;
+    }
+
+  return &g_esp_csi_priv.data;
 }
 
 #endif /* CONFIG_ESPRESSIF_MIPI_CSI */

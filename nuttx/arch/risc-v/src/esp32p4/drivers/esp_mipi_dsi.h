@@ -68,6 +68,18 @@ struct esp_mipi_dsi_dpi_config_s
   uint8_t  format;              /* MIPI_DSI_FMT_RGB565 / RGB888 / ... */
 };
 
+/* DSI health counters, gathered in one call so a watchdog or a self-test does
+ * not have to race four separate getters across a live refresh.
+ */
+
+struct esp_mipi_dsi_stats_s
+{
+  uint32_t dma_isr;             /* TFR_DONE interrupts == panel refreshes */
+  uint32_t dma_restart;         /* times the channel had to be re-armed */
+  uint32_t dma_unknown_isr;     /* ISR entries that were not a refresh */
+  uint32_t bridge_underrun;     /* bridge FIFO starved (sticky, polled) */
+};
+
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
@@ -220,6 +232,188 @@ int esp_mipi_dsi_video_start(void);
  ****************************************************************************/
 
 int esp_mipi_dsi_video_stop(void);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_dma_isr_count
+ *
+ * Description:
+ *   Number of DW-GDMA transfer-complete interrupts seen for the DSI channel.
+ *   This increments once per completed framebuffer transfer, i.e. once per
+ *   panel refresh, and is the only signal that proves the panel is still
+ *   being fed.  The framebuffer contents cannot prove it: LVGL keeps drawing
+ *   into PSRAM even when the DSI channel has stopped.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   Monotonically increasing counter (wraps at 2^32).
+ *
+ ****************************************************************************/
+
+uint32_t esp_mipi_dsi_dma_isr_count(void);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_dma_restart_count
+ *
+ * Description:
+ *   Number of times the DSI DMA path had to be re-armed by the driver.  A
+ *   steadily growing value means the channel keeps dying and being rescued.
+ *
+ ****************************************************************************/
+
+uint32_t esp_mipi_dsi_dma_restart_count(void);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_dma_unknown_isr_count
+ *
+ * Description:
+ *   Number of entries into the DSI DMA interrupt handler that were not a
+ *   normal transfer-complete.  The DW-GDMA interrupt is shared with the CSI
+ *   channel at the interrupt-matrix level, so this separates "the DSI channel
+ *   is spamming" from "another channel owns this interrupt".
+ *
+ ****************************************************************************/
+
+uint32_t esp_mipi_dsi_dma_unknown_isr_count(void);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_get_stats
+ *
+ * Description:
+ *   Snapshot every DSI health counter in one call.
+ *
+ * Input Parameters:
+ *   stats - Destination; NULL is ignored.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void esp_mipi_dsi_get_stats(FAR struct esp_mipi_dsi_stats_s *stats);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_bridge_underrun_count
+ *
+ * Description:
+ *   Read, clear and accumulate the MIPI-DSI bridge FIFO underrun flag.
+ *
+ *   The flag means the DPI output asked for pixels that DW-GDMA had not
+ *   delivered yet -- i.e. the panel was actually starved.  It is sticky, and
+ *   the driver does not service it from the DMA ISR (that handler owns the
+ *   DW-GDMA channel, not the bridge), so callers are expected to poll this at
+ *   a modest rate.  The display watchdog's 500 ms tick is the intended caller.
+ *
+ *   Note: this is *not* the same as a cache-coherency stall or a stopped DMA
+ *   channel; those show up in dma_isr / dma_restart instead.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   Monotonically increasing underrun count (wraps at 2^32).
+ *
+ ****************************************************************************/
+
+uint32_t esp_mipi_dsi_bridge_underrun_count(void);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_video_dma_is_active
+ *
+ * Description:
+ *   Report whether DW-GDMA is currently streaming framebuffer pixels to the
+ *   DSI bridge.
+ *
+ *   The CSI driver calls this while initialising, because the two peripherals
+ *   share one DW-GDMA controller: tearing the controller down under a running
+ *   scan-out is what leaves the panel frozen.  Before this existed the CSI
+ *   side had to infer the state from the GDMA bus clock, which is a heuristic
+ *   and not the same question.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   true when video mode is up and the DMA channel is armed.
+ *
+ ****************************************************************************/
+
+bool esp_mipi_dsi_video_dma_is_active(void);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_queue_frame_buffer
+ *
+ * Description:
+ *   Ask for `fb` to be scanned out starting at the next frame boundary.
+ *
+ *   Required for double buffering: the source address is only changed inside
+ *   the DMA ISR, so the panel never scans a half-written page.  The most
+ *   recent request wins if several arrive before a boundary.
+ *
+ * Input Parameters:
+ *   fb  - Page to display; must lie inside the bound framebuffer
+ *   len - Its length in bytes
+ *
+ * Returned Value:
+ *   Zero (OK); -EINVAL if the page is outside the bound FB; -ESHUTDOWN if
+ *   video mode is not running.
+ *
+ ****************************************************************************/
+
+int esp_mipi_dsi_queue_frame_buffer(FAR const void *fb, size_t len);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_set_frame_done_callback
+ *
+ * Description:
+ *   Register a per-frame callback, invoked from ISR context after the frame
+ *   boundary hand-off.  The board layer uses it to call fb_notify_vsync().
+ *
+ * Input Parameters:
+ *   cb  - Callback, or NULL to unregister
+ *   arg - Opaque argument
+ *
+ * Returned Value:
+ *   Zero (OK).
+ *
+ ****************************************************************************/
+
+int esp_mipi_dsi_set_frame_done_callback(void (*cb)(FAR void *),
+                                         FAR void *arg);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_frame_seq
+ *
+ * Description:
+ *   Number of frames completed since boot.  Differs from
+ *   esp_mipi_dsi_dma_isr_count() in that it only counts *completed* frames,
+ *   which is what a vsync consumer cares about.
+ *
+ ****************************************************************************/
+
+uint32_t esp_mipi_dsi_frame_seq(void);
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_set_fb_pages
+ *
+ * Description:
+ *   Declare how many pages the bound framebuffer region holds.
+ *
+ *   esp_mipi_dsi_bind_framebuffer()'s size argument is the bytes-per-frame
+ *   (one page) because it also programmes the DMA transfer length.  When the
+ *   board allocates N pages for double buffering, it must say so here so that
+ *   esp_mipi_dsi_queue_frame_buffer() accepts any of the pages.
+ *
+ * Input Parameters:
+ *   pages - Number of pages (0 is treated as 1)
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void esp_mipi_dsi_set_fb_pages(uint8_t pages);
 
 #undef EXTERN
 #ifdef __cplusplus

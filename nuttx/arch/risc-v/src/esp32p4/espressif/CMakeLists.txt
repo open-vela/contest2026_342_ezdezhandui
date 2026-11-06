@@ -310,50 +310,6 @@ if(NOT IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}")
     file(COPY "${ESP_HAL_NXTMPDIR_CACHE}" DESTINATION "${ESP_HAL_3RDPARTY_CHIP_DIR}/..")
   endif()
 
-  # Apply openvela compatibility patches to the HAL (nxtask_init signature, fcntl.h)
-  #
-  # openvela note: this used to run `git apply --check` and then `git apply`
-  # unconditionally.  The HAL checkout is *not* reset between configure runs,
-  # so the second configure of the same build tree tried to re-apply an
-  # already-applied patch, `git apply` failed and CMake aborted with
-  # "Configuring incomplete" (observed on 2026-09-14: sdkconfig.h:941).
-  # Apply only when the patch is really absent, and treat "already applied"
-  # (reverse-check succeeds) as success.
-  function(vela_apply_hal_patch patch_file)
-    execute_process(COMMAND git apply --check ${patch_file}
-                    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
-                    RESULT_VARIABLE _vela_check)
-    if(_vela_check EQUAL 0)
-      execute_process(COMMAND git apply ${patch_file}
-                      WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
-                      RESULT_VARIABLE _vela_apply)
-      if(NOT _vela_apply EQUAL 0)
-        message(FATAL_ERROR "failed to apply ${patch_file}")
-      endif()
-      message(STATUS "HAL patch applied: ${patch_file}")
-    else()
-      execute_process(COMMAND git apply -R --check ${patch_file}
-                      WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
-                      RESULT_VARIABLE _vela_revcheck)
-      if(_vela_revcheck EQUAL 0)
-        message(STATUS "HAL patch already applied: ${patch_file}")
-      else()
-        message(
-          FATAL_ERROR
-            "${patch_file} neither applies nor is already applied — HAL drift?")
-      endif()
-    endif()
-  endfunction()
-
-  # Order matters: both patches touch nuttx/esp32p4/include/sdkconfig.h, and
-  # 0001 inserts a comment block right above the context that 0002 anchors on
-  # (~line 941).  Applying 0001 first made 0002 fail.  Apply 0002 (mbedTLS
-  # Kconfig visibility) first, then 0001 (os.c/os.h + MEMPROT note).
-  vela_apply_hal_patch(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch)
-  vela_apply_hal_patch(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0001-openvela-compat-os.c.patch)
-
   # Copy gpio_sig_map.h and irq.h from the esp-hal-3rdparty repository to the NuttX directory
   file(MAKE_DIRECTORY ${NUTTX_BINARY_DIR}/include/arch/chip)
   file(COPY ${ESP_HAL_3RDPARTY_REPO}/components/soc/${CHIP_SERIES}/include/soc/gpio_sig_map.h
@@ -382,6 +338,71 @@ if(NOT IS_DIRECTORY "${ESP_HAL_3RDPARTY_REPO}")
     endif()
   endif()
 endif()
+
+# 补丁应用必须**放在上面那个"仅首次克隆"的 if 之外**。
+#
+# 原来这段在 if(NOT IS_DIRECTORY ...) 里面 —— 只在 HAL 第一次被克隆时执行。
+# 后果：构建目录已经存在时（普通重配、或另一条对话先建过一次），新加的补丁
+# 永远不被应用，而 `cmake .` 也不会报错；`riscv-none-elf-nm` 一查符号不存在，
+# 才发现"改了等于没改"（docs/50_排障经验/08 的多副本陷阱的另一种形态）。
+# vela_apply_hal_patch() 本身是幂等的（先正向 check，失败再反向 check），
+# 所以每次 configure 都跑一遍是安全的。
+# Apply openvela compatibility patches to the HAL (nxtask_init signature, fcntl.h)
+#
+# openvela note: this used to run `git apply --check` and then `git apply`
+# unconditionally.  The HAL checkout is *not* reset between configure runs,
+# so the second configure of the same build tree tried to re-apply an
+# already-applied patch, `git apply` failed and CMake aborted with
+# "Configuring incomplete" (observed on 2026-09-14: sdkconfig.h:941).
+# Apply only when the patch is really absent, and treat "already applied"
+# (reverse-check succeeds) as success.
+function(vela_apply_hal_patch patch_file)
+  execute_process(COMMAND git apply --check ${patch_file}
+                  WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
+                  RESULT_VARIABLE _vela_check)
+  if(_vela_check EQUAL 0)
+    execute_process(COMMAND git apply ${patch_file}
+                    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
+                    RESULT_VARIABLE _vela_apply)
+    if(NOT _vela_apply EQUAL 0)
+      message(FATAL_ERROR "failed to apply ${patch_file}")
+    endif()
+    message(STATUS "HAL patch applied: ${patch_file}")
+  else()
+    execute_process(COMMAND git apply -R --check ${patch_file}
+                    WORKING_DIRECTORY ${ESP_HAL_3RDPARTY_REPO}
+                    RESULT_VARIABLE _vela_revcheck)
+    if(_vela_revcheck EQUAL 0)
+      message(STATUS "HAL patch already applied: ${patch_file}")
+    else()
+      message(
+        FATAL_ERROR
+          "${patch_file} neither applies nor is already applied — HAL drift?")
+    endif()
+  endif()
+endfunction()
+
+# Order matters: both patches touch nuttx/esp32p4/include/sdkconfig.h, and
+# 0001 inserts a comment block right above the context that 0002 anchors on
+# (~line 941).  Applying 0001 first made 0002 fail.  Apply 0002 (mbedTLS
+# Kconfig visibility) first, then 0001 (os.c/os.h + MEMPROT note).
+vela_apply_hal_patch(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch)
+vela_apply_hal_patch(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0001-openvela-compat-os.c.patch)
+
+# DSI / CSI 共用同一个 DW-GDMA 控制器。DSI 用裸 LL 直接配通道，CSI 走 HAL
+# 分配器，两者对"控制器该不该复位 / 总线时钟该不该关"没有共识。0003 给 HAL
+# 加 foreign_owner 记账：进入时若控制器已在跑（= 别人先占了），退出时就不做
+# hal_deinit、不关总线时钟。0004 只是 CSI start 链路的逐步诊断计数。
+#
+# 没有这两个补丁时的真机现象：相机退出后 DSI 通道被 HAL 连带 deinit，
+# 面板冻在最后一帧，只能复位整机（docs/50_排障经验/09）。
+vela_apply_hal_patch(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0003-openvela-dw-gdma-foreign-owner.patch)
+vela_apply_hal_patch(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../patches/0004-openvela-csi-start-diag.patch)
+
 # cmake-format: on
 
 # This is done previously on configure time but must be done again if a 'clean'

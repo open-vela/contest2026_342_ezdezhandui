@@ -44,10 +44,13 @@
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.mk" dest="nuttx/arch/risc-v/src/esp32p4/hal_esp32p4.mk"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0001-openvela-compat-os.c.patch"/>
     <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0002-openvela-compat-sdkconfig-keep-mbedtls-config.patch"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0003-openvela-dw-gdma-foreign-owner.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0003-openvela-dw-gdma-foreign-owner.patch"/>
+    <copyfile src="nuttx/arch/risc-v/src/esp32p4/patches/0004-openvela-csi-start-diag.patch" dest="nuttx/arch/risc-v/src/esp32p4/patches/0004-openvela-csi-start-diag.patch"/>
     <copyfile src="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig" dest="nuttx/boards/sim/sim/sim/configs/deskmate/defconfig"/>
     <copyfile src="nuttx/cmake/nuttx_kconfig.cmake" dest="nuttx/cmake/nuttx_kconfig.cmake"/>
     <copyfile src="nuttx/drivers/audio/es8311.c" dest="nuttx/drivers/audio/es8311.c"/>
     <copyfile src="nuttx/drivers/input/gt9xx.c" dest="nuttx/drivers/input/gt9xx.c"/>
+    <copyfile src="nuttx/drivers/input/Kconfig" dest="nuttx/drivers/input/Kconfig"/>
     <copyfile src="nuttx/drivers/mmcsd/CMakeLists.txt" dest="nuttx/drivers/mmcsd/CMakeLists.txt"/>
     <copyfile src="nuttx/drivers/mmcsd/sdio.c" dest="nuttx/drivers/mmcsd/sdio.c"/>
     <copyfile src="nuttx/drivers/net/wifi_sim.c" dest="nuttx/drivers/net/wifi_sim.c"/>

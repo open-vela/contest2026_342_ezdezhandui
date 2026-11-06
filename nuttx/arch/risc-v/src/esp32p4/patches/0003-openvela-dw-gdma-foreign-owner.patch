@@ -1,0 +1,109 @@
+diff --git a/components/upper_hal_dma/src/dw_gdma.c b/components/upper_hal_dma/src/dw_gdma.c
+index d1304e160fa..3e9f540831c 100644
+--- a/components/upper_hal_dma/src/dw_gdma.c
++++ b/components/upper_hal_dma/src/dw_gdma.c
+@@ -59,6 +59,14 @@ ESP_LOG_ATTR_TAG(TAG, "dw-gdma");
+ #define ALIGN_UP(num, align)    (((num) + ((align) - 1)) & ~((align) - 1))
+ 
+ typedef struct dw_gdma_group_t dw_gdma_group_t;
++
++/* 诊断（非 static，JTAG 可读）：谁在动这个共享的 DMA 控制器。 */
++
++int g_dbg_gdma_acquire_calls;
++int g_dbg_gdma_foreign;        /* acquire 时发现控制器已在跑 */
++int g_dbg_gdma_release_calls;
++int g_dbg_gdma_deinit_calls;   /* 真的执行了 hal_deinit（会停控制器+关时钟） */
++int g_dbg_gdma_clockoff_calls;
+ typedef struct dw_gdma_channel_t dw_gdma_channel_t;
+ 
+ typedef struct dw_gdma_link_list_t {
+@@ -79,6 +87,9 @@ struct dw_gdma_group_t {
+     int intr_priority;         // all channels in the same group should share the same interrupt priority
+     portMUX_TYPE spinlock;     // group level spinlock, protect group level stuffs, e.g. hal object, pair handle slots and reference count of each pair
+     dw_gdma_channel_t *channels[DW_GDMA_LL_CHANNELS_PER_GROUP]; // handles of DMA channels
++    bool foreign_owner;        // the controller was already running when we attached
++                               // (e.g. MIPI-DSI configured it via raw LL) -> never
++                               // deinit it / gate its bus clock on release
+ };
+ 
+ struct dw_gdma_channel_t {
+@@ -98,6 +109,7 @@ static dw_gdma_platform_t s_platform;
+ static dw_gdma_group_t *dw_gdma_acquire_group_handle(int group_id)
+ {
+     bool new_group = false;
++    g_dbg_gdma_acquire_calls++;
+     dw_gdma_group_t *group = NULL;
+ 
+     // prevent install dw_gdma group concurrently
+@@ -108,14 +120,34 @@ static dw_gdma_group_t *dw_gdma_acquire_group_handle(int group_id)
+         if (group) {
+             new_group = true;
+             s_platform.groups[group_id] = group;
++            /* 控制器可能已经被别人（例如 MIPI-DSI 用裸 LL 直接配的通道）在用。
++             *
++             * dw_gdma_hal_init() 内部会做 dw_gdma_ll_reset() —— 那是**控制器级**
++             * 复位，会把 DSI 的通道配置一起抹掉（真机现象：一开摄像头面板变纯色）。
++             * 所以：总线时钟已在跑时**不复位**，只把 HAL 上下文补上并保持控制器/中断使能。
++             */
++
++            bool already_running = dw_gdma_ll_is_bus_clock_enabled(group_id);
++
+             // enable APB to access DMA registers
+             PERIPH_RCC_ATOMIC() {
+                 dw_gdma_ll_enable_bus_clock(group_id, true);
+-                dw_gdma_ll_reset_register(group_id);
++                if (!already_running) {
++                    dw_gdma_ll_reset_register(group_id);
++                }
++            }
++
++            if (!already_running) {
++                // initialize the HAL context (does a controller reset)
++                dw_gdma_hal_config_t hal_config = {};
++                dw_gdma_hal_init(&group->hal, &hal_config);
++            } else {
++                // controller already initialised by someone else: just bind
++                group->hal.dev = DW_GDMA_LL_GET_HW(group_id);
++                dw_gdma_ll_enable_controller(group->hal.dev, true);
++                dw_gdma_ll_enable_intr_global(group->hal.dev, true);
++                group->foreign_owner = true;
+             }
+-            // initialize the HAL context
+-            dw_gdma_hal_config_t hal_config = {};
+-            dw_gdma_hal_init(&group->hal, &hal_config);
+         }
+     } else {
+         // the group is installed, we just retrieve it and increase the reference count
+@@ -140,6 +172,7 @@ static dw_gdma_group_t *dw_gdma_acquire_group_handle(int group_id)
+ static void dw_gdma_release_group_handle(dw_gdma_group_t *group)
+ {
+     int group_id = group->group_id;
++    g_dbg_gdma_release_calls++;
+     bool del_group = false;
+ 
+     _lock_acquire(&s_platform.mutex);
+@@ -148,10 +181,20 @@ static void dw_gdma_release_group_handle(dw_gdma_group_t *group)
+         del_group = true;
+         // the group now is not used by any channel, unregister it from the platform
+         s_platform.groups[group_id] = NULL;
+-        // deinitialize the HAL context
+-        dw_gdma_hal_deinit(&group->hal);
+-        PERIPH_RCC_ATOMIC() {
+-            dw_gdma_ll_enable_bus_clock(group_id, false);
++
++        /* 控制器若是"别人先起来、我们中途接入"（DSI 用裸 LL 配的通道就在里面），
++         * 释放时**绝不能** deinit 或关总线时钟 —— 那会把 DSI 的通道一起打死，
++         * 真机现象就是：摄像头一退出，面板冻在最后一帧（看起来是蓝屏）。
++         */
++
++        if (!group->foreign_owner) {
++            // deinitialize the HAL context
++            g_dbg_gdma_deinit_calls++;
++            dw_gdma_hal_deinit(&group->hal);
++            g_dbg_gdma_clockoff_calls++;
++            PERIPH_RCC_ATOMIC() {
++                dw_gdma_ll_enable_bus_clock(group_id, false);
++            }
+         }
+     }
+     _lock_release(&s_platform.mutex);

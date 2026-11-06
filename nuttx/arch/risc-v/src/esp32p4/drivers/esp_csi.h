@@ -198,14 +198,66 @@ void esp_csi_isp_prepare(uint32_t h_res, uint32_t v_res, uint32_t bpp);
  * Name: esp_csi_frames
  *
  * Description:
- *   Diagnostic helper: number of frames delivered to the upper half and
- *   number of frames that had to be dropped because the application did not
- *   have a free buffer available.
+ *   Diagnostic helper: counters from the CSI driver's frame pump.
+ *
+ * Input Parameters:
+ *   data      - Interface returned by esp_csi_imgdata_initialize(); may be
+ *               NULL to read the global instance.
+ *   delivered - Frames handed to the upper half (V4L2 callback fired).
+ *   dropped   - Frames discarded because no application buffer was free.
+ *   received  - Frames the HAL reported as completed.  This used to be called
+ *               "errors" and wired to priv->nframes, which is a *success*
+ *               counter -- reporting it as an error count made a healthy
+ *               stream look like a permanently failing one.  Any of the
+ *               pointer arguments may be NULL.
  *
  ****************************************************************************/
 
 void esp_csi_frames(FAR struct imgdata_s *data, FAR uint32_t *delivered,
-                    FAR uint32_t *dropped, FAR uint32_t *errors);
+                    FAR uint32_t *dropped, FAR uint32_t *received);
+
+/****************************************************************************
+ * Name: esp_csi_imgdata_get
+ *
+ * Description:
+ *   Return the global CSI imgdata interface, or NULL when the CSI lower half
+ *   has never been initialized.
+ *
+ *   Exists so an application can call esp_csi_frames() without keeping its
+ *   own copy of the pointer from bring-up -- the V4L2 capture layer opens and
+ *   closes /dev/video0 behind the application's back, and after a close the
+ *   previously saved pointer refers to a torn-down controller.
+ *
+ ****************************************************************************/
+
+FAR struct imgdata_s *esp_csi_imgdata_get(void);
+
+/****************************************************************************
+ * Name: esp_csi_video_dma_is_active
+ *
+ * Description:
+ *   Report whether the CSI side currently has DW-GDMA armed for capture.
+ *
+ *   Mirror image of esp_mipi_dsi_video_dma_is_active().  The two peripherals
+ *   share one DW-GDMA controller, and whichever driver initialises second must
+ *   not reset that controller -- a reset wipes the sibling's channel
+ *   configuration and the next register access faults (measured: Store/AMO
+ *   access fault at MTVAL = the channel-0 register block).
+ *
+ *   Before this existed, MIPI-DSI had to infer the state from the GDMA bus
+ *   clock, which is a proxy: the HAL leaves the clock on for as long as any
+ *   group handle is held, so "clock running" and "camera streaming" are not the
+ *   same question.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   true while a capture is streaming.
+ *
+ ****************************************************************************/
+
+bool esp_csi_video_dma_is_active(void);
 
 #undef EXTERN
 #ifdef __cplusplus

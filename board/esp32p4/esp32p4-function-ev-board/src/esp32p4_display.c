@@ -68,7 +68,22 @@
 #define BOARD_FB_WIDTH     BOARD_MIPI_DSI_H_RES
 #define BOARD_FB_HEIGHT    BOARD_MIPI_DSI_V_RES
 #define BOARD_FB_STRIDE    (BOARD_FB_WIDTH * (BOARD_FB_BPP / 8))
-#define BOARD_FB_SIZE      (BOARD_FB_STRIDE * BOARD_FB_HEIGHT)
+#define BOARD_FB_PAGE_SIZE (BOARD_FB_STRIDE * BOARD_FB_HEIGHT)
+
+/* 双缓冲页数。
+ *
+ * LVGL 的 nuttx fbdev 后端判断双缓冲的**唯一**条件是
+ *   yres_virtual == yres * 2
+ * （lv_nuttx_fbdev.c: `double_buffer = pinfo.yres_virtual == yres * 2`）。
+ * 它随后会用 `pinfo.display + 1` 去探测第二页并调用 FBIOPAN_DISPLAY，所以
+ * 这里必须是 2，并且 board_getplaneinfo() 必须真的返回第二页的地址。
+ *
+ * 单缓冲时同一块 1.2 MB 内存既是渲染目标又是 DMA 源：LVGL 一边写、面板一边
+ * 扫，撕裂无法消除；而且每次脏区回写都落在同一块上，实测尖峰 80 ms。
+ */
+
+#define BOARD_FB_COUNT     2
+#define BOARD_FB_SIZE      (BOARD_FB_PAGE_SIZE * BOARD_FB_COUNT)
 
 /* Solid red as the bring-up test colour: proves the DSI link, the panel
  * controller and the backlight all work without needing any app to run.
@@ -94,6 +109,9 @@ static int board_getplaneinfo(FAR struct fb_vtable_s *vtable, int planeno,
 static int board_updatearea(FAR struct fb_vtable_s *vtable,
                             FAR const struct fb_area_s *area);
 #endif
+static int board_pandisplay(FAR struct fb_vtable_s *vtable,
+                            FAR struct fb_planeinfo_s *pinfo);
+static void board_frame_done(FAR void *arg);
 
 /****************************************************************************
  * Private Data
@@ -106,6 +124,7 @@ static struct fb_vtable_s g_board_vtable =
 #ifdef CONFIG_FB_UPDATE
   .updatearea   = board_updatearea,
 #endif
+  .pandisplay   = board_pandisplay,
 };
 
 static struct fb_videoinfo_s g_board_video =
@@ -124,13 +143,14 @@ static struct fb_planeinfo_s g_board_plane =
   .display      = 0,
   .bpp          = BOARD_FB_BPP,
   .xres_virtual = BOARD_FB_WIDTH,
-  .yres_virtual = BOARD_FB_HEIGHT,
+  .yres_virtual = BOARD_FB_HEIGHT * BOARD_FB_COUNT,
   .xoffset      = 0,
   .yoffset      = 0,
 };
 
 static FAR uint16_t *g_board_fb;
 static bool g_board_fb_ready;
+static volatile uint32_t g_board_frame_done;
 
 /****************************************************************************
  * Private Functions
@@ -186,6 +206,23 @@ static int board_getplaneinfo(FAR struct fb_vtable_s *vtable, int planeno,
     }
 
   memcpy(pinfo, &g_board_plane, sizeof(*pinfo));
+
+  /* 所有页都返回**同一个基址和整块 fblen**，这是 LVGL 的"连续布局"约定。
+   *
+   * lv_nuttx_fbdev.c 的 fbdev_init_mem2() 里：
+   *   offset        = phy_mem2 - phy_mem1
+   *   is_consecutive = (offset == 0)
+   * 只有在 offset == 0 时它才把 fblen 减半、并**自己**用
+   * `yres * stride` 作为 mmap 偏移去取第二页。
+   *
+   * 反过来，如果这里按 display 返回两个不同地址，offset = 1228800，
+   * is_consecutive 为 false，于是它拿整块 fblen 去 mmap 一个已经偏移过的
+   * 位置 —— 落到 fb_mmap() 的 `offset + length <= fblen` 检查上直接 -EINVAL，
+   * 表现为 "LVGL could not attach to /dev/fb0"（实测）。
+   *
+   * 所以：基址不变、fblen = 整块、yres_virtual = 2 * yres，让上层自己算页。
+   */
+
   return OK;
 }
 
@@ -210,6 +247,7 @@ static int board_updatearea(FAR struct fb_vtable_s *vtable,
 {
   size_t offset;
   size_t len;
+  unsigned int page;
 
   DEBUGASSERT(vtable != NULL && vtable == &g_board_vtable);
 
@@ -223,21 +261,144 @@ static int board_updatearea(FAR struct fb_vtable_s *vtable,
       return esp_mipi_dsi_flush_framebuffer(g_board_fb, BOARD_FB_SIZE);
     }
 
-  if (area->y >= BOARD_FB_HEIGHT || area->x >= BOARD_FB_WIDTH)
+  /* 越界一律 -EINVAL，不再静默截断 —— 静默截断会让"少刷一块"变成偶发花屏，
+   * 是最难查的一类问题。
+   */
+
+  /* 坐标是**虚拟帧缓冲**坐标：LVGL 在校验之后会把 dirty_area.y1 加上
+   * mem2_yoffset（= yres）再下发，所以第二页的 y 落在 [600, 1200)。
+   */
+
+  if (area->y >= BOARD_FB_HEIGHT * BOARD_FB_COUNT ||
+      area->x >= BOARD_FB_WIDTH || area->w == 0 || area->h == 0)
     {
-      return OK;
+      return -EINVAL;
     }
 
-  offset = (size_t)area->y * BOARD_FB_STRIDE +
+  if ((int)area->y + (int)area->h > (int)(BOARD_FB_HEIGHT * BOARD_FB_COUNT) ||
+      (int)area->x + (int)area->w > (int)BOARD_FB_WIDTH)
+    {
+      return -EINVAL;
+    }
+
+  /* 按 y 定位页。
+   *
+   * 双缓冲下脏区只落在"正在渲染的那一页"，所以基础地址要先按页偏移再加行偏移。
+   * 单缓冲时代这里直接用 g_board_fb + y*stride，y 一旦 >= height（第二页）
+   * 就会写到整个 framebuffer 的后半段 —— 而 DMA 仍在读第一页，等于白写。
+   */
+
+  page = (unsigned int)area->y / BOARD_FB_HEIGHT;
+
+  if (page >= BOARD_FB_COUNT)
+    {
+      return -EINVAL;
+    }
+
+  offset = (size_t)(area->y % BOARD_FB_HEIGHT) * BOARD_FB_STRIDE +
            (size_t)area->x * (BOARD_FB_BPP / 8);
   len = (size_t)area->h * BOARD_FB_STRIDE;
-  if (offset + len > BOARD_FB_SIZE)
+
+  if (offset + len > BOARD_FB_PAGE_SIZE)
     {
-      len = BOARD_FB_SIZE - offset;
+      len = BOARD_FB_PAGE_SIZE - offset;
     }
 
-  return esp_mipi_dsi_flush_framebuffer((FAR uint8_t *)g_board_fb + offset,
-                                        len);
+  return esp_mipi_dsi_flush_framebuffer(
+           (FAR uint8_t *)g_board_fb + (size_t)page * BOARD_FB_PAGE_SIZE +
+           offset, len);
+}
+
+/****************************************************************************
+ * Name: board_pandisplay
+ *
+ * Description:
+ *   Show the page named by pinfo->yoffset.
+ *
+ *   The swap is handed to the DSI driver and happens at the next frame
+ *   boundary (esp_mipi_dsi_queue_frame_buffer()), so this function must NOT
+ *   touch the hardware source address itself -- doing so would change the
+ *   address the bridge is reading mid-frame, i.e. produce tearing.
+ *
+ * Input Parameters:
+ *   vtable - The vtable.
+ *   pinfo  - Plane info whose yoffset names the page.
+ *
+ * Returned Value:
+ *   Zero (OK); -EINVAL if yoffset is not page-aligned/out of range;
+ *   -EAGAIN if the framebuffer is not ready.
+ *
+ ****************************************************************************/
+
+static int board_pandisplay(FAR struct fb_vtable_s *vtable,
+                            FAR struct fb_planeinfo_s *pinfo)
+{
+  FAR uint8_t *page;
+  unsigned int idx;
+
+  DEBUGASSERT(vtable != NULL && vtable == &g_board_vtable && pinfo != NULL);
+
+  if (g_board_fb == NULL)
+    {
+      return -EAGAIN;
+    }
+
+  if (pinfo->yoffset < 0 || (pinfo->yoffset % BOARD_FB_HEIGHT) != 0)
+    {
+      return -EINVAL;
+    }
+
+  idx = (unsigned int)pinfo->yoffset / BOARD_FB_HEIGHT;
+  if (idx >= BOARD_FB_COUNT)
+    {
+      return -EINVAL;
+    }
+
+  page = (FAR uint8_t *)g_board_fb + (size_t)idx * BOARD_FB_PAGE_SIZE;
+
+  /* 先把该页写回内存：CPU 走 cache 写，DMA 读的是内存。 */
+
+  (void)esp_mipi_dsi_flush_framebuffer(page, BOARD_FB_PAGE_SIZE);
+
+  return esp_mipi_dsi_queue_frame_buffer(page, BOARD_FB_PAGE_SIZE);
+}
+
+/****************************************************************************
+ * Name: board_frame_done
+ *
+ * Description:
+ *   DSI 帧完成回调（**ISR 上下文**）。
+ *
+ *   目前只做计数：CONFIG_FB_SYNC 未开时没有 vsync 等待者。留着这个钩子是因为
+ *   一旦将来启用 FB_SYNC / 双缓冲渲染器，这就是唯一正确的挂载点 —— 面板
+ *   扫完一页的那一刻，前页才真正可以复用。
+ *
+ ****************************************************************************/
+
+static void board_frame_done(FAR void *arg)
+{
+  UNUSED(arg);
+
+  g_board_frame_done++;
+
+  /* 消费 fb.c 的 pan 队列并唤醒 vsync 等待者。
+   *
+   * 这一步**不能省**。LVGL 每帧发一次 FBIOPAN_DISPLAY，fb.c 会把这条请求压进
+   * 一个环形队列（circbuf）。队列只有消费掉才会重新 non-full，而
+   * fb_poll() 只在 `!circbuf_is_full(panbuf)` 时报 POLLOUT ——
+   * lv_nuttx_fbdev 的刷新定时器正是用 POLLOUT 来判断"有没有空闲页"：
+   *
+   *   if (poll(...) == 0 && 没 POLLOUT && yres_virtual == yres*2) return;
+   *
+   * 所以没人消费队列时，双缓冲下 LVGL 会**永久停止刷新**。
+   * 实测症状就是：开双缓冲后 commits 卡在 2、面板保活计数归零、看门狗 6 秒后
+   * 误判停摆并去重建 DSI，然后在共享 GDMA 上撞 Exception 7。
+   *
+   * 这里在每帧完成（面板正好扫完一页）时消费一条，语义上就是"这一页用完了"。
+   */
+
+  (void)fb_remove_paninfo(&g_board_vtable, FB_NO_OVERLAY);
+  (void)fb_notify_vsync(&g_board_vtable);
 }
 #endif /* CONFIG_FB_UPDATE */
 
@@ -355,7 +516,15 @@ int up_fbinitialize(int display)
       goto errout_fb;
     }
 
-  ret = esp_mipi_dsi_bind_framebuffer(g_board_fb, BOARD_FB_SIZE,
+  /* 注意第二个参数是**一帧**的字节数（= 一页），不是两块的总和。
+   *
+   * 这里的 fb_size 决定 DW-GDMA 每帧要搬多少字节，也决定桥的
+   * `num_pixel_bits`。双缓冲时如果传整块（2 页），DMA 每帧会连扫两页 ——
+   * 面板只显示前 600 行、每帧多搬 1.2 MB，实测直接导致帧完成中断不再规律、
+   * 看门狗误判停摆。页的范围由 queue_frame_buffer 单独校验。
+   */
+
+  ret = esp_mipi_dsi_bind_framebuffer(g_board_fb, BOARD_FB_PAGE_SIZE,
                                       BOARD_FB_WIDTH, BOARD_FB_HEIGHT,
                                       BOARD_FB_BPP);
   if (ret < 0)
@@ -363,6 +532,16 @@ int up_fbinitialize(int display)
       syslog(LOG_ERR, "ERROR: bind_framebuffer failed: %d\n", ret);
       goto errout_fb;
     }
+
+  /* 每帧完成时通知上层（ISR 上下文）。双缓冲的读者靠它知道前页已被扫完、
+   * 可以安全复用。注册失败不影响出图，所以只告警。
+   */
+
+  (void)esp_mipi_dsi_set_frame_done_callback(board_frame_done, NULL);
+
+  /* 告诉驱动这块区域有几页，queue_frame_buffer() 才会接受第 2 页及以后。 */
+
+  esp_mipi_dsi_set_fb_pages(BOARD_FB_COUNT);
 
   board_fb_fill(BOARD_FB_TEST_COLOR);
 
@@ -519,7 +698,15 @@ int esp32p4_display_reinit(void)
 
   (void)esp_mipi_dsi_video_stop();
 
-  ret = esp_mipi_dsi_bind_framebuffer(g_board_fb, BOARD_FB_SIZE,
+  /* 注意第二个参数是**一帧**的字节数（= 一页），不是两块的总和。
+   *
+   * 这里的 fb_size 决定 DW-GDMA 每帧要搬多少字节，也决定桥的
+   * `num_pixel_bits`。双缓冲时如果传整块（2 页），DMA 每帧会连扫两页 ——
+   * 面板只显示前 600 行、每帧多搬 1.2 MB，实测直接导致帧完成中断不再规律、
+   * 看门狗误判停摆。页的范围由 queue_frame_buffer 单独校验。
+   */
+
+  ret = esp_mipi_dsi_bind_framebuffer(g_board_fb, BOARD_FB_PAGE_SIZE,
                                       BOARD_FB_WIDTH, BOARD_FB_HEIGHT,
                                       BOARD_FB_BPP);
   if (ret < 0)

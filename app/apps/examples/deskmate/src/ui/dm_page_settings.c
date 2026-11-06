@@ -49,13 +49,27 @@ static void dm_settings_snapshot_cb(lv_event_t *event)
       return;
     }
 
+  /* 先按"模拟器约定"写到 hostfs（评审能直接拿到 PNG）；真机没有 /host，
+   * 挂载失败时退回 tmpfs（CONFIG_LIBC_TMPDIR，P4 板级 bringup 会挂上）。
+   *
+   * 之前只有 /host 一个路径：真机上点「保存快照」**永远失败**，而失败信息
+   * 只写进界面标签，命令行证据里看不到。
+   */
+
   snprintf(path, sizeof(path), DM_SNAP_HOST_DIR "/dm_settings.bin");
 
   written = dm_display_snapshot(path);
+
+  if (written <= 0)
+    {
+      snprintf(path, sizeof(path), "/tmp/deskmate/dm_settings.bin");
+      written = dm_display_snapshot(path);
+    }
+
   if (written > 0)
     {
       dm_label_set(s_status, DM_I18N_SNAP_WRITTEN, written, path);
-      DM_LOG("settings: snapshot written (%d bytes)", written);
+      DM_LOG("settings: snapshot written (%d bytes) -> %s", written, path);
     }
   else
     {

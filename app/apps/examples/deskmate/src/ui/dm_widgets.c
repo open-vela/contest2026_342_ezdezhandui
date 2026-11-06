@@ -14,6 +14,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <lvgl/lvgl.h>
 
@@ -83,6 +84,7 @@ void dm_label_set(lv_obj_t *label, const char *fmt, ...)
 {
   char text[256];
   va_list ap;
+  const char *cur;
 
   if (label == NULL || fmt == NULL)
     {
@@ -92,6 +94,29 @@ void dm_label_set(lv_obj_t *label, const char *fmt, ...)
   va_start(ap, fmt);
   vsnprintf(text, sizeof(text), fmt, ap);
   va_end(ap);
+
+  /* **文字没变就一个字都别写。**
+   *
+   * lv_label_set_text() 是无条件失效的：即使新字符串与当前内容完全相同，它
+   * 也会把 label 标脏。于是每轮 dm_ui_tick() 都会产生脏区 ⇒ LVGL 每轮都要真
+   * 重绘 ⇒ fbdev 还要按 area->h * stride 逐行回写 PSRAM。静态页面上这一条就
+   * 足以把主循环从 ~2ms 拖到 ~20ms，并且让"提交数 ≡ 循环数"（真机实测：
+   * 15.03 帧/s、>100ms 帧间隔 1.9 次/s）。
+   *
+   * 顶栏时钟（dm_ui.c）和 agent 徽标早就各自加了 strcmp 缓存，注释里也记着
+   * 实测后果（单次刷写 206k 像素、忙时 140ms）——这里把同一个护栏下沉到公共
+   * 入口，所有页面一次性受益，免得再漏。
+   *
+   * 与当前文本比对（而不是缓存上一次入参）：即使别处用
+   * lv_label_set_text_fmt() 直接改过这个 label，这里也不会误判。
+   */
+
+  cur = lv_label_get_text(label);
+
+  if (cur != NULL && strcmp(cur, text) == 0)
+    {
+      return;
+    }
 
   lv_label_set_text(label, text);
 }

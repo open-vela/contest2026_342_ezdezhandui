@@ -180,6 +180,24 @@ int dm_ui_create(void)
       g_content_h = height - DM_STATUS_H;
     }
 
+  /* 清掉上一轮（同一个 NSH 会话里跑过第二次 deskmate 时）留下的指针。
+   *
+   * lv_deinit() 会把 LVGL 的所有对象释放掉，但这些 static 变量是我们自己的，
+   * 不会跟着清零。第二轮 dm_ui_create() 之前如果 dm_ui_tick() 被调用过一次
+   * （它会在 g_agent_badge / g_toast 等上面调 lv_*），就会踩到已释放的
+   * lv_obj_t，症状是 lv_obj_get_screen 里的 load fault，MTVAL 是个明显不是
+   * 指针的小整数 —— 完全看不出和"上一次运行"有关。
+   */
+
+  g_clock        = NULL;
+  g_agent_badge  = NULL;
+  g_page_title   = NULL;
+  g_tabbar       = NULL;
+  g_toast        = NULL;
+  g_content      = NULL;
+  g_current      = -1;
+  g_toast_ticks  = 0;
+
   g_screen = lv_screen_active();
   lv_obj_remove_style_all(g_screen);
   lv_obj_set_style_bg_color(g_screen, lv_color_hex(DM_COL_BG), 0);
@@ -599,11 +617,28 @@ void dm_ui_tick(void)
        * 直接拖出上百毫秒的忙时。
        */
 
-      static char last_badge[64];
-      char now_badge[64];
+      static char last_badge[80];
+      char now_badge[80];
 
-      snprintf(now_badge, sizeof(now_badge), DM_I18N_AGENT_STATE "：%s",
-               dm_ui_agent_label());
+      /* 离线时把 errno 一起显示出来：只写"离线"的话，"agent 没起"
+       * (ECONNREFUSED 111)、"没有回环"(ETIMEDOUT 110)、"握手被拒"(EPROTO 71)
+       * 在界面上完全一样，排查只能靠猜。
+       */
+
+      {
+        int err = dm_agent_last_error();
+
+        if (err != 0 && strcmp(dm_agent_state(), "offline") == 0)
+          {
+            snprintf(now_badge, sizeof(now_badge), DM_I18N_AGENT_STATE "：%s(%d)",
+                     dm_ui_agent_label(), err);
+          }
+        else
+          {
+            snprintf(now_badge, sizeof(now_badge), DM_I18N_AGENT_STATE "：%s",
+                     dm_ui_agent_label());
+          }
+      }
 
       if (strcmp(now_badge, last_badge) != 0)
         {

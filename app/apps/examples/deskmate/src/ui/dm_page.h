@@ -103,4 +103,11 @@ void dm_page_chat_append_agent(const char *text);
 
 int dm_page_chat_bubbles(void);
 
+/* 输入框"实际解析到"的字体（走 lv_obj_get_style_text_font，不是代码里打算
+ * 用的那个）。自检用它来抓"控件没设字体、回退到无中文字形的 LV_FONT_DEFAULT"
+ * 这一类缺陷 —— 只探测 DM_FONT_BODY 是抓不到的。
+ */
+
+const struct _lv_font_t *dm_page_chat_input_font(void);
+
 #endif /* __APPS_EXAMPLES_DESKMATE_UI_DM_PAGE_H */

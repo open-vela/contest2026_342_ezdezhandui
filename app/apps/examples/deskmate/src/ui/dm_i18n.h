@@ -29,18 +29,6 @@
 #define DM_I18N_TAB_CHAT        "对话"
 #define DM_I18N_TAB_NET         "网络"
 #define DM_I18N_TAB_SETTINGS    "设置"
-#define DM_I18N_TAB_AGENT       "智能体"
-#define DM_I18N_AGENT_TITLE     "智能体"
-#define DM_I18N_AGENT_STATE     "连接状态"
-#define DM_I18N_AGENT_ONLINE    "在线"
-#define DM_I18N_AGENT_OFFLINE   "离线（后台连不上）"
-#define DM_I18N_AGENT_MOCK      "离线应答（mock）"
-#define DM_I18N_AGENT_COUNTS    "收发"
-#define DM_I18N_AGENT_LAST      "最近回复"
-#define DM_I18N_AGENT_NONE      "还没有收到回复"
-#define DM_I18N_AGENT_QR        "配对二维码"
-#define DM_I18N_AGENT_QR_HINT   "手机扫码配对；也可以直接在「对话」页聊天"
-#define DM_I18N_AGENT_RECONNECT "重连"
 
 /* 首页 */
 
@@ -79,7 +67,7 @@
 #define DM_I18N_CAPTURE         "抓拍"
 #define DM_I18N_ASK_VISION      "让智能体看一眼"
 #define DM_I18N_CAMERA_ABSENT   "摄像头不可用"
-#define DM_I18N_CAMERA_OFF_HINT "摄像头默认关闭：CSI 与 DSI 共享 MIPI PHY，本板开摄像头会使显示失步（--camera 可强制打开）"
+#define DM_I18N_CAMERA_OFF_HINT "摄像头默认关闭（省电、省 PSRAM 带宽）。CSI 与 DSI 并不互斥：板级 bringup 已在 MIPI-DSI 启动前做完 ISP bypass，用 --camera 可以边看画面边显示。"
 #define DM_I18N_CAMERA_ASK      "看一下摄像头现在的画面（第 %d 帧，%s 后端，%d×%d），描述你看到了什么。"
 #define DM_I18N_MOTION_EVENT    "摄像头检测到画面在动。"
 
@@ -92,6 +80,8 @@
 #define DM_I18N_CHAT_YOU        "我"
 #define DM_I18N_CHAT_AGENT      "桌伴"
 #define DM_I18N_CHAT_READY      "桌伴已就绪。当前是离线应答后端；连上 ai_agent 服务后会自动转给大模型。"
+#define DM_I18N_CHAT_READY_WS   "桌伴已就绪。已连上 ai_agent，消息会转给大模型。"
+#define DM_I18N_CHAT_READY_LOCAL "桌伴已就绪。当前是离线应答（未连上 ai_agent）；用 --agent-spawn 或先启动 ai_agent。"
 #define DM_I18N_PRESET_TIME     "现在几点了？"
 #define DM_I18N_PRESET_NET      "网络现在怎么样？"
 #define DM_I18N_PRESET_CAMERA   "你看到什么了？"
@@ -135,6 +125,13 @@
 #define DM_I18N_NET_AP_UNSUP    "本机从机固件为 STA 版，不支持热点"
 #define DM_I18N_NET_ROLLBACK    "5 秒内未确认，已回滚"
 #define DM_I18N_NET_STATIC_OK   "已应用静态地址"
+
+/* 扫描/连接失败的具体原因（区别于"空气里没有 AP"） */
+
+#define DM_I18N_NET_DRV_FAIL    "驱动/RPC 失败"
+#define DM_I18N_NET_DISC_FAIL   "断开失败"
+#define DM_I18N_NET_TRUNCATED   "结果过多已截断"
+#define DM_I18N_NET_NO_ASSOC    "未关联（请重试或检查密码）"
 
 /* 设置页 */
 

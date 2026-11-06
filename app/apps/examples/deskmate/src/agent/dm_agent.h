@@ -46,7 +46,20 @@ void dm_agent_set_endpoint(const char *host, int port);
 
 /* Human readable state: "off", "mock", "connecting", "online", "offline". */
 
+/* 主动发起一次 ws 重连（不等下一次 dm_agent_poll 的 5s 节流）。
+ * 探针在等待状态时用它，否则等待期间根本没人发起连接。
+ */
+
+void dm_agent_retry_now(void);
+
 const char *dm_agent_state(void);
+
+/* 最近一次连接/发送失败的原因（0 = 正常）。把"离线"拆成可分辨的几种：
+ * ECONNREFUSED(111) = 没人监听（agent 没起）；ETIMEDOUT(110) = 路由不通
+ * （典型是没有 CONFIG_NET_LOOPBACK 却连 127.0.0.1）；EPROTO = 握手被拒。
+ */
+
+int dm_agent_last_error(void);
 
 /* Queue a user utterance.  Returns 0 when it was accepted. */
 

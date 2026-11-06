@@ -144,6 +144,12 @@ int dm_net_if_set_dhcp(const char *ifname);
 
 int dm_net_if_set_dhcp_async(const char *ifname);
 int dm_net_if_dhcp_status(int *err);
+
+/* 同上的按接口版本：双口（eth0 + wlan0）同时请求 DHCP 时，单份全局状态
+ * 会被后发起的那个覆盖。0=未发起 1=进行中 2=成功 -1=失败。
+ */
+
+int dm_net_if_dhcp_status_of(const char *ifname, int *err);
 int dm_net_if_set_static(const char *ifname, const char *ip, const char *mask,
                          const char *gw);
 int dm_net_if_set_up(const char *ifname, bool up);

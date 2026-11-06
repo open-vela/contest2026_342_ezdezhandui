@@ -44,6 +44,17 @@
  * 也就是 CP 回了，只是超过 5s 被主机丢掉了。这里给取结果也放宽到 15s。
  */
 
+/* 2026-11-06 修复：这个宏定义了却**从未被引用**。
+ *
+ * 真机日志（msg_id=289 = Req_WifiScanGetApRecords）：
+ *     eh_host_feat_rpc: request: no response uid=20 msg_id=289 (3000 ms)
+ *     eh_hosted_nuttx: SIOCSIWSCAN(wlan0) try 2 -> -1 (errno=5)
+ *     rx: no waiter for uid=20 (late response?) dropping
+ * 也就是说：扫描本身成功了（CP 侧 `scan done, 8 AP(s)`），但**取记录**这条在
+ * 3000 ms 就放弃，于是驱动回 -EIO，上层看到的就是"扫描失败"。
+ * 下面两个取结果的调用已改为用它。
+ */
+
 #define EH_SCAN_RPC_TIMEOUT_MS 15000
 
 /* 轻量状态查询（RSSI/BSSID/接口统计）的 RPC 超时。
@@ -57,7 +68,7 @@
 
 /* 取扫描结果（可能有多条记录），允许比状态查询慢，但别到 15 秒。 */
 
-#define EH_SCAN_GET_RPC_TIMEOUT_MS 3000
+#define EH_SCAN_GET_RPC_TIMEOUT_MS EH_SCAN_RPC_TIMEOUT_MS
 
 #define EH_HOST_WIFI_TAG "eh_wifi"
 
@@ -584,7 +595,7 @@ esp_err_t eh_host_wifi_scan_get_ap_num(uint16_t *out_count)
     if (!req) return ESP_FAIL;
 
     eh_rpc_ctrl_cmd_t *r = NULL;
-    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_STATUS_RPC_TIMEOUT_MS;
+    ((eh_rpc_ctrl_cmd_prefix_t *)req)->rsp_timeout_ms = EH_SCAN_RPC_TIMEOUT_MS;
     if (eh_host_feat_rpc_request_sync(RPC_ID__Req_WifiScanGetApNum, req, (void **)&r) != 0) return ESP_FAIL;
     int rc = r->resp_event_status;
     if (rc == 0) *out_count = (uint16_t)r->u.e_scan_done.number;

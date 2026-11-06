@@ -51,6 +51,33 @@ static int  s_ap_count;
 static bool s_scanning;
 static uint32_t s_last_refresh_ms;
 
+/* 连接后等待关联的起点（0 = 不等待）。驱动 SIOCSIWESSID 是阻塞的，但返回 0
+ * 只代表"请求被接受"，关联/取地址还要它自己跑几秒到十几秒。
+ */
+
+static uint32_t s_link_check_ms;
+
+/* 关联判据的**采样缓存**：dm_net_wifi_associated() 是阻塞的 wext ioctl
+ * （CP 侧 RPC 超时 3000 ms），每轮 UI 循环都调会把界面拖死。这里最多 1 秒
+ * 采一次样，中间的每一轮都用缓存值。
+ */
+
+static uint32_t s_assoc_ms;
+static bool     s_assoc_ok;
+
+#define DM_LINK_CHECK_MS 15000u
+
+/* 一次操作（扫描/连接/断开/热点）的结论要**停留**几秒。
+ *
+ * 原来这些结论写进 s_wifi_state 之后，同一轮 update() 末尾的"通用无线状态"
+ * 分支会立刻把它覆盖成"已启用 -" —— 用户看到的永远是那句没信息量的话，
+ * 于是"扫描/断开没用"就成了唯一合理的结论。
+ */
+
+static uint32_t s_note_ms;
+
+#define DM_NOTE_HOLD_MS 8000u
+
 /* 以太网手动配置（未点"应用"前只是草稿） */
 
 static char s_draft_addr[20];
@@ -421,17 +448,29 @@ static void dm_page_net_mode_manual_cb(lv_event_t *event)
 static void dm_page_net_password_done(const char *text, void *arg)
 {
   const char *ssid = (const char *)arg;
+  int ret;
 
-  if (dm_net_wifi_connect(ssid, text) == 0)
+  ret = dm_net_wifi_connect(ssid, text);
+
+  if (s_wifi_state != NULL)
     {
-      if (s_wifi_state != NULL)
+      if (ret == 0)
         {
+          /* **注意**：这里的 0 只代表"请求被驱动接受"，不代表已经关联上。
+           * 驱动内部的 DHCP/关联要 2~16 s，真正的结果由 update() 里轮询
+           * dm_net_wifi_associated() 给出（见下面的关联判据）。
+           */
+
           dm_label_set(s_wifi_state, "%s", DM_I18N_NET_CONNECTING);
+          s_link_check_ms = lv_tick_get();
+          s_assoc_ms      = 0;   /* 立刻重新采样一次 */
+          s_assoc_ok      = false;
         }
-    }
-  else if (s_wifi_state != NULL)
-    {
-      dm_label_set(s_wifi_state, "%s", DM_I18N_NET_CONN_FAIL);
+      else
+        {
+          dm_label_set(s_wifi_state, "%s (errno=%d)", DM_I18N_NET_CONN_FAIL,
+                       -ret);
+        }
     }
 }
 
@@ -473,7 +512,7 @@ static void dm_page_net_fill_aps(void)
 
   for (i = 0; i < found; i++)
     {
-      char text[96];
+      char text[128];
       lv_obj_t *row;
       lv_obj_t *btn;
 
@@ -481,16 +520,21 @@ static void dm_page_net_fill_aps(void)
 
       row = lv_obj_create(s_ap_list);
       lv_obj_remove_style_all(row);
-      lv_obj_set_size(row, lv_pct(100), 44);
+      lv_obj_set_size(row, lv_pct(100), 40);
       lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
       lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-      snprintf(text, sizeof(text), "%s   %d dBm%s", aps[i].ssid, aps[i].rssi,
+      /* 显式限长：aps[i].ssid 是 char[DM_NET_SSID_LEN]，但 GCC 的
+       * -Wformat-truncation 对经过 strlcpy 的数组仍按最坏情况估算，
+       * 用 "%.32s" 让它有确定的上界（SSID 上限本来就是 32 字节）。
+       */
+
+      snprintf(text, sizeof(text), "%.32s   %d dBm%s", aps[i].ssid, aps[i].rssi,
                aps[i].secure ? "  *" : "");
 
       dm_label(row, text, DM_FONT_SMALL, lv_color_hex(DM_COL_TEXT));
 
-      btn = dm_button(row, DM_I18N_NET_CONNECT, 110, 34, dm_page_net_ap_cb,
+      btn = dm_button(row, DM_I18N_NET_CONNECT, 110, 32, dm_page_net_ap_cb,
                       &s_ap_ssid[i]);
       lv_obj_align(btn, LV_ALIGN_RIGHT_MID, 0, 0);
     }
@@ -498,12 +542,28 @@ static void dm_page_net_fill_aps(void)
 
 static void dm_page_net_scan_cb(lv_event_t *event)
 {
+  int ret;
+
   if (lv_event_get_code(event) != LV_EVENT_CLICKED)
     {
       return;
     }
 
-  if (dm_net_wifi_scan_start() != 0)
+  ret = dm_net_wifi_scan_start();
+
+  if (ret == -EALREADY)
+    {
+      /* 上一轮还在跑：**不要**清空列表，只提示一下。 */
+
+      if (s_wifi_state != NULL)
+        {
+          dm_label_set(s_wifi_state, "%s", DM_I18N_NET_SCANNING);
+        }
+
+      return;
+    }
+
+  if (ret != 0)
     {
       if (s_wifi_state != NULL)
         {
@@ -530,12 +590,37 @@ static void dm_page_net_scan_cb(lv_event_t *event)
 
 static void dm_page_net_disconnect_cb(lv_event_t *event)
 {
+  int ret;
+
   if (lv_event_get_code(event) != LV_EVENT_CLICKED)
     {
       return;
     }
 
-  (void)dm_net_wifi_disconnect();
+  ret = dm_net_wifi_disconnect();
+
+  /* 返回值以前是直接丢掉的（(void)），于是断开失败时屏幕上什么都不会变 ——
+   * 用户只能得出"这个按钮没用"。
+   */
+
+  if (s_wifi_state != NULL)
+    {
+      if (ret == 0)
+        {
+          dm_label_set(s_wifi_state, "%s", DM_I18N_NET_DOWN);
+          s_note_ms = lv_tick_get();
+        }
+      else
+        {
+          dm_label_set(s_wifi_state, "%s (errno=%d)", DM_I18N_NET_DISC_FAIL,
+                       -ret);
+          s_note_ms = lv_tick_get();
+        }
+    }
+
+  /* 强制刷新一次：紧跟的 update() 有一半概率被 1s 节流吃掉。 */
+
+  s_last_refresh_ms = 0;
   dm_page_net_update();
 }
 
@@ -549,6 +634,7 @@ static void dm_page_net_ap_note_cb(lv_event_t *event)
   if (s_wifi_state != NULL)
     {
       dm_label_set(s_wifi_state, "%s", DM_I18N_NET_AP_UNSUP);
+      s_note_ms = lv_tick_get();
     }
 }
 
@@ -596,7 +682,7 @@ static int dm_page_net_create(lv_obj_t *parent, int w, int h)
 
   /* 右上：以太网 */
 
-  card = dm_card_stack(s_root, 340, DM_MARGIN, w - 360, 206,
+  card = dm_card_stack(s_root, 340, DM_MARGIN, w - 360, 182,
                        lv_color_hex(DM_COL_CARD));
 
   row = lv_obj_create(card);
@@ -628,7 +714,7 @@ static int dm_page_net_create(lv_obj_t *parent, int w, int h)
 
   /* 右下：无线 */
 
-  card = dm_card_stack(s_root, 340, 246, w - 360, h - 266,
+  card = dm_card_stack(s_root, 340, 222, w - 360, h - 242,
                        lv_color_hex(DM_COL_CARD));
 
   row = lv_obj_create(card);
@@ -654,6 +740,16 @@ static int dm_page_net_create(lv_obj_t *parent, int w, int h)
   lv_obj_set_flex_grow(s_ap_list, 1);
   lv_obj_set_flex_flow(s_ap_list, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_style_pad_row(s_ap_list, 6, 0);
+
+  /* 竖向滚动必须显式打开：AP 数量取决于环境，卡片装不下是常态。
+   * 原来这里什么都没设，最后一行会被卡片下边缘切掉半截、又滚不动，
+   * 看起来就像"列表坏了"。
+   */
+
+  lv_obj_set_scroll_dir(s_ap_list, LV_DIR_VER);
+  lv_obj_add_flag(s_ap_list, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_pad_bottom(s_ap_list, 6, 0);
+  lv_obj_set_scrollbar_mode(s_ap_list, LV_SCROLLBAR_MODE_AUTO);
 
   dm_page_net_update();
 
@@ -696,10 +792,90 @@ static void dm_page_net_update(void)
           s_scanning = false;
           dm_page_net_fill_aps();
 
+          /* 失败原因必须被呈现出来。
+           *
+           * 以前只在 st == -1 时才显示，而真机最常见的是
+           * `state=DONE + err=5 + count=0`（驱动/RPC 整条不通），界面却写
+           * "没有扫描到接入点"，和"空气里真的没有 AP"一模一样。
+           * dm_net.h 的对外契约本来就要求区分这两件事。
+           */
+
           if (s_wifi_state != NULL && st == -1)
             {
               dm_label_set(s_wifi_state, "%s (%d)", DM_I18N_NET_SCAN_FAIL, err);
+              s_note_ms = lv_tick_get();
             }
+          else if (s_wifi_state != NULL && err != 0 && count == 0)
+            {
+              dm_label_set(s_wifi_state, "%s (errno=%d)",
+                           DM_I18N_NET_DRV_FAIL, err);
+              s_note_ms = lv_tick_get();
+            }
+          else if (s_wifi_state != NULL && err == E2BIG)
+            {
+              dm_label_set(s_wifi_state, "%s", DM_I18N_NET_TRUNCATED);
+              s_note_ms = lv_tick_get();
+            }
+          else if (s_wifi_state != NULL && count > 0)
+            {
+              dm_label_set(s_wifi_state, "%d %s", count, DM_I18N_NET_AP_FOUND);
+              s_note_ms = lv_tick_get();
+            }
+        }
+    }
+
+  /* 连接后关联判据。
+   *
+   * dm_net_wifi_connect() 返回 0 只代表"驱动接受了请求"（它内部还要跑关联与
+   * DHCP，最长十几秒）。以前页面把 0 当成"连上了"，之后既不看关联结果也不
+   * 超时，于是失败时界面只会莫名其妙地退回"已启用 -"。这里补上判据：
+   * 15 s 内关联不上就明确报"未关联"。
+   *
+   * 2026-11-06 修复（问题1 的真凶之一）：这个判据原来**每一轮 UI 循环都调一次
+   * dm_net_wifi_associated()**，而它以阻塞 ioctl(SIOCGIWAP) 的形式走 CP 的 RPC，
+   * 超时上限 3000 ms。UI 循环约 50 Hz，于是"点了连接之后整块屏幕停住" ——
+   * 用户看到的就是"按钮没反应"。wapi 没这个问题，因为它在 NSH 任务里跑，
+   * 背后没有需要刷新的界面。
+   *
+   * 现在把这次查询压到**最多 1 秒一次**，并用缓存值判断。
+   */
+
+  if (s_link_check_ms != 0)
+    {
+      uint32_t elapsed = lv_tick_get() - s_link_check_ms;
+      uint32_t now_ms  = lv_tick_get();
+
+      if (s_assoc_ms == 0 || now_ms - s_assoc_ms >= 1000u)
+        {
+          s_assoc_ms = now_ms;
+          s_assoc_ok = dm_net_wifi_associated();
+        }
+
+      if (s_assoc_ok)
+        {
+          s_link_check_ms = 0;
+          s_assoc_ms      = 0;
+
+          if (s_wifi_state != NULL)
+            {
+              dm_label_set(s_wifi_state, "%s", DM_I18N_NET_LINKED);
+              s_note_ms = lv_tick_get();
+            }
+        }
+      else if (elapsed >= DM_LINK_CHECK_MS)
+        {
+          s_link_check_ms = 0;
+          s_assoc_ms      = 0;
+
+          if (s_wifi_state != NULL)
+            {
+              dm_label_set(s_wifi_state, "%s", DM_I18N_NET_NO_ASSOC);
+              s_note_ms = lv_tick_get();
+            }
+        }
+      else
+        {
+          return;   /* 等结果期间别让下面的节流把这次状态覆盖掉 */
         }
     }
 
@@ -807,7 +983,8 @@ static void dm_page_net_update(void)
 
   /* 无线状态 */
 
-  if (s_wifi_state != NULL && !s_scanning && net != NULL)
+  if (s_wifi_state != NULL && !s_scanning && net != NULL &&
+      (s_note_ms == 0 || lv_tick_get() - s_note_ms >= DM_NOTE_HOLD_MS))
     {
       if (!net->wireless_present)
         {

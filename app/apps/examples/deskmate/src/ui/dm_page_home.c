@@ -154,10 +154,20 @@ static void dm_home_update(void)
       return;
     }
 
+  /* 走 dm_label_set()：它自带"文字没变就一个字都别写"的护栏。
+   *
+   * 这里原本是裸的 lv_label_set_text()，于是每轮 dm_ui_tick() 都无条件把首页
+   * 时钟标脏。真机 JTAG 实测（2026-11-06，home 页 12s 窗口）：脏区
+   * 13,603 px/帧、**提交数 ≡ 循环数**（20.8 次/秒）—— 整屏 20 次/秒地在为一块
+   * 只按秒跳动的表针重绘+回写。顶栏时钟（dm_ui.c:146）、agent 徽标
+   * （dm_ui.c:608）、相机页统计标签（dm_page_camera.c:375）都早就有这道护栏，
+   * 只有首页这一处漏了。
+   */
+
   if (localtime_r(&now, &tm_buf) != NULL &&
       strftime(text, sizeof(text), "%H:%M:%S", &tm_buf) > 0 && s_clock != NULL)
     {
-      lv_label_set_text(s_clock, text);
+      dm_label_set(s_clock, "%s", text);
     }
 
   if (s_uptime != NULL)

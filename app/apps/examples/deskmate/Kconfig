@@ -131,6 +131,64 @@ config EXAMPLES_DESKMATE_WIFI_BSS
 		CONFIG_WIFI_SIM_CONFDIR="/tmp/wifi") to have the network page list
 		access points on a host with no radio.
 
+config EXAMPLES_DESKMATE_CAMERA_AUTOSTART
+	bool "Open the camera at startup"
+	default y
+	---help---
+		Interactive startup ("just run deskmate") opens the camera so the
+		camera page has a picture immediately.  Evidence and diagnostic modes
+		(--selftest, --tour, --wifi-*, --ap-probe) ignore this default on
+		purpose: they must stay repeatable.  Disable here, or pass
+		--no-camera, to boot with the camera closed.
+
+config EXAMPLES_DESKMATE_AGENT_AUTOSPAWN
+	bool "Start the built-in ai_agent at startup"
+	default y
+	depends on EXAMPLES_AI_AGENT_VELA
+	---help---
+		Interactive startup starts ai_agent as an in-process task and then
+		connects the bridge to it over 127.0.0.1:28789, so the status badge
+		reads "online" without the user typing anything first.
+
+		Needs CONFIG_NET_LOOPBACK (otherwise 127.0.0.1 is routed to the
+		default interface and never reaches the local listener).  Images
+		without ai_agent ignore this symbol entirely.
+
+		Turn it off here, or pass --no-agent-spawn, to keep the bridge in
+		its Kconfig mode (mock / ws / off).
+
+config EXAMPLES_DESKMATE_WLAN_AUTOSTART
+	bool "Bring wlan0 up (and DHCP) at startup"
+	default y
+	---help---
+		Interactive startup enables the wireless interface and asks for an
+		address over DHCP, so the network page has a usable address without
+		a manual "ifup wlan0" first.  Association is optional: see
+		EXAMPLES_DESKMATE_WLAN_SSID.
+
+		Images without a wireless netdev just log "no wireless interface"
+		and continue.  Turn it off here, or pass --no-wlan.
+
+config EXAMPLES_DESKMATE_WLAN_SSID
+	string "Default STA SSID for the startup association (empty = none)"
+	default ""
+	depends on EXAMPLES_DESKMATE_WLAN_AUTOSTART
+	---help---
+		When non-empty, startup associates with this access point before
+		requesting DHCP - useful for unattended deployment.
+
+		Leave it empty when the companion firmware already associates by
+		itself (the usual ESP-Hosted setup): the application then only does
+		ifup + DHCP and does not disturb an existing link.
+
+config EXAMPLES_DESKMATE_WLAN_PSK
+	string "Default STA passphrase for the startup association"
+	default ""
+	depends on EXAMPLES_DESKMATE_WLAN_SSID
+	---help---
+		Passphrase used together with EXAMPLES_DESKMATE_WLAN_SSID.  Leave
+		empty for an open network.
+
 config EXAMPLES_DESKMATE_CAMERA_DEVPATH
 	string "Camera device path"
 	default "/dev/video0"

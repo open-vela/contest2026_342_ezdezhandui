@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <nuttx/clock.h>
 
@@ -65,12 +66,18 @@ void dm_log_rate(const char *key, const char *fmt, ...)
 
   for (i = 0; i < g_dm_log_used; i++)
     {
+      /* 必须比对**完整**函数名。
+       *
+       * 这里原本只比前 4 个字符，于是任何同前缀的两个函数会被当成同一个
+       * 日志来源而互相限速 —— 实测踩到：`dm_wlan_autostart()` 与
+       * `dm_write_wifi_bss()` 都以 "dm_w" 开头，无线自启的几行日志被静默
+       * 丢掉，控制台上看不到任何 wlan 证据（限速本身"工作正常"，只是丢了
+       * 不属于它的行）。
+       */
+
       if (g_dm_log_table[i].key == key ||
           (g_dm_log_table[i].key != NULL && key != NULL &&
-           g_dm_log_table[i].key[0] == key[0] &&
-           g_dm_log_table[i].key[1] == key[1] &&
-           g_dm_log_table[i].key[2] == key[2] &&
-           g_dm_log_table[i].key[3] == key[3]))
+           strcmp(g_dm_log_table[i].key, key) == 0))
         {
           entry = &g_dm_log_table[i];
           break;

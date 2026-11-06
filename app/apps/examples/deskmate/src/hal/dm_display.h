@@ -114,4 +114,25 @@ void dm_display_destroy(void);
 uint32_t dm_display_commits(void);
 uint32_t dm_display_last_ms(void);
 
+/* **面板**保活计数 —— 这是唯一无法伪造的显示证据。
+ *
+ * dm_display_commits() 数的是 LVGL 把画面画进 PSRAM 的次数；面板（DSI 链路）
+ * 停摆时 LVGL 完全不知道，计数照涨。于是"面板变纯色但统计全绿"这种情况，
+ * 原来所有判据都发现不了（真机 2026-11-06 复现）。
+ *
+ * 这个函数返回 DSI 的 DMA 传输完成中断计数：每个刷新周期 +1，链路一断就冻结。
+ * 返回值 0 表示该平台没有这个信息源（此时调用方应回退到 commits）。
+ */
+
+uint32_t dm_display_panel_beat(void);
+
+/* 面板「饥饿」计数：DSI 桥的 FIFO underrun 次数。
+ *
+ * beat 只证明 DMA 通道还在跑；这个数证明**画面有没有断供** —— 相机抢带宽时
+ * 它会涨而 beat 可能仍然正常。读这个函数会清硬件中断标志，所以只应由显示
+ * 看门狗（500ms）这样的固定节奏调用；返回 0 表示该平台没有这个信息源。
+ */
+
+uint32_t dm_display_panel_underrun(void);
+
 #endif /* __APPS_EXAMPLES_DESKMATE_HAL_DM_DISPLAY_H */

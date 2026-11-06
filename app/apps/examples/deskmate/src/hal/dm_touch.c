@@ -24,6 +24,10 @@
 #include <nuttx/clock.h>
 #include <nuttx/input/touchscreen.h>
 
+#if defined(CONFIG_INPUT_GT9XX)
+#  include <nuttx/input/gt9xx.h>
+#endif
+
 #include <lvgl/lvgl.h>
 
 #include "dm_config.h"
@@ -72,8 +76,18 @@ static volatile int g_hw_y;
 static volatile int g_hw_pressed;
 static volatile int g_hw_have;
 static volatile int g_hw_seq;
-static volatile uint32_t g_hw_hold_until;   /* 按下锁存到期时刻（ms，留作诊断） */
-static volatile int g_cb_hold;              /* 回调侧锁存剩余次数 */
+
+/* 这里原本有 g_hw_hold_until（120ms 时间锁存）和 g_cb_hold（4 次回调锁存）。
+ *
+ * 删掉的理由是实测：驱动侧改造前，一次 read 的 p50 是 17.7ms、最坏 204ms、
+ * 采样率只有 7.1Hz；改造后驱动自己保证 DOWN→MOVE→UP 的事件语义，UI 侧不需要
+ * 再"猜"手指还在不在。
+ *
+ * 而且这两个常数本来就是错的量级：120ms 比最坏的一次读还短（710ms），4 次回调
+ * 在 30~50ms 的回调周期下只有 120~200ms —— 也就是说它们不但没解决问题，
+ * 还会把"已经抬手"继续报成按下（g_cb_hold 的递减与 g_hw_pressed 的赋值互相覆盖），
+ * 表现为"抬手后界面还在拖"。
+ */
 
 /* 诊断（JTAG 可读）：LVGL 回调侧 —— 证明"快照 -> 回调 -> UI"这一段。
  *   cb_calls   ：回调被 LVGL 调用的次数
@@ -93,6 +107,8 @@ volatile uint32_t g_dbg_touch_hw_ok;       /* read 返回完整样本的次数 *
 volatile uint32_t g_dbg_touch_hw_hits;     /* npoints>0（含松手；驱动把 UP 也报成 1 点） */
 volatile uint32_t g_dbg_touch_hw_downs;    /* 其中 flags & TOUCH_DOWN 的**真正按下** */
 volatile uint32_t g_dbg_touch_hw_err;      /* 返回长度不符的次数 */
+volatile uint32_t g_dbg_touch_hw_again;    /* read 返回 -EAGAIN 的次数（正常） */
+volatile uint32_t g_dbg_touch_hw_idle;     /* read 成功但这一拍没有新事件 */
 volatile uint32_t g_dbg_touch_hw_us;
 volatile uint32_t g_dbg_touch_hw_us_max;
 
@@ -155,7 +171,21 @@ static void *dm_touch_hw_thread(void *arg)
 
   while (g_touch_gen == my_gen)
     {
-      (void)poll(&pfd, 1, 50);
+      /* 等驱动的事件源。这里的 200ms **不是**采样周期，只是退出检查周期。
+       *
+       * 关键区别：驱动侧已经把 poll_notify() 真正接起来了（gt9xx 的 LPWORK
+       * worker 每 8ms 采一次样并唤醒等待者），所以有手指动作时 poll() 立刻返回，
+       * 超时值只在"长时间没有任何事件"时决定线程多久回来看一次 g_touch_gen。
+       *
+       * 改造前 poll_notify() 从未被调用过，任何超时值都等于"必然睡满"，
+       * 50ms 直接决定了 7.1Hz 的采样率上限 —— 那个数字是用逻辑分析仪量出来的。
+       *
+       * 不能用 -1（永久阻塞）：dm_touch_shutdown() 靠 g_touch_gen 通知退出，
+       * 线程要是死在 poll 里就永远看不到那个变化，容器任务退出后线程会残留，
+       * 并与下一个实例抢同一个 /dev/input0。
+       */
+
+      (void)poll(&pfd, 1, 200);
 
       {
         uint32_t t0 = (uint32_t)TICK2USEC(clock_systime_ticks());
@@ -175,39 +205,73 @@ static void *dm_touch_hw_thread(void *arg)
 
             if (sample->npoints > 0)
               {
-                g_hw_x       = sample->point[0].x;
-                g_hw_y       = sample->point[0].y;
-                g_hw_pressed = (sample->point[0].flags & TOUCH_DOWN) ? 1 : 0;
+                g_hw_x = sample->point[0].x;
+                g_hw_y = sample->point[0].y;
 
-                /* 锁存：GT911 是轮询型，按下那一帧可能只报一次 npoints>0。
-                 * 命中后把"按下"维持 120ms，UI 侧（30~50ms 采样）一定能看到。
+                /* 驱动现在保证语义：DOWN 之后每一次接触都会报 MOVE，
+                 * 松手报恰好一次 UP。所以这里**不需要**时间锁存 —— 只要
+                 * 把 flags 里"接触是否仍然成立"如实转成 g_hw_pressed。
+                 *
+                 * 判据必须是 (DOWN|MOVE)，不能只看 DOWN：只认 DOWN 的话，
+                 * 手指按住不动时驱动发的 MOVE 会被当成"没按"，下一拍再被
+                 * 自己的 else 分支清掉 —— 这正是原来需要 120ms 锁存去掩盖的
+                 * 那个 bug 的根源。
                  */
 
-                if (g_hw_pressed)
+                if ((sample->point[0].flags & TOUCH_UP) != 0)
                   {
-                    g_hw_hold_until = TICK2MSEC(clock_systime_ticks()) + 120u;
+                    g_hw_pressed = 0;
                   }
-
-                g_dbg_touch_hw_hits++;
-                if (g_hw_pressed)
+                else if ((sample->point[0].flags &
+                          (TOUCH_DOWN | TOUCH_MOVE)) != 0)
                   {
+                    g_hw_pressed = 1;
+
                     g_dbg_touch_hw_downs++;
                   }
 
-                if (g_dbg_touch_hw_hits <= 3)
+                g_dbg_touch_hw_hits++;
+
+                /* 只在前 3 次**按下**时打印。
+                 *
+                 * 原来按 "hits<=3" 打，而 hits 现在包含每一拍 MOVE；一旦有人
+                 * 按住不放，前 3 条日志会在 30ms 内打完，之后注入坐标、
+                 * 排查坐标错误时就什么都看不到了。
+                 */
+
+                if (g_dbg_touch_hw_downs <= 3)
                   {
                     DM_LOG("touch: hw sample #%u x=%d y=%d flags=0x%02x",
-                           (unsigned)g_dbg_touch_hw_hits, (int)g_hw_x,
+                           (unsigned)g_dbg_touch_hw_downs, (int)g_hw_x,
                            (int)g_hw_y, (unsigned)sample->point[0].flags);
                   }
+
+                g_hw_seq++;
               }
             else
               {
-                g_hw_pressed = 0;
+                /* npoints == 0 现在是"这一拍没有新事件"，**不是**"手指抬起"。
+                 *
+                 * 旧驱动的 npoints==0 意思是"没按"（它从不发 MOVE），所以
+                 * 这里清 g_hw_pressed 是对的；新驱动用 MOVE 维持接触、用 UP
+                 * 报告抬起，如果还在这里清零，按住不动时每一拍都会被误判成
+                 * 抬手，表现就是"按下后立刻断开、拖不动"。
+                 */
+
+                g_dbg_touch_hw_idle++;
               }
 
             g_hw_have = 1;
-            g_hw_seq++;
+          }
+        else if (n == -1 && errno == EAGAIN)
+          {
+            /* 驱动快照正被 worker 持有，这一拍没有新样本。
+             *
+             * 这**不是**错误，也不该重试：poll 会立刻返回（因为驱动仍然
+             * 认为有数据待取），重试就变成忙等。直接进入下一轮 poll 即可。
+             */
+
+            g_dbg_touch_hw_again++;
           }
         else
           {
@@ -257,8 +321,7 @@ static void dm_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
       g_tail = (g_tail + 1) % DM_TOUCH_QUEUE_LEN;
     }
-  else if (g_hw_have &&
-           (g_hw_pressed || g_cb_hold > 0))
+  else if (g_hw_have && g_hw_pressed)
     {
       /* 硬件最新样本（由 dm_touch_hw_thread 在别的线程里读进来的） */
 
@@ -271,12 +334,6 @@ static void dm_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
       g_dbg_touch_cb_pressed++;
       g_dbg_touch_cb_x = (uint32_t)g_hw_x;
       g_dbg_touch_cb_y = (uint32_t)g_hw_y;
-
-      /* 按**回调次数**锁存（4 次 ≈ 200ms），不依赖时钟单位/截断：
-       * 手指按下的那一两次回调之后，仍继续报几拍 PRESSED 让 LVGL 确认点击。
-       */
-
-      g_cb_hold = (g_hw_pressed != 0) ? 4 : (g_cb_hold - 1);
     }
   else
     {
@@ -365,9 +422,11 @@ void dm_touch_shutdown(void)
 {
   g_touch_gen++;               /* 旧线程看到代际变化即退出（见 g_touch_gen 说明） */
 
-  /* 线程每 50ms poll 一轮，这里给它一整轮多一点的时间退出。 */
+  /* 线程的 poll 超时是 200ms（见 dm_touch_hw_thread），这里给它一整轮多一点
+   * 的时间退出。没有事件时线程最多 200ms 就会回来看一次 g_touch_gen。
+   */
 
-  usleep(80 * 1000);
+  usleep(250 * 1000);
 }
 
 int dm_touch_create(void)
@@ -428,8 +487,52 @@ void dm_touch_fake_hw(int x, int y)
   g_hw_y          = y;
   g_hw_pressed    = 1;
   g_hw_have       = 1;
-  g_hw_hold_until = TICK2MSEC(clock_systime_ticks()) + 120u;
   g_hw_seq++;
 
   DM_LOG("touch: fake hw press at (%d,%d)", x, y);
+}
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: dm_touch_driver_stats
+ *
+ * Description:
+ *   把 gt9xx 驱动侧的采样统计读出来。返回 0 表示拿到数据，负值表示这块平台
+ *   没有 GT9xx（模拟器 / 其它触摸控制器）。
+ *
+ *   为什么需要：应用侧的 g_dbg_touch_hw_us_max 只能看到"read() 花了多久"，
+ *   而 read() 现在只读快照、几乎不花时间。真正的采样健康度在驱动里 ——
+ *   定时器是否在跑（ticks）、worker 是否被调度到（xfers）、传输本身多快
+ *   （xfer_us_max / hist）、以及有没有被锁挡住（lock_waits）。
+ *
+ *   这四个数字分开看才有意义：只有 ticks 涨而 xfers 不涨 = LPWORK 被饿死；
+ *   xfers 涨但 hist 高 = 总线或控制器慢；两者都正常而事件少 = 帧间丢事件。
+ *
+ ****************************************************************************/
+
+int dm_touch_driver_stats(struct dm_touch_drv_stats_s *out)
+{
+#if defined(CONFIG_INPUT_GT9XX)
+  if (out == NULL)
+    {
+      return -1;
+    }
+
+  memset(out, 0, sizeof(*out));
+
+  if (gt9xx_stats(&out->ticks, &out->xfers, &out->xfer_err, &out->events,
+                  &out->lock_waits, &out->lock_ms_max,
+                  &out->xfer_us_max, out->hist) < 0)
+    {
+      return -1;
+    }
+
+  return 0;
+#else
+  (void)out;
+  return -1;
+#endif
 }

@@ -76,6 +76,13 @@ volatile uint32_t g_dbg_disp_gap_over_100;
 volatile uint32_t g_dbg_disp_gap_over_33;
 volatile uint32_t g_dbg_disp_last_commit_ms;
 
+/* 看门狗线程优先级。主循环是 CONFIG_EXAMPLES_DESKMATE_PRIORITY(100)，
+ * 相机采集线程是 DM_CAMERA_THREAD_PRIORITY(90) 之下；看门狗只需要偶尔跑一下，
+ * 但要跑得及时，所以放在主循环之上（数值越大优先级越高）。
+ */
+
+#define DM_DISP_WD_PRIORITY 115
+
 #define DM_DISP_SLICE_N 16
 volatile uint32_t g_dbg_disp_slice_hash[DM_DISP_SLICE_N];
 volatile uint32_t g_dbg_disp_slice_ms[DM_DISP_SLICE_N];
@@ -137,6 +144,36 @@ uint32_t dm_display_last_ms(void)
 {
   return g_disp_last_ms;
 }
+
+uint32_t dm_display_panel_beat(void)
+{
+#if defined(CONFIG_ARCH_CHIP_ESP32P4) && defined(CONFIG_ESPRESSIF_MIPI_DSI)
+  extern uint32_t esp_mipi_dsi_dma_isr_count(void);
+
+  return esp_mipi_dsi_dma_isr_count();
+#else
+  return 0;
+#endif
+}
+
+uint32_t dm_display_panel_underrun(void)
+{
+#if defined(CONFIG_ARCH_CHIP_ESP32P4) && defined(CONFIG_ESPRESSIF_MIPI_DSI)
+  extern uint32_t esp_mipi_dsi_bridge_underrun_count(void);
+
+  /* 这个函数**会清中断标志**，所以只能由看门狗以固定节奏调用一次。
+   *
+   * 它读的是 MIPI-DSI 桥的「DPI 要像素、而 FIFO 里没有」标志 —— 也即是
+   * "面板真的被饿着了"。和 panel_beat（DSI DMA 中断还在不在涨）是两件事：
+   * beat 只能说明通道活着，underrun 才能说明画面有没有真的断供。
+   */
+
+  return esp_mipi_dsi_bridge_underrun_count();
+#else
+  return 0;
+#endif
+}
+
 static bool g_created;
 
 #if DM_DISPLAY_FBDEV
@@ -254,6 +291,17 @@ int dm_display_create(void)
     g_metrics.pixels_size = (size_t)g_plane.stride * g_metrics.height;
     g_metrics.backend     = "fbdev";
 
+    /* 双缓冲探测结果必须打出来。
+     *
+     * LVGL 的 nuttx fbdev 后端只在 `yres_virtual == yres * 2` 时才走双缓冲，
+     * 而这个条件取决于**板级驱动**有没有真的暴露第二页。这条日志是"双缓冲到底
+     * 生效了没有"的唯一直接证据 —— 不看它就只能靠肉眼看撕裂，而撕裂是间歇的。
+     */
+
+    DM_LOG("display: yres=%d yres_virtual=%d => fbdev %s buffering",
+           vinfo.yres, g_plane.yres_virtual,
+           (g_plane.yres_virtual == vinfo.yres * 2) ? "double" : "single");
+
     info.fb_path    = DM_FB_PATH;
 
     /* **不要把设备路径交给 LVGL**：lv_nuttx 会为它建一个"设备 indev"，
@@ -285,6 +333,28 @@ int dm_display_create(void)
 
     g_disp = result.disp;
 
+    /* 把 LVGL 的刷新节拍从默认 33ms 收到 16ms。
+     *
+     * 为什么必须显式设：面板提交只发生在 lv_timer_handler() 里，也就是**主循环
+     * 那个线程**里（本工程没有 LVGL render thread），所以"LVGL 的刷新周期"直接
+     * 就是帧率上限。默认 33ms 再叠加 usleep 的 10ms tick 量化
+     * （CONFIG_USEC_PER_TICK=10000 ⇒ usleep(33ms) 实际睡 40ms），真机 JTAG 实测
+     * 帧周期 ~67ms = 15fps。收到 16ms 后主循环每 ~20ms（2 tick）醒一次，
+     * 上限从 15fps 提到 ~50fps。
+     *
+     * LVGL 9.1 没有 lv_display_set_refr_period()，只能拿刷新定时器改周期。
+     */
+
+    {
+      lv_timer_t *refr = lv_display_get_refr_timer(g_disp);
+
+      if (refr != NULL)
+        {
+          lv_timer_set_period(refr, 16);
+          DM_LOG("display: LVGL refr period 33ms -> 16ms");
+        }
+    }
+
     DM_LOG("display: %s %dx%d bpp=%d stride=%d", g_metrics.backend,
            g_metrics.width, g_metrics.height, g_metrics.bpp,
            g_metrics.stride);
@@ -299,12 +369,37 @@ int dm_display_create(void)
 
     {
       pthread_t wd;
+      pthread_attr_t attr;
+      struct sched_param param;
 
-      if (pthread_create(&wd, NULL, dm_display_watchdog, NULL) == 0)
+      /* 看门狗优先级高于主循环（100），低于相机采集（90 是数值更小的
+       * 更高优先级 —— 这里全部用"数值越大优先级越高"的 NuttX 约定）。
+       *
+       * 单核（CONFIG_NCPUS=1）下这是必要的：看门狗每次只读两个计数器和
+       * 一个寄存器，但"什么时候被调度到"决定了它发现停摆的延迟。默认
+       * 优先级 + CONFIG_RR_INTERVAL=200 意味着它可能被相机线程压住 200ms。
+       */
+
+      /* 栈保持**默认值**（CONFIG_PTHREAD_STACK_DEFAULT = 16384）。
+       *
+       * 这条线程在停摆路径上会走 esp32p4_display_reinit() →
+       * video_stop / bind_framebuffer / video_start，那是穿过 DSI 驱动和 HAL
+       * 的深调用链；压小栈只会让溢出以"毫不相关的 LVGL load fault"的形式
+       * 出现（本项目已经踩过两次）。
+       */
+
+      pthread_attr_init(&attr);
+      memset(&param, 0, sizeof(param));
+      param.sched_priority = DM_DISP_WD_PRIORITY;
+      (void)pthread_attr_setschedparam(&attr, &param);
+
+      if (pthread_create(&wd, &attr, dm_display_watchdog, NULL) == 0)
         {
           (void)pthread_setname_np(wd, "dm-disp-wd");
-          DM_LOG("display: watchdog started");
+          DM_LOG("display: watchdog started (prio %d)", DM_DISP_WD_PRIORITY);
         }
+
+      pthread_attr_destroy(&attr);
     }
   }
 #else /* DM_DISPLAY_MEM */
@@ -703,6 +798,7 @@ void dm_display_destroy(void)
 #define DM_DISP_WD_STALL_TICKS 12       /* 12 × 500ms = 6 秒 */
 #define DM_DISP_WD_REINIT_MAX 3
 
+
 /* 诊断（JTAG 可读） */
 volatile uint32_t g_dbg_disp_stalls;
 volatile uint32_t g_dbg_disp_reinits;
@@ -710,6 +806,7 @@ volatile uint32_t g_dbg_disp_reinits;
 static void *dm_display_watchdog(void *arg)
 {
   uint32_t last = dm_display_commits();
+  uint32_t last_beat = dm_display_panel_beat();
   int stall = 0;
   unsigned int reinits = 0;
   uint32_t my_gen = g_wd_gen;    /* 只服务"我这一代" */
@@ -721,6 +818,27 @@ static void *dm_display_watchdog(void *arg)
       usleep(DM_DISP_WD_PERIOD_MS * 1000);
 
       uint32_t now = dm_display_commits();
+      uint32_t beat = dm_display_panel_beat();
+
+      /* 每 500ms 采一次桥 underrun（读即清，所以节奏必须由这里固定）。 */
+
+      (void)dm_display_panel_underrun();
+
+      /* 面板保活优先：只要 DSI 的传输完成中断还在涨，面板就一定在被喂。
+       *
+       * 反过来，commits 涨但 beat 不涨 = "LVGL 在画、面板已死" —— 这正是相机
+       * 抢死 DSI 之后的真实现象，旧的判据（只看 commits）永远发现不了。
+       */
+
+      if (beat != 0 && last_beat != 0 && beat != last_beat)
+        {
+          last_beat = beat;
+          last = now;
+          stall = 0;
+          continue;
+        }
+
+      last_beat = beat;
 
       if (now != last)
         {
@@ -741,7 +859,8 @@ static void *dm_display_watchdog(void *arg)
       extern int esp32p4_display_reinit(void);
 #endif
 
-      DM_ERR("display: 停摆 6s（commits=%u），尝试重建", (unsigned)now);
+      DM_ERR("display: 停摆 6s（commits=%u panel_beat=%u），尝试重建",
+             (unsigned)now, (unsigned)beat);
 
 #ifdef CONFIG_ARCH_CHIP_ESP32P4
       if (reinits < DM_DISP_WD_REINIT_MAX)

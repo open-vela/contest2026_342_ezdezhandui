@@ -332,8 +332,29 @@ static void dm_page_camera_update(void)
 
         if (s_cost_n > 0)
           {
-            DM_LOG("camera: frames=%u cost=%u us/frame throttle=%u ms",
-                   s_cost_n, s_cost_us / s_cost_n, s_preview_ms);
+            /* 同时打出驱动侧的三个帧计数，用来区分两种完全不同的"掉帧"：
+             *   应用 frames 少、driver delivered 少  => 相机根本没在出帧
+             *   应用 frames 少、driver dropped 涨     => 出了帧但被丢（缓冲不够）
+             * 只看应用侧计数永远分不清这两件事。
+             */
+
+            unsigned int dv = 0;
+            unsigned int dp = 0;
+            unsigned int rv = 0;
+
+            if (dm_camera_driver_frames(&dv, &dp, &rv) == 0)
+              {
+                dm_log_rate("camdrv",
+                            "camera: frames=%u cost=%u us/frame throttle=%u ms "
+                            "drv delivered=%u dropped=%u received=%u",
+                            s_cost_n, s_cost_us / s_cost_n, s_preview_ms,
+                            dv, dp, rv);
+              }
+            else
+              {
+                DM_LOG("camera: frames=%u cost=%u us/frame throttle=%u ms",
+                       s_cost_n, s_cost_us / s_cost_n, s_preview_ms);
+              }
           }
 
         s_cost_us = 0;

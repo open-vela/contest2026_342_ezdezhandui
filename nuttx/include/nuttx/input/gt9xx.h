@@ -98,4 +98,37 @@ int gt9xx_register(FAR const char *devpath,
                    uint8_t i2c_devaddr,
                    const struct gt9xx_board_s *board_config);
 
+/****************************************************************************
+ * Name: gt9xx_stats
+ *
+ * Description:
+ *   Diagnostic counters for the sampling path.  Every argument may be NULL.
+ *
+ * Input Parameters:
+ *   ticks       - Watchdog firings, i.e. sampling attempts.  Comparing this
+ *                 with xfers separates "the timer did not fire" from "the
+ *                 worker did not get to run" -- they have different fixes.
+ *   xfers       - Completed sampling transactions.
+ *   xfer_err    - Failed sampling transactions.
+ *   events      - DOWN/MOVE/UP samples published to readers.
+ *   lock_waits  - Times a reader or the worker found devlock busy.
+ *   lock_ms_max - Worst time spent waiting for devlock, milliseconds.
+ *   xfer_us_max - Worst single sampling transaction, microseconds.
+ *   hist        - 8-bucket histogram of sampling transaction durations
+ *                 (edges 2/5/10/20/50/100/500 ms).  May be NULL; must point
+ *                 to GT9XX_LAT_BUCKETS (8) entries otherwise.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value if the device is not
+ *   registered.
+ *
+ ****************************************************************************/
+
+#define GT9XX_LAT_BUCKETS 8
+
+int gt9xx_stats(FAR uint32_t *ticks, FAR uint32_t *xfers,
+                FAR uint32_t *xfer_err, FAR uint32_t *events,
+                FAR uint32_t *lock_waits, FAR uint32_t *lock_ms_max,
+                FAR uint32_t *xfer_us_max, FAR uint32_t *hist);
+
 #endif /* __INCLUDE_NUTTX_INPUT_GT9XX_H */

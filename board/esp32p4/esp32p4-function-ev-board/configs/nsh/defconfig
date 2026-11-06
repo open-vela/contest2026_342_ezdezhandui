@@ -30,7 +30,7 @@
 # CONFIG_MBEDTLS_ECP_DP_SECP224K1_ENABLED is not set
 # CONFIG_MBEDTLS_ECP_DP_SECP224R1_ENABLED is not set
 # CONFIG_MBEDTLS_ECP_DP_SECP256K1_ENABLED is not set
-# CONFIG_MBEDTLS_ECP_DP_SECP384R1_ENABLED is not set
+CONFIG_MBEDTLS_ECP_DP_SECP384R1_ENABLED=y
 # CONFIG_MBEDTLS_ECP_DP_SECP521R1_ENABLED is not set
 # CONFIG_MBEDTLS_HKDF_C is not set
 # CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_PSK_ENABLED is not set
@@ -43,8 +43,8 @@
 # CONFIG_MBEDTLS_POLY1305_C is not set
 # CONFIG_MBEDTLS_PSA_CRYPTO_C is not set
 # CONFIG_MBEDTLS_RIPEMD160_C is not set
-# CONFIG_MBEDTLS_SHA384_C is not set
-# CONFIG_MBEDTLS_SHA512_C is not set
+CONFIG_MBEDTLS_SHA384_C=y
+CONFIG_MBEDTLS_SHA512_C=y
 # CONFIG_MBEDTLS_SSL_CACHE_C is not set
 # CONFIG_MBEDTLS_SSL_CONTEXT_SERIALIZATION is not set
 # CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE is not set
@@ -104,6 +104,14 @@ CONFIG_NET_TCP=y
 # NET_UDP。此前 UDP 未开, kconfig 会把这两个符号**静默丢弃**, 于是无论怎么
 # 配 DNS 都解析不了域名(agent 的 LLM/https 在解析阶段就失败)。
 CONFIG_NET_UDP=y
+# 本地回环（lo）：deskmate 与同机 ai_agent 的 ws_server 都跑在这块板子上，
+# 默认端点 127.0.0.1:28789。没有 lo 时 127.0.0.1 会被丢给默认网卡（eth0/wlan0），
+# 永远连不上本机自己监听的端口 —— 实测表现就是"离线对话"：
+#   [dm] agent: connect(127.0.0.1:28789) timed out or refused
+#   [dm] agent: connect(192.168.1.110:28789) timed out or refused   （连自己 IP 也一样）
+# NuttX 不会把"目标是本机地址"的包内联回送，必须有 lo 设备才有本机 TCP。
+CONFIG_NET_LOOPBACK=y
+CONFIG_NET_LOOPBACK_PKTSIZE=1514
 CONFIG_NFILE_DESCRIPTORS_PER_BLOCK=6
 CONFIG_NSH_ARCHINIT=y
 CONFIG_NSH_BUILTIN_APPS=y
@@ -113,6 +121,20 @@ CONFIG_NSH_STRERROR=y
 CONFIG_PIPES=y
 CONFIG_PREALLOC_TIMERS=0
 CONFIG_RR_INTERVAL=200
+
+# 1 ms tick（默认 10 ms）。
+#
+# 实测依据（PXView 逻辑分析仪，I2C0 ch0=SDA/ch1=SCL，1 MS/s）：
+#   10 ms tick：触摸采样 35.2 Hz（p50 20.0 ms，p90 64.5 ms）
+#    1 ms tick：触摸采样 78.5 Hz（p50 9.0 ms，p90 10.8 ms，中位 111 Hz）
+#   总线占用从 5.26% 升到 11.77%（100 kHz 下仍有大量余量）
+#
+# 根因不是"tick 本身慢"，而是 wd_start(MSEC2TICK(8)) 在 10 ms tick 下只能
+# 取到 1 个 tick，且每次重挂都要对齐到下一个 tick 边界 —— 8 ms 的周期被量化成
+# 20 ms。docs/30_实现/应用层_DeskMate_UI.md 里"改 tick 没收益"的旧结论是在
+# 触摸仍由 read() 同步做 I2C 时得出的，那时瓶颈是调度抢占而不是 tick 粒度；
+# 把传输搬进 LPWORK 之后，tick 粒度才成为限制项。
+CONFIG_USEC_PER_TICK=1000
 CONFIG_SCHED_BACKTRACE=y
 CONFIG_START_DAY=29
 CONFIG_START_MONTH=11
@@ -260,6 +282,10 @@ CONFIG_INPUT_GT9XX=y
 # (BOARD_GT911_I2C_FREQUENCY) for the full reasoning.
 CONFIG_INPUT_GT9XX_I2C_FREQUENCY=100000
 
+# 驱动自己的采样周期（INT 脚没接出来，只能由驱动造事件源）。
+# 8 ms = 125 Hz，接近 GT911 自身的上报率；此时总线占用实测 11.8%。
+CONFIG_INPUT_GT9XX_POLL_MS=8
+
 # ── LVGL on the framebuffer + touchscreen (NuttX fbdev/input glue) ──
 CONFIG_GRAPHICS_LVGL=y
 CONFIG_LV_USE_NUTTX=y
@@ -290,6 +316,15 @@ CONFIG_EXAMPLES_DESKMATE_PRIORITY=100
 CONFIG_EXAMPLES_DESKMATE_STACKSIZE=32768
 CONFIG_EXAMPLES_DESKMATE_AGENT_MODE="ws"
 CONFIG_EXAMPLES_DESKMATE_CAMERA_DEVPATH="/dev/video0"
+# 默认启动即拉起三件事（直接跑 `deskmate` 无参数）：
+#   摄像头预览 + 同进程内置 ai_agent(ws) + wlan0(ifup + DHCP)
+# 取证模式（--selftest / --tour / --wifi-* / --ap-probe）不套用这些默认。
+CONFIG_EXAMPLES_DESKMATE_CAMERA_AUTOSTART=y
+CONFIG_EXAMPLES_DESKMATE_AGENT_AUTOSPAWN=y
+CONFIG_EXAMPLES_DESKMATE_WLAN_AUTOSTART=y
+# STA 关联凭据留空 = 只 ifup + DHCP，不动从机固件已经建好的链路。
+CONFIG_EXAMPLES_DESKMATE_WLAN_SSID=""
+CONFIG_EXAMPLES_DESKMATE_WLAN_PSK=""
 CONFIG_LV_FONT_MONTSERRAT_28=y
 
 # ── MIPI-CSI camera: SC2336 (AS-AG638A32M2-50) on 2-lane CSI-2 -> /dev/video0 ──

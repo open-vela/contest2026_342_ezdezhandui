@@ -57,7 +57,9 @@ struct dm_camera_frame_s
 int dm_camera_create(int preview_w, int preview_h);
 
 /* 诊断/降级开关：调用后 dm_camera_create() 直接返回 -ENODEV，不碰 /dev/video0。
- * 真机上 CSI 与 DSI 共享 MIPI PHY，开摄像头有可能把显示链路带崩，留这个开关。
+ * 现场排查显示链路问题时用它把相机整条摘掉，避免"到底是相机还是面板"的争议。
+ * （CSI 与 DSI 并不互斥：板级 bringup 早于 MIPI-DSI 做完 ISP bypass，两者可共存，
+ *   自检的 csi:dsi-coexist 就是在板子上持续证明这一点。）
  */
 
 void dm_camera_set_disabled(bool disabled);
@@ -89,5 +91,12 @@ int dm_camera_poll(struct dm_camera_frame_s *out);
 const struct dm_camera_frame_s *dm_camera_last(void);
 
 void dm_camera_destroy(void);
+
+/* CSI 驱动侧的帧计数（见 dm_camera.c 的实现说明）。任一指针可为 NULL。
+ * 返回 0 = 拿到数据，-1 = 这条路径上没有 CSI 驱动。
+ */
+
+int dm_camera_driver_frames(unsigned int *delivered, unsigned int *dropped,
+                            unsigned int *received);
 
 #endif /* __APPS_EXAMPLES_DESKMATE_HAL_DM_CAMERA_H */

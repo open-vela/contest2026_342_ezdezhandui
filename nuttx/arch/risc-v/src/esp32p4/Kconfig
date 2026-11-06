@@ -296,13 +296,39 @@ config ESPRESSIF_HOSTED_OFFICIAL
 		state that has to be recovered (a full power cycle of the board,
 		not a JTAG reset) before the link can move payload again.
 	select NETDEV_IOCTL
+config ESPRESSIF_HOSTED_LOG_INFO
+	bool "esp-hosted bring-up / state-change messages"
+	default n
+	depends on ESPRESSIF_HOSTED_OFFICIAL
+	---help---
+		Compile in the port's INFO-level progress lines: RPC return codes,
+		scan results, "wlan0 up", "DHCP got x.x.x.x", "address applied",
+		and the netdev's MAC/route/DNS reports.
+
+		Default off.  These are the lines a normal boot printed on every
+		successful operation (26 in the netdev, 14 in the entry file), and
+		the 115200 console is the same UART the application writes to -- a
+		full console blocks printf() and freezes the UI (measured).
+
+		Suppression is compile-time: with this off, the format strings and
+		their arguments are not in the image at all.  Warnings and errors
+		are unaffected, and a failure that used to print via a
+		"LOG_INFO on success / LOG_ERR on failure" line still prints.
+
+		Turn on to read the bring-up sequence; leave off for the product.
+
 config ESPRESSIF_HOSTED_LOG_VERBOSE
 	bool "Verbose esp-hosted SDIO/transport tracing"
 	default n
 	depends on ESPRESSIF_HOSTED_SDIO
 	---help---
 		Print per-transfer SDIO traces (read_reg/read_block/payload/watchdog/
-		write_block) and the one-off bring-up diagnostics.
+		write_block), the per-frame network TX/RX hexdump, and the one-off
+		bring-up diagnostics.
+
+		Separate from ESPRESSIF_HOSTED_LOG_INFO on purpose: wanting the
+		bring-up summary back is not the same as wanting a hex dump per
+		received frame.
 
 		Default off: on this board a single WiFi operation produces dozens of
 		these lines, and the 115200 console is the same one the application

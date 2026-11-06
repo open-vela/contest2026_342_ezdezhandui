@@ -65,6 +65,7 @@
 #include "eh_common_interface.h"
 #include "eh_host_sys.h"
 #include "eh_host_mcu_transport_channels.h"
+#include "eh_hosted_log.h"
 #ifdef CONFIG_ESPRESSIF_HOSTED_WIFI
 #  include "eh_host_wifi.h"
 #endif
@@ -122,15 +123,13 @@ int g_dbg_ap_setcfg_rc = DM_DBG_UNSET;     /* set_config(WIFI_IF_AP) 的返回 *
 int g_dbg_ap_restore_rc = DM_DBG_UNSET;    /* 实验后恢复 set_mode(STA) 的返回 */
 
 /* 2026-11-05：逐帧诊断日志默认关闭（每帧一行会刷爆控制台，把 ping/DHCP 结果冲出屏幕）。
- * 排查时把 EH_NETDEV_TRACE 改成 1 重新编译即可恢复。 */
-#ifndef EH_NETDEV_TRACE
-#  define EH_NETDEV_TRACE 0
-#endif
-#if EH_NETDEV_TRACE
-#  define EH_TRACE(...) syslog(LOG_INFO, __VA_ARGS__)
-#else
-#  define EH_TRACE(...) do { } while (0)
-#endif
+ * 2026-11-06：原来这里用一个本地的 EH_NETDEV_TRACE 数值开关去门控 EH_TRACE，但
+ * EH_NETDEV_TRACE 在上面的 #ifdef CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE 分支里已经被
+ * 定义成**函数式宏**了 —— 于是 `#ifndef EH_NETDEV_TRACE` 恒不成立、`#if
+ * EH_NETDEV_TRACE` 恒为假（函数式宏在 #if 里的值永远当 0），注释说的"改成 1 重新
+ * 编译即可恢复"其实一次都没生效过。现在直接复用 eh_hosted_log.h 里的 EH_TRACE，
+ * 唯一开关是 CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE。
+ */
 
 static char g_sta_psk[65];     /* 暂存的 STA 密码：ENCODE 先到、ESSID 后到 */
 
@@ -317,7 +316,7 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
                  sizeof(dev->d_mac.ether.ether_addr_octet));
           g_hosted_netdev.mac_learned = true;
 
-          syslog(LOG_INFO, "%s: station MAC learnt before TX "
+          EH_INFO( "%s: station MAC learnt before TX "
                  "%02x:%02x:%02x:%02x:%02x:%02x\n", NETDEV_TAG,
                  hm[0], hm[1], hm[2], hm[3], hm[4], hm[5]);
         }
@@ -344,7 +343,7 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
       memcpy(nmb, &dev->d_netmask, sizeof(nmb));
       memcpy(gwb, &gw, sizeof(gwb));
 
-      syslog(LOG_INFO, "%s: static-IP fallback: gateway %u.%u.%u.%u "
+      EH_INFO( "%s: static-IP fallback: gateway %u.%u.%u.%u "
              "(route + DNS installed)\n", NETDEV_TAG,
              gwb[0], gwb[1], gwb[2], gwb[3]);
 
@@ -373,9 +372,14 @@ static int hosted_netdev_txpoll(FAR struct net_driver_s *dev)
 
               if (udp[2] == 0x00 && udp[3] == 0x43)          /* dport 67 = DHCP server */
                 {
-                  FAR uint8_t *b = udp + 8;
+                  /* 整个块只做取证打印：INFO 关掉时连 `b` 的推导都不该存在
+                   * （否则 -Wunused-variable，且白白多一段解析）。 */
 
-                  syslog(LOG_INFO,
+#ifdef CONFIG_ESPRESSIF_HOSTED_LOG_INFO
+                  FAR uint8_t *b = udp + 8;
+#endif
+
+                  EH_INFO(
                          "%s: DHCP pkt: xid=%02x%02x%02x%02x flags=%02x%02x "
                          "ciaddr=%u.%u.%u.%u yiaddr=%u.%u.%u.%u "
                          "chaddr=%02x:%02x:%02x:%02x:%02x:%02x "
@@ -511,7 +515,11 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
        */
 
       {
+        /* rp 只给 EH_TRACE 用；trace 关掉时连它一起消失（否则 unused）。 */
+
+#if defined(CONFIG_ESPRESSIF_HOSTED_LOG_VERBOSE)
         FAR uint8_t *rp = (FAR uint8_t *)buf;
+#endif
 
         EH_TRACE("%s: RX %u B type=%04x\n", NETDEV_TAG, (unsigned)len,
                (((unsigned)rp[12] << 8) | (unsigned)rp[13]));
@@ -572,7 +580,7 @@ static esp_err_t hosted_netdev_rx(void *h, void *buf, void *buff_to_free,
                  sizeof(priv->dev.d_mac.ether.ether_addr_octet));
           priv->mac_learned = true;
 
-          syslog(LOG_INFO, "%s: station MAC learnt %02x:%02x:%02x:%02x:%02x:%02x\n",
+          EH_INFO( "%s: station MAC learnt %02x:%02x:%02x:%02x:%02x:%02x\n",
                  NETDEV_TAG, eth->dest[0], eth->dest[1], eth->dest[2],
                  eth->dest[3], eth->dest[4], eth->dest[5]);
         }
@@ -692,10 +700,8 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
    * BY.18).
    */
 
-#ifdef CONFIG_ESPRESSIF_HOSTED_NETDEV_IOCTL_TRACE
-  syslog(LOG_INFO, "%s: ioctl cmd=0x%04x (SIOCSIWSCAN=0x%04x)\n",
-         NETDEV_TAG, (unsigned)cmd, (unsigned)SIOCSIWSCAN);
-#endif
+  EH_TRACE("%s: ioctl cmd=0x%04x (SIOCSIWSCAN=0x%04x)\n",
+           NETDEV_TAG, (unsigned)cmd, (unsigned)SIOCSIWSCAN);
 
   switch (cmd)
     {
@@ -717,8 +723,9 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
            */
 
           mret = eh_host_wifi_set_mode(WIFI_MODE_STA);
-          syslog(mret == ESP_OK ? LOG_INFO : LOG_WARNING,
-                 "%s: pre-scan set_mode(STA) -> %d\n", NETDEV_TAG, mret);
+          EH_INFO_OR_WARN(mret == ESP_OK,
+                          "%s: pre-scan set_mode(STA) -> %d\n", NETDEV_TAG,
+                          mret);
 
           g_dbg_wifi_scan_calls++;
           g_dbg_wifi_setmode_rc = (int)mret;
@@ -781,7 +788,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
               g_scan_count = count;
             }
 
-          syslog(LOG_INFO, "%s: scan done, %d AP(s)\n", NETDEV_TAG, g_scan_count);
+          EH_INFO( "%s: scan done, %d AP(s)\n", NETDEV_TAG, g_scan_count);
           return OK;
         }
 
@@ -909,7 +916,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
            * "没人来取"、"缓冲区太小" 还是 "缓存本来就空"。
            */
 
-          syslog(LOG_INFO, "%s: SIOCGIWSCAN room=%u used=%u aps=%d -> %s\n",
+          EH_INFO( "%s: SIOCGIWSCAN room=%u used=%u aps=%d -> %s\n",
                  NETDEV_TAG, (unsigned)room, (unsigned)used, (int)g_scan_count,
                  (i < g_scan_count) ? "E2BIG" : "OK");
 
@@ -947,7 +954,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
       case SIOCSIWAUTH:
       case SIOCGIWAUTH:
         {
-          syslog(LOG_INFO, "%s: auth param accepted (cmd=0x%04x)\n",
+          EH_INFO( "%s: auth param accepted (cmd=0x%04x)\n",
                  NETDEV_TAG, (unsigned)cmd);
           return OK;
         }
@@ -970,7 +977,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
            *   - 到了但 pointer/length 是空的（ptr=(nil) 或 len=0）。
            */
 
-          syslog(LOG_INFO, "%s: encode cmd=0x%04x ptr=%p len=%u\n",
+          EH_INFO( "%s: encode cmd=0x%04x ptr=%p len=%u\n",
                  NETDEV_TAG, (unsigned)cmd, (FAR void *)key, (unsigned)klen);
 
           if (cmd == SIOCSIWENCODEEXT && key != NULL &&
@@ -1005,7 +1012,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
 
           g_dbg_wifi_psk_len = (int)klen;
           g_dbg_wifi_enc_rc  = OK;
-          syslog(LOG_INFO, "%s: passphrase stored (%u bytes)\n", NETDEV_TAG,
+          EH_INFO( "%s: passphrase stored (%u bytes)\n", NETDEV_TAG,
                  (unsigned)klen);
           return OK;
         }
@@ -1039,7 +1046,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
 
           g_dbg_ap_restore_rc = (int)eh_host_wifi_set_mode(WIFI_MODE_STA);
 
-          syslog(LOG_INFO, "%s: AP probe mode=%d cfg=%d restore=%d\n",
+          EH_INFO( "%s: AP probe mode=%d cfg=%d restore=%d\n",
                  NETDEV_TAG, g_dbg_ap_setmode_rc, g_dbg_ap_setcfg_rc,
                  g_dbg_ap_restore_rc);
           return OK;
@@ -1074,8 +1081,8 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
                */
 
               ret = eh_host_wifi_disconnect();
-              syslog(ret == ESP_OK ? LOG_INFO : LOG_ERR,
-                     "%s: disconnect -> %d\n", NETDEV_TAG, ret);
+              EH_INFO_OR_ERR(ret == ESP_OK,
+                             "%s: disconnect -> %d\n", NETDEV_TAG, ret);
               return ret == ESP_OK ? OK : -EIO;
             }
 
@@ -1118,7 +1125,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
               return -EIO;
             }
 
-          syslog(LOG_INFO,
+          EH_INFO(
                  "%s: joining \"%.*s\" psk_len=%u authmode=%d\n", NETDEV_TAG,
                  (int)iwr->u.essid.length, (FAR const char *)ssid,
                  (unsigned)strnlen(g_sta_psk, sizeof(g_sta_psk)),
@@ -1141,7 +1148,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
                          sizeof(dev->d_mac.ether.ether_addr_octet));
                   g_hosted_netdev.mac_learned = true;
 
-                  syslog(LOG_INFO,
+                  EH_INFO(
                          "%s: station MAC from companion (late) "
                          "%02x:%02x:%02x:%02x:%02x:%02x\n", NETDEV_TAG,
                          lm[0], lm[1], lm[2], lm[3], lm[4], lm[5]);
@@ -1188,7 +1195,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
                       memset(&ap, 0, sizeof(ap));
                       if (eh_host_wifi_sta_get_ap_info(&ap) == ESP_OK)
                         {
-                          syslog(LOG_INFO,
+                          EH_INFO(
                                  "%s: ASSOCIATED \"%.32s\" rssi=%d (%d00 ms)\n",
                                  NETDEV_TAG, (const char *)ap.ssid,
                                  (int)ap.rssi, w);
@@ -1225,7 +1232,7 @@ static int hosted_netdev_ioctl(FAR struct net_driver_s *dev, int cmd,
 
                 if (dhcpc_request(dhcpc, &ds) == OK)
                   {
-                    syslog(LOG_INFO,
+                    EH_INFO(
                            "%s: DHCP got %u.%u.%u.%u nm %u.%u.%u.%u gw %u.%u.%u.%u "
                            "(attempt %d)\n", NETDEV_TAG,
                            (unsigned)(ntohl(ds.ipaddr.s_addr) >> 24) & 0xff,
@@ -1352,7 +1359,7 @@ static int hosted_netdev_ifup(FAR struct net_driver_s *dev)
   FAR struct hosted_netdev_s *priv = (FAR struct hosted_netdev_s *)dev;
 
   priv->bifup = true;
-  syslog(LOG_INFO, "%s: wlan0 up\n", NETDEV_TAG);
+  EH_INFO( "%s: wlan0 up\n", NETDEV_TAG);
   return OK;
 }
 
@@ -1410,7 +1417,7 @@ void esp_hosted_netdev_carrier(bool up)
       netdev_carrier_off(&priv->dev);
     }
 
-  syslog(LOG_INFO, "%s: carrier %s\n", NETDEV_TAG, up ? "on" : "off");
+  EH_INFO( "%s: carrier %s\n", NETDEV_TAG, up ? "on" : "off");
 }
 
 /****************************************************************************
@@ -1458,7 +1465,7 @@ int esp_hosted_netdev_up(void)
   priv->dev.d_flags |= IFF_UP | IFF_RUNNING;
   priv->dev.d_flags &= ~IFF_NOARP;
 
-  syslog(LOG_INFO, "%s: wlan0 up (IFF_UP|IFF_RUNNING, ARP on)\n", NETDEV_TAG);
+  EH_INFO( "%s: wlan0 up (IFF_UP|IFF_RUNNING, ARP on)\n", NETDEV_TAG);
   return OK;
 }
 
@@ -1553,7 +1560,7 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
       memcpy((void *)&g_pend_nm, nm, 4);
       memcpy((void *)&g_pend_gw, gw, 4);
 
-      syslog(LOG_INFO, "%s: deferring address application to lpwork\n",
+      EH_INFO( "%s: deferring address application to lpwork\n",
              NETDEV_TAG);
 
       (void)task_create("wlan-apply", 100, 3072, hosted_apply_task, NULL);
@@ -1651,6 +1658,14 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
         r2 = ioctl(ss, SIOCSIFNETMASK, (unsigned long)(uintptr_t)&ifr_v);
         e2 = errno;
 
+        /* ioctl 必须照发（它们才是真正在配置接口的动作），回值只喂给下面那条
+         * 取证日志；INFO 关掉时它们就没有读者了，显式吃掉以免 -Wunused-but-set。 */
+
+        (void)r1;
+        (void)e1;
+        (void)r2;
+        (void)e2;
+
         /* 2026-11-05：显式走一次 SIOCSIFFLAGS(IFF_UP)。
          *
          * 真机对照：手工 `wapi ip`/`wapi mask` 之后 ping 立刻通；而 apply_ip()
@@ -1662,7 +1677,7 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
         ifr_v.ifr_flags = IFF_UP | IFF_BROADCAST | IFF_RUNNING;
         (void)ioctl(ss, SIOCSIFFLAGS, (unsigned long)(uintptr_t)&ifr_v);
 
-        syslog(LOG_INFO,
+        EH_INFO(
                "%s: addr ioctl: SIOCSIFADDR rc=%d e=%d  SIOCSIFNETMASK rc=%d e=%d"
                "  -> d_ipaddr=%08x d_netmask=%08x d_draddr=%08x d_flags=%04x\n",
                NETDEV_TAG, r1, e1, r2, e2,
@@ -1747,10 +1762,10 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
 
   priv->dev.d_flags |= IFF_UP | IFF_RUNNING;
   priv->dev.d_flags &= ~IFF_NOARP;
-  syslog(LOG_INFO, "%s: wlan0 flags=%04x (UP|RUNNING, ARP on)\n", NETDEV_TAG,
+  EH_INFO( "%s: wlan0 flags=%04x (UP|RUNNING, ARP on)\n", NETDEV_TAG,
          (unsigned)priv->dev.d_flags);
 
-  syslog(LOG_INFO,
+  EH_INFO(
          "%s: wlan0 address %u.%u.%u.%u mask %u.%u.%u.%u gw %u.%u.%u.%u "
          "(from the DhcpDnsStatus event)\n",
          NETDEV_TAG, ip[0], ip[1], ip[2], ip[3],
@@ -1778,7 +1793,7 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
       if (dns_add_nameserver((FAR const struct sockaddr *)&dns,
                              sizeof(dns)) == OK)
         {
-          syslog(LOG_INFO, "%s: DNS nameserver -> %u.%u.%u.%u\n",
+          EH_INFO( "%s: DNS nameserver -> %u.%u.%u.%u\n",
                  NETDEV_TAG, gw[0], gw[1], gw[2], gw[3]);
         }
     }
@@ -1812,7 +1827,7 @@ int esp_hosted_netdev_apply_ip(FAR const uint8_t *ip, FAR const uint8_t *nm,
 
           if (ioctl(s, SIOCADDRT, (unsigned long)(uintptr_t)&rt) == 0)
             {
-              syslog(LOG_INFO, "%s: default route via %u.%u.%u.%u\n",
+              EH_INFO( "%s: default route via %u.%u.%u.%u\n",
                      NETDEV_TAG, gw[0], gw[1], gw[2], gw[3]);
             }
 
@@ -1885,7 +1900,7 @@ int esp_hosted_netdev_register(void)
             priv->mac_learned = true;
             got = true;
 
-            syslog(LOG_INFO,
+            EH_INFO(
                    "%s: station MAC from companion %02x:%02x:%02x:%02x:%02x:%02x"
                    " (attempt %d)\n", NETDEV_TAG,
                    m[0], m[1], m[2], m[3], m[4], m[5], attempt);
@@ -1942,7 +1957,7 @@ int esp_hosted_netdev_register(void)
       return -EIO;
     }
 
-  syslog(LOG_INFO, "%s: %s registered (STA channel bound)\n",
+  EH_INFO( "%s: %s registered (STA channel bound)\n",
          NETDEV_TAG, priv->dev.d_ifname);
   /* 2026-11-05：延迟 1 秒再下发一次地址。
    *

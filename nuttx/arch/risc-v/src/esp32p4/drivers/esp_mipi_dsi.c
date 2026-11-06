@@ -59,6 +59,7 @@
 #include "esp_private/esp_clk_tree_common.h"
 
 #include "esp_mipi_dsi.h"
+#include "esp_csi.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -113,7 +114,10 @@ struct esp_mipi_dsi_priv_s
   FAR dw_gdma_link_list_item_t *lli;    /* Cached LLI (CPU view) */
   FAR dw_gdma_link_list_item_t *lli_nc; /* Non-cacheable LLI alias */
 
-  size_t fb_size;                    /* Bound framebuffer size in bytes */
+  size_t fb_size;                    /* Bytes per frame (= one page) */
+  FAR void *fb_base;                 /* Whole FB region (all pages) */
+  size_t fb_base_len;                /* Bytes per frame, for the bounds math */
+  uint8_t fb_pages;                  /* Number of pages in the FB region */
   uint16_t dpi_h_res;                /* Active width from DPI config */
   uint16_t dpi_v_res;                /* Active height from DPI config */
   soc_module_clk_t phy_pllref_clk_src;
@@ -129,6 +133,21 @@ struct esp_mipi_dsi_priv_s
   bool fb_bound;                     /* Framebuffer bound to DW-GDMA */
   bool dma_enabled;                  /* Allow ISR to re-arm DW-GDMA */
   bool video_running;                /* Host in HS video mode */
+
+  /* Double-buffer hand-off.
+   *
+   * The application renders into one page and asks for it to be shown; the
+   * ISR swaps the LLI source to that page at the *frame boundary*, so the
+   * panel never scans a half-written buffer.  Rendering and scan-out are
+   * therefore decoupled: this is the difference between "tearing" and "no
+   * tearing", not an optimisation.
+   */
+
+  FAR void *pending_fb;              /* Page to switch to, or NULL */
+  size_t pending_len;
+  void (*frame_done_cb)(FAR void *arg);  /* Called from the ISR per frame */
+  FAR void *frame_done_arg;
+  uint32_t frame_seq;                /* Incremented on every completed frame */
 };
 
 /****************************************************************************
@@ -217,9 +236,95 @@ static struct esp_mipi_dsi_priv_s g_esp_mipi_dsi =
 
 #define ESP_MIPI_DSI_DMA_TRACE 1
 
-#if ESP_MIPI_DSI_DMA_TRACE
+/* 2026-11-06：把 DSI 的 DMA 中断计数开放给上层。
+ *
+ * 为什么必须开放：应用侧的"显示还活着吗"判据原来读的是**帧缓冲 RAM**
+ * （dm_display.c 的 dm_display_stats 采样 g_plane.fbmem），而"面板停了但 LVGL
+ * 还在画"这种情况下面，RAM 内容永远正常 —— 判据恒真，什么都证明不了。
+ *
+ * 唯一无法伪造的证据是 DSI 的 TFR_DONE 中断计数：它每个刷新周期加一，面板
+ * 一旦停摆就永久停止增长。所以把它做成公开 API，让看门狗和自检都用它。
+ *
+ * 这两个计数器**不受 ESP_MIPI_DSI_DMA_TRACE 约束**：追踪日志可以关，计数不能关。
+ */
+
 static volatile uint32_t g_dsi_dma_isr_count;
 static volatile uint32_t g_dsi_dma_restart_count;
+static volatile uint32_t g_dsi_dma_unknown_isr;
+static volatile uint32_t g_dsi_brg_underrun;
+
+uint32_t esp_mipi_dsi_dma_isr_count(void)
+{
+  return g_dsi_dma_isr_count;
+}
+
+uint32_t esp_mipi_dsi_dma_restart_count(void)
+{
+  return g_dsi_dma_restart_count;
+}
+
+uint32_t esp_mipi_dsi_dma_unknown_isr_count(void)
+{
+  return g_dsi_dma_unknown_isr;
+}
+
+void esp_mipi_dsi_get_stats(FAR struct esp_mipi_dsi_stats_s *stats)
+{
+  if (stats == NULL)
+    {
+      return;
+    }
+
+  stats->dma_isr         = g_dsi_dma_isr_count;
+  stats->dma_restart     = g_dsi_dma_restart_count;
+  stats->dma_unknown_isr = g_dsi_dma_unknown_isr;
+  stats->bridge_underrun = g_dsi_brg_underrun;
+}
+
+uint32_t esp_mipi_dsi_bridge_underrun_count(void)
+{
+  FAR struct esp_mipi_dsi_priv_s *priv = &g_esp_mipi_dsi;
+  irqstate_t flags;
+
+  if (!priv->initialized || priv->hal.bridge == NULL)
+    {
+      return g_dsi_brg_underrun;
+    }
+
+  /* Poll-and-clear instead of adding a second ISR client.
+   *
+   * The underrun bit lives in the MIPI-DSI bridge, not in the DW-GDMA
+   * channel, so servicing it from the shared DW-GDMA interrupt would mean
+   * touching a peripheral that the DMA handler does not own.  The bit is
+   * sticky and cheap to read, so the display watchdog -- which already ticks
+   * every 500 ms -- clears and accumulates it instead.  Losing the exact
+   * count of a burst of underruns is acceptable; knowing *whether* the panel
+   * was ever starved is the fact that was missing.
+   */
+
+  flags = spin_lock_irqsave(&priv->dmalock);
+
+  if (mipi_dsi_brg_ll_get_interrupt_status(priv->hal.bridge) &
+      MIPI_DSI_BRG_LL_EVENT_UNDERRUN)
+    {
+      g_dsi_brg_underrun++;
+      mipi_dsi_brg_ll_clear_interrupt_status(priv->hal.bridge,
+                                             MIPI_DSI_BRG_LL_EVENT_UNDERRUN);
+    }
+
+  spin_unlock_irqrestore(&priv->dmalock, flags);
+
+  return g_dsi_brg_underrun;
+}
+
+bool esp_mipi_dsi_video_dma_is_active(void)
+{
+  FAR struct esp_mipi_dsi_priv_s *priv = &g_esp_mipi_dsi;
+
+  return priv->initialized && priv->video_running && priv->dma_enabled;
+}
+
+#if ESP_MIPI_DSI_DMA_TRACE
 
 static void esp_mipi_dsi_dma_trace(FAR struct esp_mipi_dsi_priv_s *priv,
                                    FAR const char *tag)
@@ -277,9 +382,7 @@ static void IRAM_ATTR esp_mipi_dsi_dma_restart(
                                              (uint32_t)(uintptr_t)priv->lli);
   dw_gdma_ll_channel_enable(dev, ESP_MIPI_DSI_DMA_CHAN, true);
 
-#if ESP_MIPI_DSI_DMA_TRACE
   g_dsi_dma_restart_count++;
-#endif
 }
 
 /****************************************************************************
@@ -318,9 +421,7 @@ static int IRAM_ATTR esp_mipi_dsi_dma_isr(int irq, FAR void *context,
 
   dev = priv->dw_hal.dev;
 
-#if ESP_MIPI_DSI_DMA_TRACE
   g_dsi_dma_isr_count++;
-#endif
 
   flags = spin_lock_irqsave(&priv->dmalock);
   status = dw_gdma_ll_channel_get_intr_status(dev, ESP_MIPI_DSI_DMA_CHAN);
@@ -337,13 +438,69 @@ static int IRAM_ATTR esp_mipi_dsi_dma_isr(int irq, FAR void *context,
 
   dw_gdma_ll_channel_clear_intr(dev, ESP_MIPI_DSI_DMA_CHAN, status);
 
+  /* Observability only: the restart condition below is deliberately unchanged
+   * from the version that was validated on hardware.  What is new is that the
+   * *other* cases are now counted instead of vanishing silently.
+   *
+   * The IRQ is shared at the interrupt-matrix level with the CSI channel
+   * (CHANNEL_EVENT_MASK(1) is registered against DW_GDMA_INTR_SOURCE), so an
+   * entry with status == 0 is a real possibility and means "the interrupt was
+   * ours to acknowledge but not ours to act on".
+   */
+
+  if (status == 0)
+    {
+      g_dsi_dma_unknown_isr++;
+    }
+  else if ((status & DW_GDMA_LL_CHANNEL_EVENT_DMA_TFR_DONE) == 0)
+    {
+      g_dsi_dma_unknown_isr++;
+    }
+
   if ((status & DW_GDMA_LL_CHANNEL_EVENT_DMA_TFR_DONE) != 0 &&
       priv->dma_enabled)
     {
+      /* Frame boundary: adopt whatever page the application asked for while
+       * this frame was being scanned out.  Doing the swap here (and not in
+       * queue_frame_buffer()) is what removes tearing: the source address the
+       * bridge is currently reading is never changed mid-frame.
+       */
+
+      if (priv->pending_fb != NULL && priv->lli_nc != NULL)
+        {
+          dw_gdma_ll_lli_set_src_addr(priv->lli_nc,
+                                      (uint32_t)(uintptr_t)priv->pending_fb);
+          dw_gdma_ll_lli_set_src_master_port(
+            priv->lli_nc, (intptr_t)priv->pending_fb);
+
+          priv->fb        = priv->pending_fb;
+          priv->fb_size   = priv->pending_len;
+          priv->pending_fb  = NULL;
+          priv->pending_len = 0;
+        }
+
+      priv->frame_seq++;
+
       esp_mipi_dsi_dma_restart(priv);
     }
 
   spin_unlock_irqrestore(&priv->dmalock, flags);
+
+  /* The callback runs *after* the spinlock is dropped: a board-level
+   * fb_notify_vsync() takes its own locks and must never be called with
+   * interrupts disabled.
+   */
+
+  if (status & DW_GDMA_LL_CHANNEL_EVENT_DMA_TFR_DONE)
+    {
+      FAR void (*cb)(FAR void *) = priv->frame_done_cb;
+
+      if (cb != NULL)
+        {
+          cb(priv->frame_done_arg);
+        }
+    }
+
   return OK;
 }
 
@@ -397,7 +554,21 @@ static int esp_mipi_dsi_dma_setup(FAR struct esp_mipi_dsi_priv_s *priv)
    * failure from the panel to the camera rather than removing it.
    */
 
-  if (!dw_gdma_ll_is_bus_clock_enabled(0))
+  /* Ask the sibling driver, not the hardware, whether anyone else is active.
+   *
+   * This used to be `dw_gdma_ll_is_bus_clock_enabled(0)`, which is a proxy:
+   * the bus clock is also left on by the HAL after any acquisition, so a live
+   * clock does not strictly mean "a sibling channel is streaming".  Now that
+   * the CSI driver exports its own state (esp_csi_video_dma_is_active(), the
+   * mirror of esp_mipi_dsi_video_dma_is_active()), the question can be asked
+   * directly: "is the other peripheral streaming right now?"
+   *
+   * The clock check is kept as a second opinion -- if the clock is already on
+   * but nobody claims to be streaming, something else acquired the controller
+   * and a reset is still unsafe.
+   */
+
+  if (!esp_csi_video_dma_is_active() && !dw_gdma_ll_is_bus_clock_enabled(0))
     {
       PERIPH_RCC_ATOMIC()
         {
@@ -1732,12 +1903,128 @@ int esp_mipi_dsi_bind_framebuffer(FAR void *fb, size_t fb_size,
 
   priv->fb = fb;
   priv->fb_size = fb_size;
+  priv->fb_base = fb;
+  priv->fb_base_len = fb_size;
+
+  /* 默认只有一页；双缓冲时板级会调 esp_mipi_dsi_set_fb_pages() 告知真实页数，
+   * queue_frame_buffer() 的越界检查按 [fb_base, fb_base + pages*fb_size)。 */
+
+  priv->fb_pages = 1;
   priv->fb_bpp = bpp;
   priv->fb_bound = true;
   nxmutex_unlock(&priv->lock);
 
   vinfo("esp_mipi_dsi: FB bound %p %ux%u %u bpp (%zu bytes) via DW-GDMA\n",
         fb, h_res, v_res, bpp, fb_size);
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_queue_frame_buffer
+ *
+ * Description:
+ *   Ask for `fb` to be shown starting at the next frame boundary.
+ *
+ *   The swap itself happens in the DMA ISR, not here: changing the LLI source
+ *   while the bridge is mid-frame is exactly what produces a torn image.
+ *   If a queue_frame_buffer() arrives before the previous one has been
+ *   adopted, the newer one wins -- a display that is a frame behind is worse
+ *   than one that skips a frame.
+ *
+ * Input Parameters:
+ *   fb   - Page to display (must be inside the bound framebuffer)
+ *   len  - Its length in bytes
+ *
+ * Returned Value:
+ *   Zero (OK) on success; -EINVAL if the page is outside the bound FB;
+ *   -ESHUTDOWN if video mode is not running.
+ *
+ ****************************************************************************/
+
+int esp_mipi_dsi_queue_frame_buffer(FAR const void *fb, size_t len)
+{
+  FAR struct esp_mipi_dsi_priv_s *priv = &g_esp_mipi_dsi;
+  irqstate_t flags;
+
+  if (fb == NULL || len == 0)
+    {
+      return -EINVAL;
+    }
+
+  if (!priv->initialized || !priv->fb_bound || !priv->video_running)
+    {
+      return -ESHUTDOWN;
+    }
+
+  /* The page has to be inside the framebuffer that was bound at bring-up,
+   * otherwise the DMA would read unmapped memory.
+   */
+
+  if (len > priv->fb_size)
+    {
+      return -EINVAL;
+    }
+
+  if ((uintptr_t)fb < (uintptr_t)priv->fb_base ||
+      (uintptr_t)fb + len >
+        (uintptr_t)priv->fb_base +
+          (size_t)priv->fb_base_len * priv->fb_pages)
+    {
+      return -EINVAL;
+    }
+
+  flags = spin_lock_irqsave(&priv->dmalock);
+  priv->pending_fb  = (FAR void *)fb;
+  priv->pending_len = len;
+  spin_unlock_irqrestore(&priv->dmalock, flags);
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: esp_mipi_dsi_set_frame_done_callback
+ *
+ * Description:
+ *   Register a callback invoked once per completed frame, from ISR context.
+ *
+ *   Used by the board layer to call fb_notify_vsync() so that a double-buffered
+ *   reader (LVGL) knows a page has been consumed and may be reused.
+ *
+ * Input Parameters:
+ *   cb  - Callback, or NULL to unregister
+ *   arg - Opaque argument passed through to cb
+ *
+ * Returned Value:
+ *   Zero (OK).
+ *
+ ****************************************************************************/
+
+void esp_mipi_dsi_set_fb_pages(uint8_t pages)
+{
+  FAR struct esp_mipi_dsi_priv_s *priv = &g_esp_mipi_dsi;
+  irqstate_t flags;
+
+  flags = spin_lock_irqsave(&priv->dmalock);
+  priv->fb_pages = (pages == 0) ? 1 : pages;
+  spin_unlock_irqrestore(&priv->dmalock, flags);
+}
+
+uint32_t esp_mipi_dsi_frame_seq(void)
+{
+  return g_esp_mipi_dsi.frame_seq;
+}
+
+int esp_mipi_dsi_set_frame_done_callback(void (*cb)(FAR void *),
+                                         FAR void *arg)
+{
+  FAR struct esp_mipi_dsi_priv_s *priv = &g_esp_mipi_dsi;
+  irqstate_t flags;
+
+  flags = spin_lock_irqsave(&priv->dmalock);
+  priv->frame_done_cb  = cb;
+  priv->frame_done_arg = arg;
+  spin_unlock_irqrestore(&priv->dmalock, flags);
 
   return OK;
 }

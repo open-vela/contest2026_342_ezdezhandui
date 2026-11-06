@@ -1,0 +1,54 @@
+diff --git a/components/upper_hal_cam/csi/src/esp_cam_ctlr_csi.c b/components/upper_hal_cam/csi/src/esp_cam_ctlr_csi.c
+index af61a130caf..6a8caea19d7 100644
+--- a/components/upper_hal_cam/csi/src/esp_cam_ctlr_csi.c
++++ b/components/upper_hal_cam/csi/src/esp_cam_ctlr_csi.c
+@@ -50,6 +50,14 @@ static esp_err_t s_csi_ctlr_get_internal_buffer(esp_cam_ctlr_handle_t handle, ui
+ static esp_err_t s_csi_ctlr_get_buffer_length(esp_cam_ctlr_handle_t handle, size_t *ret_fb_len);
+ static esp_err_t s_csi_ctlr_enable(esp_cam_ctlr_handle_t ctlr);
+ static esp_err_t s_ctlr_csi_start(esp_cam_ctlr_handle_t handle);
++
++/* start 链路逐步诊断（非 static，JTAG 可读）。 */
++
++int g_dbg_csi_msync_rc = -999;
++int g_dbg_csi_cfg_rc   = -999;
++int g_dbg_csi_en_rc    = -999;
++int g_dbg_csi_translen = -1;
++int g_dbg_csi_buf      = -1;
+ static esp_err_t s_ctlr_csi_stop(esp_cam_ctlr_handle_t handle);
+ static esp_err_t s_csi_ctlr_disable(esp_cam_ctlr_handle_t ctlr);
+ static esp_err_t s_ctlr_csi_receive(esp_cam_ctlr_handle_t handle, esp_cam_ctlr_trans_t *trans, uint32_t timeout_ms);
+@@ -498,8 +506,13 @@ esp_err_t s_ctlr_csi_start(esp_cam_ctlr_handle_t handle)
+         }
+     }
+ 
+-    ESP_RETURN_ON_ERROR(esp_cache_msync((void *)(trans.buffer), trans.buflen, ESP_CACHE_MSYNC_FLAG_DIR_M2C),
+-                        TAG, "failed to sync(M2C) trans buffer");
++    g_dbg_csi_translen = (int)trans.buflen;
++    g_dbg_csi_buf      = (trans.buffer != NULL) ? 1 : 0;
++    {
++        esp_err_t rc = esp_cache_msync((void *)(trans.buffer), trans.buflen, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
++        g_dbg_csi_msync_rc = (int)rc;
++        ESP_RETURN_ON_ERROR(rc, TAG, "failed to sync(M2C) trans buffer");
++    }
+ 
+     ESP_LOGD(TAG, "trans.buffer: %p, trans.buflen: %d", trans.buffer, trans.buflen);
+     ctlr->trans = trans;
+@@ -526,8 +539,16 @@ esp_err_t s_ctlr_csi_start(esp_cam_ctlr_handle_t handle)
+         },
+         .size = ctlr->csi_transfer_size,
+     };
+-    ESP_RETURN_ON_ERROR(dw_gdma_channel_config_transfer(ctlr->dma_chan, &csi_dma_transfer_config), TAG, "failed to configure dwgdma transfer");
+-    ESP_RETURN_ON_ERROR(dw_gdma_channel_enable_ctrl(ctlr->dma_chan, true), TAG, "failed to enable dwgdma");
++    {
++        esp_err_t rc = dw_gdma_channel_config_transfer(ctlr->dma_chan, &csi_dma_transfer_config);
++        g_dbg_csi_cfg_rc = (int)rc;
++        ESP_RETURN_ON_ERROR(rc, TAG, "failed to configure dwgdma transfer");
++    }
++    {
++        esp_err_t rc = dw_gdma_channel_enable_ctrl(ctlr->dma_chan, true);
++        g_dbg_csi_en_rc = (int)rc;
++        ESP_RETURN_ON_ERROR(rc, TAG, "failed to enable dwgdma");
++    }
+ 
+     //enable CSI bridge
+     mipi_csi_brg_ll_enable(ctlr->hal.bridge_dev, true);
